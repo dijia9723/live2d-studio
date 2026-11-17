@@ -1,7 +1,13 @@
+/**
+ * 文件职责：语音输入与朗读 Hook。
+ * 支持 browser（Web Speech / 系统语音）、api（OpenAI 兼容语音服务）与 off 三种模式，
+ * 并统一管理麦克风、录音器、音频播放与 AbortController 的清理。
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { notify, useStudio } from '../store/studio'
 
+// 以下类型描述 Web Speech API 的最小可用子集，避免依赖浏览器的实验性类型声明。
 interface RecognitionResult {
   results: { [index: number]: { [index: number]: { transcript: string } } }
 }
@@ -20,6 +26,12 @@ type SpeechWindow = Window & {
   webkitSpeechRecognition?: new () => Recognition
 }
 
+/**
+ * @param onTranscript 识别出的文本（会追加到输入框）
+ * @param onInterrupt 开始录音前打断正在进行的生成
+ * @returns listening 是否正在录音；toggleListening 切换录音；
+ *          speak 朗读文本；stopSpeaking 立即停止朗读
+ */
 export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () => void) {
   const [listening, setListening] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
@@ -28,9 +40,11 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
   const audio = useRef<HTMLAudioElement | null>(null)
   const audioURL = useRef('')
   const request = useRef<AbortController | null>(null)
+  // mounted 防止异步回调在组件卸载后更新状态。
   const mounted = useRef(true)
   const latestTranscript = useRef(onTranscript)
   latestTranscript.current = onTranscript
+  // 停止一切朗读：取消合成请求、取消系统朗读、暂停音频并释放 Blob URL。
   const stopSpeaking = useCallback(() => {
     request.current?.abort()
     request.current = null
@@ -46,8 +60,9 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
   const speak = useCallback(
     async (text: string) => {
       stopSpeaking()
-      const { speechEnabled, settings } = useStudio.getState()
-      if (!speechEnabled || !settings || settings.speech.mode === 'off' || !text.trim()) return
+      const { settings } = useStudio.getState()
+      if (!settings || settings.speech.mode === 'off' || !text.trim()) return
+      // 去掉代码块与 Markdown 标记，避免朗读出无意义的符号。
       const clean = text
         .replace(/```[\s\S]*?```/g, '代码见聊天记录。')
         .replace(/[*#_`~]/g, '')
@@ -59,10 +74,12 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
         }
         const utterance = new SpeechSynthesisUtterance(clean)
         utterance.lang = settings.speech.language
+        // speaking 状态用于驱动 Live2D 口型动画。
         utterance.onstart = () => useStudio.setState({ speaking: true })
         utterance.onend = () => useStudio.setState({ speaking: false })
         utterance.onerror = (e) => {
           useStudio.setState({ speaking: false })
+          // 用户主动打断会触发 canceled/interrupted，无需提示。
           if (e.error !== 'canceled' && e.error !== 'interrupted')
             notify('系统朗读不可用，请检查系统语音或配置语音 API。')
         }
@@ -94,12 +111,14 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
     [stopSpeaking],
   )
   const toggleListening = useCallback(async () => {
+    // 再次点击：停止录音或取消系统识别。
     if (listening) {
       if (recorder.current?.state === 'recording') recorder.current.stop()
       recognition.current?.abort()
       setListening(false)
       return
     }
+    // 开始录音前先打断生成与朗读，避免同时占用音频。
     onInterrupt()
     stopSpeaking()
     const cfg = useStudio.getState().settings?.speech
@@ -152,6 +171,7 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
           if (e.data.size) chunks.push(e.data)
         }
         media.onstop = async () => {
+          // 停止时释放麦克风轨道，避免系统麦克风指示灯常亮。
           stream.getTracks().forEach((t) => t.stop())
           tracks.current = null
           if (mounted.current) setListening(false)
@@ -173,6 +193,7 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
       }
     }
   }, [listening, onInterrupt, stopSpeaking])
+  // 卸载清理：停止朗读、取消识别、停止录音并释放麦克风。
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -183,6 +204,7 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
       tracks.current?.getTracks().forEach((t) => t.stop())
     }
   }, [stopSpeaking])
+  // 录音最长 60 秒，超时自动结束，防止忘记关闭。
   useEffect(() => {
     if (!listening) return
     const timeout = setTimeout(() => {

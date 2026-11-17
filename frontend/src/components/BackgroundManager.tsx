@@ -1,6 +1,12 @@
+/**
+ * 文件职责：舞台背景设置面板。
+ * 负责内置背景选择、素材上传（校验类型/大小、拖拽）、素材筛选与删除、
+ * 以及背景适配/压暗/视频播放等显示参数。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Check, Film, ImagePlus, LoaderCircle, Pause, Play, Trash2, Upload, X } from 'lucide-react'
 import { api, mediaURL } from '../api/client'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { notify, useStudio } from '../store/studio'
 import type { SceneAsset } from '../types/api'
 
@@ -21,11 +27,13 @@ export default function BackgroundManager() {
   const [removing, setRemoving] = useState<SceneAsset | null>(null)
   const [deleting, setDeleting] = useState(false)
   const selected = s.sceneAssets.find((asset) => asset.id === s.backgroundAssetID)
+  // 进入面板时刷新素材库，兼容其他窗口新增的素材。
   useEffect(() => {
     void s
       .refreshSceneAssets()
       .catch(() => setError('背景库读取失败，请检查本地服务是否已更新并重启。'))
   }, [])
+  // 上传前按扩展名与大小做前置校验，避免把明显不合法的文件传到后端。
   const upload = async (file?: File) => {
     if (!file || uploading) return
     const video = /\.(mp4|webm)$/i.test(file.name)
@@ -54,6 +62,7 @@ export default function BackgroundManager() {
       setUploading(false)
     }
   }
+  // 删除素材后同步清理引用，避免背景/叠加层指向已删除的资源。
   const remove = async () => {
     if (!removing || deleting) return
     setDeleting(true)
@@ -76,8 +85,7 @@ export default function BackgroundManager() {
     <div className="background-manager">
       <div className="panel-section-heading">
         <div>
-          <h3>你的舞台，你的风景</h3>
-          <p>导入喜欢的图片，或让视频在背景中循环。</p>
+          <h3>背景素材</h3>
         </div>
         <span className="subtle-count">{s.sceneAssets.length} 个素材</span>
       </div>
@@ -129,6 +137,7 @@ export default function BackgroundManager() {
           <button
             key={item.id}
             className={`builtin-background stage-${item.id} ${!s.backgroundAssetID && s.stage === item.id ? 'selected' : ''}`}
+            aria-pressed={!s.backgroundAssetID && s.stage === item.id}
             onClick={() => s.patch({ stage: item.id, backgroundAssetID: null })}
           >
             <span>{item.name}</span>
@@ -147,6 +156,7 @@ export default function BackgroundManager() {
             <button
               key={item.id}
               className={filter === item.id ? 'active' : ''}
+              aria-pressed={filter === item.id}
               onClick={() => setFilter(item.id)}
             >
               {item.name}
@@ -202,8 +212,7 @@ export default function BackgroundManager() {
       {!s.sceneAssets.some((asset) => filter === 'all' || filter === asset.kind) && (
         <div className="media-empty">
           <ImagePlus size={23} />
-          <p>把喜欢的风景收藏在这里</p>
-          <small>导入后即可应用，素材保存在本机。</small>
+          <p>{filter === 'all' ? '还没有导入素材' : '没有符合筛选的素材'}</p>
         </div>
       )}
       {selected && (
@@ -211,14 +220,18 @@ export default function BackgroundManager() {
           <div className="panel-label">背景显示</div>
           <label>
             画面适配
-            <select
-              aria-label="背景画面适配"
+            <Select
               value={s.backgroundFit}
-              onChange={(e) => s.patch({ backgroundFit: e.target.value as 'cover' | 'contain' })}
+              onValueChange={(value) => s.patch({ backgroundFit: value as 'cover' | 'contain' })}
             >
-              <option value="cover">铺满画布</option>
-              <option value="contain">完整显示</option>
-            </select>
+              <SelectTrigger size="sm" aria-label="背景画面适配" className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cover">铺满画布</SelectItem>
+                <SelectItem value="contain">完整显示</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <label>
             背景压暗<span>{Math.round(s.backgroundDim * 100)}%</span>

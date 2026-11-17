@@ -1,9 +1,14 @@
+/**
+ * 文件职责：舞台自定义叠加层（图片/视频特效）设置面板。
+ * 负责素材导入与校验、选择/清除叠加素材、强度与混合模式调节。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Check, Film, Image, Layers, LoaderCircle, Upload, X } from 'lucide-react'
 import { api } from '../api/client'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { useStudio } from '../store/studio'
-import '../assets/overlay-manager.css'
 
+// 允许的 MIME 类型；部分 WebView 不返回 type，因此同时按扩展名兜底判断。
 const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const videoTypes = ['video/mp4', 'video/webm']
 const blendModes = [
@@ -12,12 +17,14 @@ const blendModes = [
   { value: 'lighten', label: '变亮' },
 ] as const
 
+/** 把字节数格式化为 KB/MB 形式的展示文本。 */
 function sizeLabel(bytes: number) {
   return bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+/** 校验上传文件，返回空字符串表示通过，否则返回错误提示。 */
 function validateFile(file: File) {
   const extension = file.name.split('.').pop()?.toLowerCase()
   const isImage =
@@ -50,6 +57,7 @@ export default function OverlayManager() {
     }
   }, [])
 
+  // 上传并自动启用；用 uploading ref 同步防重入，进度回调仅在挂载时更新状态。
   const upload = async (file?: File) => {
     if (!file || uploading.current) return
     setError('')
@@ -114,19 +122,23 @@ export default function OverlayManager() {
       <div className="overlay-asset-row">
         <label className="overlay-select-label">
           <span>叠加素材</span>
-          <select
-            aria-label="选择自定义叠加素材"
-            value={selected?.id || ''}
+          <Select
+            value={selected?.id || 'none'}
             disabled={busy}
-            onChange={(event) => choose(event.target.value)}
+            onValueChange={(value) => choose(value === 'none' ? '' : value)}
           >
-            <option value="">不使用叠加素材</option>
-            {s.sceneAssets.map((asset) => (
-              <option value={asset.id} key={asset.id}>
-                {asset.kind === 'video' ? '视频' : '图片'} · {asset.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" aria-label="选择自定义叠加素材" className="h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">不使用叠加素材</SelectItem>
+              {s.sceneAssets.map((asset) => (
+                <SelectItem value={asset.id} key={asset.id}>
+                  {asset.kind === 'video' ? '视频' : '图片'} · {asset.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
         <button
           type="button"
@@ -179,22 +191,25 @@ export default function OverlayManager() {
         </label>
         <label className="overlay-blend-label">
           <span>混合模式</span>
-          <select
-            aria-label="自定义叠加层混合模式"
+          <Select
             value={s.overlayBlendMode}
             disabled={busy || !selected}
-            onChange={(event) => {
-              const value = event.target.value
+            onValueChange={(value) => {
               if (value === 'normal' || value === 'screen' || value === 'lighten')
                 s.patch({ overlayBlendMode: value })
             }}
           >
-            {blendModes.map((mode) => (
-              <option value={mode.value} key={mode.value}>
-                {mode.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" aria-label="自定义叠加层混合模式" className="h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {blendModes.map((mode) => (
+                <SelectItem value={mode.value} key={mode.value}>
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
       </div>
 

@@ -1,9 +1,13 @@
+/**
+ * 文件职责：角色表情与动作控制面板。
+ * 提供情绪卡片、模型原生表情、动作选择/随机播放与重置视图。
+ */
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Play, RotateCcw, Shuffle } from 'lucide-react'
 import type { Live2DCapabilities, Live2DStageHandle } from './Live2DStage'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { useStudio } from '../store/studio'
-import '../assets/character-controls.css'
 
 const moods = [
   { key: 'neutral', label: '自然' },
@@ -12,6 +16,7 @@ const moods = [
   { key: 'surprised', label: '惊讶' },
 ]
 
+/** 纯 SVG 绘制的情绪图标，避免依赖图片资源。 */
 function MoodFace({ mood }: { mood: string }) {
   return (
     <svg
@@ -51,6 +56,10 @@ function MoodFace({ mood }: { mood: string }) {
   )
 }
 
+/**
+ * @param stageRef 舞台命令式控制句柄
+ * @param capabilities 模型能力描述（动作/表情/是否支持情绪参数）
+ */
 export default function StageControls({
   stageRef,
   capabilities,
@@ -61,7 +70,9 @@ export default function StageControls({
   const s = useStudio()
   const [motion, setMotion] = useState('')
   const [expression, setExpression] = useState('')
+  // nativeRequest 用于丢弃已失效的原生表情切换结果。
   const nativeRequest = useRef(0)
+  // 能力更新时重置默认动作，并清空原生表情选择。
   useEffect(() => {
     ++nativeRequest.current
     setMotion(
@@ -71,6 +82,7 @@ export default function StageControls({
     )
     setExpression('')
   }, [capabilities])
+  // 全局表情变更（如 AI 切换情绪）时退出原生表情模式。
   useEffect(() => {
     ++nativeRequest.current
     setExpression('')
@@ -94,7 +106,6 @@ export default function StageControls({
       <div className="character-controls-section">
         <div className="character-controls-label">
           <span>情绪表情</span>
-          <small>跟随心情，随时切换</small>
         </div>
         <div className="character-mood-grid">
           {moods.map((e) => (
@@ -118,20 +129,27 @@ export default function StageControls({
           <small>{ready ? `${capabilities?.motions.length || 0} 个可用` : '正在读取…'}</small>
         </div>
         <div className="character-motion-row">
-          <select
-            aria-label="选择角色动作"
-            value={motion}
+          <Select
+            value={motion || 'none'}
             disabled={!ready || !motion}
-            onChange={(e) => setMotion(e.target.value)}
-            title="选择角色自带的动作"
+            onValueChange={(value) => setMotion(value === 'none' ? '' : value)}
           >
-            {!capabilities?.motions.length && <option value="">暂无动作</option>}
-            {capabilities?.motions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              aria-label="选择角色动作"
+              title="选择角色自带的动作"
+              className="h-[38px] flex-1"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {!capabilities?.motions.length && <SelectItem value="none">暂无动作</SelectItem>}
+              {capabilities?.motions.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <button
             type="button"
             className="character-play-button"
@@ -151,7 +169,7 @@ export default function StageControls({
           title="随机播放角色动作"
         >
           <Shuffle size={14} />
-          来一个随机小动作
+          随机播放
         </button>
       </div>
       <div className="character-controls-section">
@@ -160,29 +178,33 @@ export default function StageControls({
           <small>{ready ? `${capabilities?.expressions.length || 0} 个可用` : '正在读取…'}</small>
         </div>
         {!!capabilities?.expressions.length ? (
-          <select
-            aria-label="选择模型原生表情"
+          <Select
             disabled={!ready}
-            value={expression}
-            onChange={async (e) => {
-              const value = e.target.value
+            value={expression || 'none'}
+            onValueChange={async (value) => {
+              const next = value === 'none' ? '' : value
               const previous = expression
               const request = ++nativeRequest.current
-              setExpression(value)
-              if (!value) mood('neutral')
+              setExpression(next)
+              if (!next) mood('neutral')
               else {
-                const applied = await stageRef.current?.setExpression(value)
+                const applied = await stageRef.current?.setExpression(next)
                 if (!applied && nativeRequest.current === request) setExpression(previous)
               }
             }}
           >
-            <option value="">自然 / 情绪表情</option>
-            {capabilities.expressions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="选择模型原生表情" className="h-[38px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">自然 / 情绪表情</SelectItem>
+              {capabilities.expressions.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         ) : (
           <p className="character-controls-empty">
             {ready ? '当前模型没有自带表情，可以使用上方情绪卡片。' : '正在读取模型的表情资源…'}
@@ -197,7 +219,7 @@ export default function StageControls({
         title="还原角色表情、动作和缩放"
       >
         <RotateCcw size={14} />
-        恢复自然视图
+        重置角色视图
       </button>
     </div>
   )

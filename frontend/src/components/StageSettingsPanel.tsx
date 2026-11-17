@@ -1,13 +1,29 @@
+/**
+ * 文件职责：舞台设置面板，用标签页组合角色控制、背景管理与氛围特效。
+ * 包含完整的方向键/Home/End 键盘导航与 ARIA tab 语义。
+ */
 import { useState } from 'react'
 import type { RefObject } from 'react'
-import { Image, Layers, Smile, Sparkles } from 'lucide-react'
+import { Image, Smile, Sparkles } from 'lucide-react'
 import StageControls from './StageControls'
 import BackgroundManager from './BackgroundManager'
 import OverlayManager from './OverlayManager'
 import { effectPresets } from './StageEffects'
+import { Switch } from './ui/switch'
 import { useStudio } from '../store/studio'
 import type { Live2DCapabilities, Live2DStageHandle } from './Live2DStage'
 
+const categories = [
+  { id: 'character', name: '表情与动作', Icon: Smile },
+  { id: 'background', name: '背景', Icon: Image },
+  { id: 'effects', name: '特效', Icon: Sparkles },
+]
+
+/**
+ * @param stageRef 舞台控制句柄，透传给角色控制子面板
+ * @param capabilities 当前模型能力
+ * @param interaction 舞台反馈文案（来自 Live2DStage）
+ */
 export default function StageSettingsPanel({
   stageRef,
   capabilities,
@@ -19,6 +35,7 @@ export default function StageSettingsPanel({
 }) {
   const [tab, setTab] = useState('character')
   const s = useStudio()
+  // 合并写入单个特效设置：不存在时创建，已存在时覆盖指定字段。
   const setEffect = (id: string, patch: { enabled?: boolean; intensity?: number }) => {
     const current = s.effects.find((effect) => effect.id === id)
     s.patch({
@@ -32,25 +49,41 @@ export default function StageSettingsPanel({
   const totalEffects = activeEffects + (s.overlayAssetID ? 1 : 0)
   return (
     <section className="stage-settings-panel" aria-label="舞台设置面板">
-      <div className="stage-settings-header">
-        <span className="stage-settings-icon">
-          <Layers size={19} />
-        </span>
-        <div>
-          <h2>布置你的小小世界</h2>
-          <p>每一个细节，都按你的心意。</p>
-        </div>
-        <span className="settings-live-dot" title="修改实时生效" />
-      </div>
-      <div className="stage-category-tabs" role="tablist" aria-label="舞台设置分类">
-        {[
-          { id: 'character', name: '角色', Icon: Smile },
-          { id: 'background', name: '背景', Icon: Image },
-          { id: 'effects', name: '特效', Icon: Sparkles },
-        ].map(({ id, name, Icon }) => (
+      <div
+        className="stage-category-tabs"
+        role="tablist"
+        aria-label="舞台设置分类"
+        onKeyDown={(event) => {
+          const current = categories.findIndex((category) => category.id === tab)
+          const last = categories.length - 1
+          let next: number
+          switch (event.key) {
+            case 'ArrowLeft':
+              next = current === 0 ? last : current - 1
+              break
+            case 'ArrowRight':
+              next = current === last ? 0 : current + 1
+              break
+            case 'Home':
+              next = 0
+              break
+            case 'End':
+              next = last
+              break
+            default:
+              return
+          }
+          event.preventDefault()
+          setTab(categories[next].id)
+          event.currentTarget.querySelectorAll('button')[next]?.focus()
+        }}
+      >
+        {categories.map(({ id, name, Icon }) => (
           <button
             key={id}
+            id={`stage-tab-${id}`}
             role="tab"
+            tabIndex={tab === id ? 0 : -1}
             aria-selected={tab === id}
             aria-controls={`stage-category-${id}`}
             onClick={() => setTab(id)}
@@ -62,13 +95,12 @@ export default function StageSettingsPanel({
         ))}
       </div>
       <div className="stage-settings-scroll">
-        <div role="tabpanel" id="stage-category-character" hidden={tab !== 'character'}>
-          <div className="panel-section-heading">
-            <div>
-              <h3>让情绪，变得生动</h3>
-              <p>选择表情，或播放角色自带的动作。</p>
-            </div>
-          </div>
+        <div
+          role="tabpanel"
+          id="stage-category-character"
+          aria-labelledby="stage-tab-character"
+          hidden={tab !== 'character'}
+        >
           <StageControls stageRef={stageRef} capabilities={capabilities} />
           {interaction && (
             <div className="character-interaction" role="status" aria-live="polite">
@@ -81,16 +113,20 @@ export default function StageSettingsPanel({
             <p>试着在画布上移动鼠标，伙伴会看向你；轻点角色，还能收到一个小动作。</p>
           </div>
         </div>
-        <div role="tabpanel" id="stage-category-background" hidden={tab !== 'background'}>
+        <div
+          role="tabpanel"
+          id="stage-category-background"
+          aria-labelledby="stage-tab-background"
+          hidden={tab !== 'background'}
+        >
           <BackgroundManager />
         </div>
-        <div role="tabpanel" id="stage-category-effects" hidden={tab !== 'effects'}>
-          <div className="panel-section-heading">
-            <div>
-              <h3>给画面加一点魔法</h3>
-              <p>特效在角色上方叠加，可以自由组合。</p>
-            </div>
-          </div>
+        <div
+          role="tabpanel"
+          id="stage-category-effects"
+          aria-labelledby="stage-tab-effects"
+          hidden={tab !== 'effects'}
+        >
           <div className="effects-heading">
             <span className="panel-label">氛围特效 · {activeEffects} 个已开启</span>
             <button
@@ -119,15 +155,12 @@ export default function StageSettingsPanel({
                       <h4>{preset.name}</h4>
                       <p>{preset.description}</p>
                     </div>
-                    <button
-                      className={`switch ${enabled ? 'on' : ''}`}
-                      role="switch"
+                    <Switch
                       aria-label={`启用${preset.name}`}
-                      aria-checked={enabled}
-                      onClick={() => setEffect(preset.id, { enabled: !enabled })}
-                    >
-                      <span />
-                    </button>
+                      className="ml-auto"
+                      checked={enabled}
+                      onCheckedChange={(checked) => setEffect(preset.id, { enabled: checked })}
+                    />
                   </div>
                   {enabled && (
                     <label className="effect-intensity">
@@ -151,17 +184,11 @@ export default function StageSettingsPanel({
             })}
           </div>
           <OverlayManager />
-          <div className="character-tip">
-            <Layers size={16} />
-            <p>
-              背景在最底层，Live2D 角色居中，特效覆盖在最上层。切回 AI 对话，舞台效果会继续保留。
-            </p>
-          </div>
         </div>
       </div>
       <div className="stage-settings-footer">
         <span className="status-dot" />
-        即时预览 · 自动保存在本机
+        更改即时预览并自动保存
       </div>
     </section>
   )

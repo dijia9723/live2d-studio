@@ -1,3 +1,8 @@
+/**
+ * 文件职责：Live2D 画布组件。
+ * 负责加载 Cubism Core 与模型、计算缩放布局、鼠标跟随、点击播放动作、
+ * 情绪参数/模型原生表情切换、口型同步，并在卸载时按顺序释放资源。
+ */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Application, Ticker } from 'pixi.js'
 import { AlertCircle, LoaderCircle, RotateCcw } from 'lucide-react'
@@ -14,6 +19,7 @@ import type { Live2DCapabilities } from '../utils/live2d'
 
 export type { Live2DCapabilities } from '../utils/live2d'
 
+/** 通过 ref 暴露给父组件的舞台控制接口。 */
 export interface Live2DStageHandle {
   setMood(mood: string): void
   setExpression(name: string | null): Promise<boolean>
@@ -35,6 +41,7 @@ const moodNames: Record<string, string> = {
   surprised: '惊讶',
 }
 
+// Cubism Core 是全局脚本，多个舞台共享同一次加载（模块级 Promise 缓存）。
 let corePromise: Promise<void> | undefined
 function loadCore() {
   if ((window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore)
@@ -45,6 +52,7 @@ function loadCore() {
       script.src = '/lib/live2dcubismcore.min.js'
       script.onload = () => resolve()
       script.onerror = () => {
+        // 失败后清空缓存，允许点击“重新加载”再试。
         corePromise = undefined
         script.remove()
         reject(new Error('Cubism Core 加载失败，请检查本地运行库'))
@@ -55,7 +63,9 @@ function loadCore() {
 }
 
 interface Props {
+  /** 模型 model3.json 路径 */
   modelPath: string
+  /** 是否为缩略图预览模式（不响应鼠标、不播口型） */
   miniature?: boolean
   onCapabilitiesChange?: (capabilities: Live2DCapabilities) => void
   onInteraction?: (message: string) => void
@@ -75,12 +85,14 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   const expression = useStudio((s) => s.expression)
   const expressionRevision = useStudio((s) => s.expressionRevision)
   const speaking = useStudio((s) => s.speaking)
+  // 用 ref 保存最新值，供 pixi 每帧回调读取，避免重建整个舞台。
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   const speakingRef = useRef(speaking)
   speakingRef.current = speaking
   const moodRef = useRef(expression)
   const nativeExpressionRef = useRef(false)
+  // 版本号用于取消过期的异步表情/动作加载。
   const expressionVersion = useRef(0)
   const motionVersion = useRef(0)
   const layoutRef = useRef<() => void>(() => {})
@@ -88,11 +100,12 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   callbacks.current = { onCapabilitiesChange, onInteraction }
   const report = (message: string) => (callbacks.current.onInteraction || notify)(message)
 
+  // 切换回情绪模式：重置原生表情并让后续帧写入情绪参数。
   const applyMood = (mood: string) => {
     ++expressionVersion.current
     moodRef.current = mood
     nativeExpressionRef.current = false
-    // Cancel pending loads so a slow native expression cannot replace a later mood.
+    // 取消进行中的原生表情加载，避免慢加载覆盖后续情绪。
     const manager = model.current?.internalModel.motionManager.expressionManager
     if (manager) {
       manager.reserveExpressionIndex = -1
@@ -113,9 +126,10 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       return false
     }
     try {
-      // FORCE alone rejects an already active motion; reset its reservation first.
+      // 单独使用 FORCE 会拒绝已激活的动作，因此先清空现有动作预留。
       live.internalModel.motionManager.stopAllMotions()
       const started = await live.motion(motion.group, motion.index, 3)
+      // 模型已被替换或已有更新的请求时，丢弃本次结果。
       if (model.current !== live || version !== motionVersion.current) return false
       report(
         started ? `正在播放：${motion.label}` : `动作未能播放：${motion.label}，请检查模型资源`,
@@ -142,6 +156,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         report('角色仍在加载，请稍后再试')
         return false
       }
+      // null 表示退出原生表情，回到情绪参数模式。
       if (name === null) {
         applyMood('neutral')
         report('已恢复自然表情')
@@ -159,7 +174,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         nativeExpressionRef.current = true
         const changed = await live.expression(name)
         if (model.current !== live || expressionVersion.current !== version) return false
-        // The library returns false for an already active expression.
+        // 库对“已是当前表情”的情况返回 false，需要手动恢复一次以触发重放。
         if (!changed) manager.restoreExpression()
         const index = manager.getExpressionIndex(name)
         const available = changed || !!manager.expressions[index]
@@ -179,17 +194,20 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       ++motionVersion.current
       model.current?.internalModel.motionManager.stopAllMotions()
       applyMood('neutral')
+      // 重置视线焦点，避免停留在最后一次鼠标位置。
       model.current?.internalModel.focusController.focus(0, 0, true)
       report('已重置角色表情与动作')
     },
   }))
 
+  // 模型加载主副作用：路径、缩略图模式或重试计数变化时重建整个 pixi 舞台。
   useEffect(() => {
     const target = host.current
     if (!target) return
     let cancelled = false
     let pixi: Application | undefined
     let observer: ResizeObserver | undefined
+    // 事件监听共用一个 AbortController，清理时一次性移除。
     const listeners = new AbortController()
     capabilities.current = emptyCapabilities()
     callbacks.current.onCapabilitiesChange?.(capabilities.current)
@@ -199,6 +217,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
     const start = async () => {
       try {
         await loadCore()
+        // 动态导入 cubism4 入口，确保 Cubism Core 已就绪。
         const { Live2DModel } = await import('pixi-live2d-display/cubism4')
         if (cancelled) return
         Live2DModel.registerTicker(Ticker)
@@ -211,8 +230,9 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         })
         const canvas = pixi.view as HTMLCanvasElement
         target.appendChild(canvas)
-        // Models can omit HitAreas, so pointer handling uses the canvas directly.
+        // 模型可能没有 HitAreas，因此指针交互直接绑定在 canvas 上。
         const live = await Live2DModel.from(path, { autoInteract: false })
+        // 加载期间组件已卸载/切换模型：立即释放刚加载的模型。
         if (cancelled) {
           live.destroy({ children: true, texture: false, baseTexture: false })
           return
@@ -221,6 +241,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         pixi.stage.addChild(live)
         const bounds = live.getLocalBounds()
         live.anchor.set(0.5, 0.5)
+        // 按容器尺寸等比缩放并居中，缩略图模式忽略用户缩放。
         const layout = () => {
           if (!pixi) return
           const w = target.clientWidth,
@@ -253,7 +274,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         )
         callbacks.current.onCapabilitiesChange?.(capabilities.current)
         const lips = lipSyncParameters(bindings, internal.motionManager.lipSyncIds)
-        // Converted models retain PARAM_* IDs for mouse following as well.
+        // 转换模型对鼠标跟随也保留 PARAM_* 命名，这里做候选映射后回填真实参数名。
         const focusIDs = {
           idParamAngleX: ['ParamAngleX'],
           idParamAngleY: ['ParamAngleY'],
@@ -268,6 +289,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
           if (entry)
             (internal as unknown as Record<string, unknown>)[property] = parameters.ids[entry.index]
         }
+        // 每帧更新前写入情绪参数与口型振幅，覆盖库默认值。
         internal.on('beforeModelUpdate', () => {
           if (miniature) return
           if (!nativeExpressionRef.current)
@@ -279,6 +301,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
               core.setParameterValueByIndex(p.index, p.minimum + (p.maximum - p.minimum) * value)
           }
         })
+        // 缩略图模式不绑定鼠标交互，避免多个预览争抢焦点。
         if (!miniature) {
           canvas.style.cursor = 'pointer'
           canvas.setAttribute('aria-label', 'Live2D 角色，点击播放动作，移动指针让角色看向你')
@@ -288,6 +311,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
             'pointermove',
             (event) => {
               if (!pixi) return
+              // 将画布坐标换算到 pixi 屏幕坐标，驱动角色视线跟随。
               const rect = canvas.getBoundingClientRect()
               live.focus(
                 ((event.clientX - rect.left) / rect.width) * pixi.screen.width,
@@ -315,6 +339,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
           canvas.addEventListener(
             'pointerup',
             (event) => {
+              // 位移小于 8px 才视为点击，避免拖拽误触发动作。
               if (
                 down &&
                 down.id === event.pointerId &&
@@ -339,6 +364,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       }
     }
     void start()
+    // 清理顺序：作废异步结果与版本号 → 移除事件/观察者 → 清空引用 → 销毁 pixi。
     return () => {
       cancelled = true
       ++motionVersion.current
@@ -352,9 +378,11 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       pixi?.destroy(true, { children: true, texture: false, baseTexture: false })
     }
   }, [path, miniature, revision])
+  // 缩放变化时只重排布局，不重建模型。
   useEffect(() => {
     layoutRef.current()
   }, [zoom])
+  // 表情或 revision 变化时重新应用情绪（加载完成后也会触发一次）。
   useEffect(() => {
     applyMood(expression)
   }, [expression, expressionRevision, loaded])

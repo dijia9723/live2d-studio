@@ -1,7 +1,16 @@
-import { useState } from 'react'
+/**
+ * 页面：设置页。
+ * 分语言模型、语音交互、智能体三个分区，负责表单本地编辑、脏检查、
+ * 保存设置与测试连接（含“密钥留空即保留”的语义）。
+ */
+import { useEffect, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
+  Brain,
+  Calculator,
   Check,
   ChevronRight,
+  Clock3,
   Cpu,
   ExternalLink,
   Info,
@@ -11,11 +20,21 @@ import {
   Save,
   ShieldCheck,
   SlidersHorizontal,
+  Smile,
   Volume2,
   WandSparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
-import { notify, useStudio } from '../store/studio'
+import CharacterMemories from '../components/CharacterMemories'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select'
+import { Switch } from '../components/ui/switch'
+import { useStudio } from '../store/studio'
 import type { Settings } from '../types/api'
 
 const presets = [
@@ -24,96 +43,182 @@ const presets = [
   { name: 'Ollama', url: 'http://localhost:11434/v1', model: 'qwen3:8b' },
   { name: 'LM Studio', url: 'http://localhost:1234/v1', model: 'local-model' },
 ]
+const sections = [
+  { id: 'llm', name: '语言模型', icon: Cpu },
+  { id: 'speech', name: '语音交互', icon: Volume2 },
+  { id: 'agent', name: '智能体', icon: WandSparkles },
+] as const
+type Activity = 'saving' | 'testing'
+// 连接测试结果；saved 表示测试失败前更改是否已保存。
+type Connection = { status: 'passed' } | { status: 'failed'; message: string; saved: boolean }
+const tools = [
+  { name: '查询时间', icon: Clock3, description: '获取当前日期和时间，支持指定时区。' },
+  { name: '计算', icon: Calculator, description: '计算整数、小数的四则运算，支持括号。' },
+  { name: '检索记忆', icon: Brain, description: '按关键词查找当前角色的已保存记忆。' },
+  { name: '切换表情', icon: Smile, description: '切换自然、开心、难过或惊讶表情。' },
+]
+
 export default function SettingsPage() {
   const s = useStudio()
+  const [params] = useSearchParams()
+  const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
+  const tab = currentSection.id
+  const page = useRef<HTMLDivElement>(null)
   const [form, setForm] = useState<Settings>(() => structuredClone(s.settings!))
-  const [tab, setTab] = useState('llm')
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [connected, setConnected] = useState(false)
-  const [connectionError, setConnectionError] = useState('')
+  const [activity, setActivity] = useState<Activity | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [connection, setConnection] = useState<Connection | null>(null)
   const [clearLLM, setClearLLM] = useState(false)
   const [clearSpeech, setClearSpeech] = useState(false)
+  const [showMemories, setShowMemories] = useState(false)
+  const character = s.characters.find((item) => item.id === s.characterID) ?? s.characters[0]
+  // 脏检查：勾选清除密钥或任一设置分组变化都视为有未保存更改。
+  const dirty =
+    clearLLM ||
+    clearSpeech ||
+    JSON.stringify(form.llm) !== JSON.stringify(s.settings?.llm) ||
+    JSON.stringify(form.speech) !== JSON.stringify(s.settings?.speech)
+  // 推理模型使用固定采样策略，温度控件对其禁用。
   const reasoningModel = /^(gpt-5|o[134](?:-|$))/i.test(form.llm.model.trim())
+  const connected = connection?.status === 'passed'
+
+  // 切换分区时把页面滚回顶部。
+  useEffect(() => {
+    page.current?.scrollIntoView({ block: 'start' })
+  }, [tab])
+
+  // 修改 LLM 设置会重置连接测试结果。
   const llm = (patch: Partial<Settings['llm']>) => {
     setForm((f) => ({ ...f, llm: { ...f.llm, ...patch } }))
-    setConnected(false)
-    setConnectionError('')
+    setConnection(null)
+    setSaveError('')
   }
-  const speech = (patch: Partial<Settings['speech']>) =>
+  const speech = (patch: Partial<Settings['speech']>) => {
     setForm((f) => ({ ...f, speech: { ...f.speech, ...patch } }))
-  const save = async (test = false) => {
-    setSaving(true)
-    setConnected(false)
-    setConnectionError('')
+    setSaveError('')
+  }
+  // 提交：按需先保存再测试；测试失败时区分“已保存但连接失败”与保存失败。
+  const submit = async (test = false) => {
+    if (activity || (!dirty && !test)) return
+    let phase: Activity = dirty ? 'saving' : 'testing'
+    setActivity(phase)
+    setSaveError('')
+    if (test) setConnection(null)
     try {
-      const result = await api.saveSettings({
-        ...form,
-        clear_llm_key: clearLLM,
-        clear_speech_key: clearSpeech,
-      })
-      s.patch({ settings: result })
-      setForm(structuredClone(result))
-      setClearLLM(false)
-      setClearSpeech(false)
+      if (dirty) {
+        const result = await api.saveSettings({
+          ...form,
+          clear_llm_key: clearLLM,
+          clear_speech_key: clearSpeech,
+        })
+        s.patch({ settings: result })
+        setForm(structuredClone(result))
+        setClearLLM(false)
+        setClearSpeech(false)
+        setSaved(true)
+      }
       if (test) {
-        setTesting(true)
+        phase = 'testing'
+        setActivity(phase)
         await api.testConnection()
-        setConnected(true)
-        notify('模型服务连接成功')
-      } else notify('设置已保存')
+        setConnection({ status: 'passed' })
+      }
     } catch (e) {
-      const message = e instanceof Error ? e.message : '保存或测试失败'
-      setConnectionError(message)
-      notify(message)
+      const message = e instanceof Error ? e.message : '请稍后重试。'
+      if (phase === 'testing') setConnection({ status: 'failed', message, saved: dirty })
+      else setSaveError(message)
     } finally {
-      setSaving(false)
-      setTesting(false)
+      setActivity(null)
     }
   }
-  return (
+  const connectionTest = (
     <>
+      <div className="settings-test-bar">
+        <span className={connected ? 'settings-connected' : ''} role="status">
+          {connected && <Check size={16} />}
+          {activity === 'testing'
+            ? '正在等待模型的流式回复…'
+            : connected
+              ? '流式回复验证通过'
+              : '发送一条测试消息，验证模型能否回复。'}
+        </span>
+        <button type="button" className="button soft" onClick={() => void submit(true)}>
+          {activity ? <LoaderCircle className="spin" size={15} /> : <Plug size={15} />}
+          {dirty ? '保存并测试连接' : '测试连接'}
+        </button>
+      </div>
+      {connection?.status === 'failed' && (
+        <p className="settings-alert" role="alert">
+          {connection.saved ? '更改已保存，连接测试失败。' : '连接测试失败。'}
+          {connection.message}
+        </p>
+      )}
+    </>
+  )
+  return (
+    <div className="settings-page" ref={page}>
       <header className="page-header">
         <div>
-          <span className="eyebrow">MAKE IT YOURS</span>
-          <h1>为陪伴，注入一点智能。</h1>
-          <p>连接你喜欢的模型，调节声音，找到最舒服的对话方式。</p>
+          <h1>设置</h1>
+          <p>配置模型连接、语音和智能体工具。</p>
         </div>
-        <button className="button primary" disabled={saving} onClick={() => void save()}>
-          {saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}保存设置
-        </button>
+        <div className="settings-save-actions">
+          <span className="settings-save-state" role="status">
+            {activity === 'saving'
+              ? '正在保存…'
+              : activity === 'testing'
+                ? '正在测试连接…'
+                : dirty
+                  ? '有未保存的更改'
+                  : saved
+                    ? '设置已保存'
+                    : ''}
+          </span>
+          <button
+            className="button primary"
+            disabled={!dirty || activity !== null}
+            onClick={() => void submit()}
+          >
+            {activity === 'saving' ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <Save size={16} />
+            )}
+            保存设置
+          </button>
+        </div>
       </header>
-      <div className="settings-content">
-        <nav className="settings-tabs" aria-label="设置分类">
-          {[
-            { id: 'llm', name: '语言模型', icon: Cpu },
-            { id: 'speech', name: '语音交互', icon: Volume2 },
-            { id: 'agent', name: '智能体', icon: WandSparkles },
-          ].map((t) => (
-            <button
-              key={t.id}
-              className={tab === t.id ? 'active' : ''}
-              onClick={() => setTab(t.id)}
-            >
-              <t.icon size={17} />
-              {t.name}
-              <ChevronRight size={14} />
-            </button>
-          ))}
-          <div className="privacy-note">
-            <ShieldCheck size={23} />
-            <strong>数据留在你的设备</strong>
-            <p>对话与配置存储在本地。使用云端模型时，消息会发送到你配置的服务。</p>
-          </div>
-        </nav>
-        <div className="settings-main">
+      <div className="settings-layout">
+        <aside className="settings-sidebar">
+          <nav className="settings-section-nav" aria-label="设置分类">
+            {sections.map(({ id, name, icon: Icon }) => (
+              <Link key={id} to={`?section=${id}`} aria-current={tab === id ? 'page' : undefined}>
+                <Icon size={17} />
+                {name}
+                <ChevronRight size={15} className="settings-section-arrow" />
+              </Link>
+            ))}
+          </nav>
+          <p className="settings-privacy">
+            <ShieldCheck size={16} />
+            <span>对话和记忆保存在本机。生成回复时，所用内容会发给配置的模型服务。</span>
+          </p>
+        </aside>
+        <fieldset
+          className="settings-form"
+          disabled={activity !== null}
+          aria-label={currentSection.name}
+        >
+          {saveError && (
+            <p className="settings-alert" role="alert">
+              保存失败。{saveError}
+            </p>
+          )}
           {form.environment_overrides.length > 0 && (
-            <div className="info-note">
+            <div className="settings-note">
               <Info size={18} />
-              <p>
-                部分配置由环境变量覆盖：{form.environment_overrides.join('、')}
-                。环境变量的优先级高于保存的设置。
-              </p>
+              <p>这些环境变量优先于应用内设置。{form.environment_overrides.join('、')}</p>
             </div>
           )}
           {tab === 'llm' && (
@@ -125,14 +230,14 @@ export default function SettingsPage() {
                   </span>
                   <div>
                     <h2>连接模型服务</h2>
-                    <p>支持任何 OpenAI Chat Completions 兼容接口</p>
+                    <p>选择服务预设，或填写 OpenAI 兼容接口。</p>
                   </div>
-                  <span className="tag">API</span>
                 </div>
                 <div className="preset-grid">
                   {presets.map((p) => (
                     <button
                       className={form.llm.base_url === p.url ? 'active' : ''}
+                      aria-pressed={form.llm.base_url === p.url}
                       key={p.name}
                       onClick={() => llm({ base_url: p.url, model: p.model })}
                     >
@@ -173,7 +278,11 @@ export default function SettingsPage() {
                     <input
                       type="checkbox"
                       checked={clearLLM}
-                      onChange={(e) => setClearLLM(e.target.checked)}
+                      onChange={(e) => {
+                        setClearLLM(e.target.checked)
+                        setConnection(null)
+                        setSaveError('')
+                      }}
                     />
                     清除已保存的密钥
                   </label>
@@ -183,29 +292,7 @@ export default function SettingsPage() {
                   <input value={form.llm.model} onChange={(e) => llm({ model: e.target.value })} />
                   <small>使用服务商模型 ID，或 Ollama / LM Studio 中已加载的模型名称。</small>
                 </label>
-                <div className="connection-test">
-                  <span className={connected ? 'connected' : 'muted'}>
-                    <span className={`status-dot ${connected ? '' : 'gray'}`} />
-                    {testing
-                      ? '正在验证实际回复能力…'
-                      : connected
-                        ? '流式回复验证通过'
-                        : '保存配置后测试模型连接'}
-                  </span>
-                  <button
-                    className="button ghost"
-                    disabled={saving}
-                    onClick={() => void save(true)}
-                  >
-                    {testing ? <LoaderCircle className="spin" size={15} /> : <Plug size={15} />}
-                    保存并测试连接
-                  </button>
-                </div>
-                {connectionError && (
-                  <p className="connection-error" role="alert">
-                    {connectionError}
-                  </p>
-                )}
+                {connectionTest}
               </section>
               <section className="settings-card">
                 <div className="card-heading">
@@ -213,14 +300,16 @@ export default function SettingsPage() {
                     <SlidersHorizontal size={20} />
                   </span>
                   <div>
-                    <h2>回复偏好</h2>
-                    <p>让回复更贴合你的期待</p>
+                    <h2>回复参数</h2>
+                    <p>调整生成长度和发送给模型的会话上下文。</p>
                   </div>
                 </div>
                 <div className="form-row">
                   <label className="form-field">
-                    创造性 / Temperature{' '}
-                    <span className="range-value">{form.llm.temperature.toFixed(1)}</span>
+                    <span className="settings-range-label">
+                      创造性 / Temperature
+                      <span>{form.llm.temperature.toFixed(1)}</span>
+                    </span>
                     <input
                       type="range"
                       min="0"
@@ -257,7 +346,9 @@ export default function SettingsPage() {
                     value={form.llm.context_messages}
                     onChange={(e) => llm({ context_messages: Number(e.target.value) })}
                   />
-                  <small>历史记录全部保存，此项控制发送给模型的最近消息数量。</small>
+                  <small>
+                    设置发送给模型的历史消息数量上限。较大的历史文字和图片会优先保留近期内容。
+                  </small>
                 </label>
               </section>
             </>
@@ -269,23 +360,28 @@ export default function SettingsPage() {
                   <Volume2 size={21} />
                 </span>
                 <div>
-                  <h2>听见你的伙伴</h2>
-                  <p>配置语音输入和回复朗读</p>
+                  <h2>语音输入与朗读</h2>
+                  <p>选择识别和朗读对话的方式。</p>
                 </div>
               </div>
               <label className="form-field">
                 语音方式
-                <select
+                <Select
                   value={form.speech.mode}
-                  onChange={(e) => speech({ mode: e.target.value as Settings['speech']['mode'] })}
+                  onValueChange={(value) => speech({ mode: value as Settings['speech']['mode'] })}
                 >
-                  <option value="browser">系统语音（Web Speech）</option>
-                  <option value="api">OpenAI 兼容语音 API</option>
-                  <option value="off">关闭语音</option>
-                </select>
+                  <SelectTrigger aria-label="语音方式" className="h-[42px] text-[14px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="browser">系统语音（Web Speech）</SelectItem>
+                    <SelectItem value="api">OpenAI 兼容语音 API</SelectItem>
+                    <SelectItem value="off">关闭语音</SelectItem>
+                  </SelectContent>
+                </Select>
               </label>
               {form.speech.mode === 'browser' && (
-                <div className="info-note">
+                <div className="settings-note">
                   <Info size={18} />
                   <p>
                     使用浏览器或系统提供的语音识别与合成。可用性、语种和联网要求取决于 WebView
@@ -318,7 +414,10 @@ export default function SettingsPage() {
                       <input
                         type="checkbox"
                         checked={clearSpeech}
-                        onChange={(e) => setClearSpeech(e.target.checked)}
+                        onChange={(e) => {
+                          setClearSpeech(e.target.checked)
+                          setSaveError('')
+                        }}
                       />
                       清除语音密钥
                     </label>
@@ -356,7 +455,7 @@ export default function SettingsPage() {
                   onChange={(e) => speech({ language: e.target.value })}
                 />
               </label>
-              <div className="info-note">
+              <div className="settings-note">
                 <Volume2 size={18} />
                 <p>
                   在聊天区点击麦克风开始录音，再次点击结束。录音识别后会填入输入框，确认内容后发送。点击停止可打断回复与朗读。
@@ -365,76 +464,77 @@ export default function SettingsPage() {
             </section>
           )}
           {tab === 'agent' && (
-            <section className="settings-card">
-              <div className="card-heading">
-                <span className="card-icon">
-                  <WandSparkles size={21} />
-                </span>
-                <div>
-                  <h2>Eino 智能体</h2>
-                  <p>用 Go 编排每一次对话</p>
+            <>
+              <section className="settings-card">
+                <div className="card-heading">
+                  <span className="card-icon">
+                    <WandSparkles size={21} />
+                  </span>
+                  <div>
+                    <h2>工具调用</h2>
+                    <p>运行状态会显示在回复旁，并保存在对话记录里。</p>
+                  </div>
                 </div>
-                <span className="tag">EINO</span>
-              </div>
-              <div className="agent-flow">
-                <span>角色人设</span>
-                <i>→</i>
-                <span>会话上下文</span>
-                <i>→</i>
-                <span>Eino</span>
-                <i>→</i>
-                <span>流式回复</span>
-              </div>
-              <div className="setting-toggle">
-                <div>
-                  <strong>启用 ReAct 工具调用</strong>
-                  <p>让伙伴查询当前时间，并主动切换 Live2D 表情。</p>
+                <div className="setting-toggle">
+                  <div>
+                    <strong id="agent-tools-label">启用智能体工具</strong>
+                    <p id="agent-tools-help">使用支持工具调用的模型，保存后即可在对话中使用。</p>
+                  </div>
+                  <Switch
+                    aria-labelledby="agent-tools-label"
+                    aria-describedby="agent-tools-help"
+                    checked={form.llm.tools_enabled}
+                    onCheckedChange={(checked) => llm({ tools_enabled: checked })}
+                  />
                 </div>
-                <button
-                  role="switch"
-                  aria-checked={form.llm.tools_enabled}
-                  className={`switch ${form.llm.tools_enabled ? 'on' : ''}`}
-                  onClick={() => llm({ tools_enabled: !form.llm.tools_enabled })}
+                <ul className="settings-tool-grid" aria-label="可调用的工具">
+                  {tools.map(({ name, icon: Icon, description }) => (
+                    <li key={name}>
+                      <Icon size={18} aria-hidden="true" />
+                      <div>
+                        <strong>{name}</strong>
+                        <p>{description}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {connectionTest}
+                <a
+                  href="https://www.cloudwego.io/zh/docs/eino/"
+                  className="settings-text-link"
+                  target="_blank"
+                  rel="noreferrer"
                 >
-                  <span />
-                </button>
-              </div>
-              <div className="tool-card">
-                <span>◷</span>
-                <div>
-                  <strong>current_time</strong>
-                  <p>读取服务端当前时间与时区。</p>
+                  Eino 官方文档 <ExternalLink size={13} />
+                </a>
+              </section>
+              <section className="settings-card">
+                <div className="card-heading">
+                  <span className="card-icon">
+                    <Brain size={21} />
+                  </span>
+                  <div>
+                    <h2>角色记忆</h2>
+                    <p>不同会话会参考同一角色最近更新的 8 条记忆。启用工具后可以检索更早的记忆。</p>
+                  </div>
                 </div>
-                <span className="tag">只读</span>
-              </div>
-              <div className="tool-card">
-                <span>☺</span>
-                <div>
-                  <strong>set_expression</strong>
-                  <p>自然、开心、难过、惊讶四种表情联动。</p>
-                </div>
-                <span className="tag">舞台</span>
-              </div>
-              <div className="info-note">
-                <Info size={18} />
-                <p>
-                  需要模型支持 function calling。关闭时仍通过 Eino Chain
-                  处理上下文与流式输出。人设可在“角色”页面单独设置。
-                </p>
-              </div>
-              <a
-                href="https://www.cloudwego.io/zh/docs/eino/"
-                className="text-link"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Eino 官方文档
-                <ExternalLink size={13} />
-              </a>
-            </section>
+                {character && (
+                  <button
+                    type="button"
+                    className="button soft"
+                    onClick={() => setShowMemories(true)}
+                  >
+                    管理 {character.name} 的记忆 <ChevronRight size={15} />
+                  </button>
+                )}
+              </section>
+            </>
           )}
-        </div>
+        </fieldset>
       </div>
-    </>
+      {showMemories && character && (
+        <CharacterMemories character={character} onClose={() => setShowMemories(false)} />
+      )}
+    </div>
   )
 }

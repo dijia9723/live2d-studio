@@ -4,7 +4,7 @@
   align-items: stretch;
   gap: 23px;
   min-width: 0;
-  color: #725f82;
+  color: var(--ink);
 }
 
 .character-controls-section {
@@ -19,13 +19,13 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
-  color: #806a91;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .character-controls-label small {
   font-size: 11px;
-  color: #b0a2ba;
+  color: var(--muted);
   font-weight: 400;
 }
 
@@ -43,12 +43,12 @@
   justify-content: center;
   gap: 6px;
   min-width: 0;
-  min-height: 84px;
+  min-height: 74px;
   padding: 11px 3px 10px;
-  border: 1px solid #eee8f4;
+  border: 1px solid var(--border);
   border-radius: 13px;
   background: #fff;
-  color: #aa97b9;
+  color: var(--muted);
   font-size: 12px;
   transition:
     background 160ms,
@@ -60,13 +60,13 @@
 .character-mood-card:hover:not(:disabled) {
   background: #fcf9ff;
   border-color: #d6c3e7;
-  color: #9772b7;
+  color: var(--purple);
 }
 
 .character-mood-card.active {
   background: linear-gradient(150deg, #f2e9fc, #faf5ff);
   border-color: #cbb0e3;
-  color: #9362b8;
+  color: var(--purple);
   box-shadow:
     0 3px 12px #9d76bd0b,
     inset 0 0 0 1px #ffffff80;
@@ -108,7 +108,7 @@
   border: 1px solid #e9e2ef;
   border-radius: 9px;
   background: #fff;
-  color: #887495;
+  color: var(--ink);
   font-size: 12px;
   text-overflow: ellipsis;
 }
@@ -138,7 +138,7 @@
   padding: 10px 12px;
   border: 1px solid #e7dbee;
   border-radius: 9px;
-  color: #9672b0;
+  color: var(--purple);
   font-size: 12px;
   transition:
     background 160ms,
@@ -177,7 +177,7 @@
   border-radius: 9px;
   background: #faf8fc;
   border: 1px dashed #e9e2ef;
-  color: #b0a0bc;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.8;
 }
@@ -186,13 +186,13 @@
   margin-top: 1px;
   background: transparent;
   border-color: #ece6f1;
-  color: #a190ad;
+  color: var(--muted);
 }
 
 .character-reset-button:hover:not(:disabled) {
   background: #faf6fd;
   border-color: #dccde9;
-  color: #9375a9;
+  color: var(--purple);
 }
 
 @media (prefers-reduced-motion: reduce) {

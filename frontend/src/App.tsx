@@ -1,3 +1,7 @@
+/**
+ * 文件职责：应用根组件。
+ * 负责启动时初始化全局状态、渲染启动/错误界面，并根据 ?pet=1 决定进入桌宠模式还是主应用路由。
+ */
 import { useEffect } from 'react'
 import { Flower2, LoaderCircle, RefreshCw } from 'lucide-react'
 import Router from './router'
@@ -8,6 +12,7 @@ export default function App() {
   const s = useStudio()
   useEffect(() => {
     void s.initialize()
+    // 仅依赖 initialize 的稳定引用，避免状态变化导致重复初始化。
   }, [s.initialize])
   if (!s.ready)
     return (
@@ -25,11 +30,12 @@ export default function App() {
         ) : (
           <>
             <LoaderCircle className="spin" size={21} />
-            <p>正在准备属于你们的空间…</p>
+            <p role="status">正在连接本地服务…</p>
           </>
         )}
       </div>
     )
+  // 桌宠窗口通过查询参数区分，复用同一份全局状态。
   if (new URLSearchParams(window.location.search).get('pet') === '1') return <PetPage />
   return <Router />
 }

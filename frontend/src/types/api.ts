@@ -1,3 +1,8 @@
+/**
+ * 文件职责：后端 API 的数据结构类型定义（角色、会话、消息、设置、流式事件、场景素材）。
+ */
+
+/** 角色（聊天伙伴），model_path 指向 Live2D 模型的 model3.json。 */
 export interface Character {
   id: string
   name: string
@@ -7,6 +12,15 @@ export interface Character {
   color: string
   created_at: string
 }
+/** 角色跨会话记忆条目。 */
+export interface CharacterMemory {
+  id: string
+  character_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+/** 一次对话会话。 */
 export interface Conversation {
   id: string
   character_id: string
@@ -14,6 +28,7 @@ export interface Conversation {
   created_at: string
   updated_at: string
 }
+/** 单条消息；status 表示生成状态，失败时 error 携带原因。 */
 export interface Message {
   id: string
   conversation_id: string
@@ -21,9 +36,17 @@ export interface Message {
   content: string
   image?: string
   error?: string
+  tool_runs?: ToolRun[]
   status: 'complete' | 'failed' | 'interrupted' | 'streaming'
   created_at: string
 }
+/** 工具调用记录，随助手消息一起返回。 */
+export interface ToolRun {
+  id: string
+  name: string
+  status: 'running' | 'completed' | 'failed'
+}
+/** 应用设置；has_*_key 只表示后端是否存有密钥，密钥本身不会下发。 */
 export interface Settings {
   llm: {
     base_url: string
@@ -47,12 +70,18 @@ export interface Settings {
   has_speech_key: boolean
   environment_overrides: string[]
 }
+/**
+ * SSE 流式事件：user 确认收到用户消息、delta 文本增量、expression 切换表情、
+ * tool 工具状态、done 结束并携带最终消息、error 失败。
+ */
 export interface StreamEvent {
-  type: 'user' | 'delta' | 'expression' | 'done' | 'error'
+  type: 'user' | 'delta' | 'expression' | 'done' | 'error' | 'tool'
   text?: string
   expression?: string
   message?: Message
+  tool?: ToolRun
 }
+/** 用户导入的场景素材（背景或叠加层），url 为需经 mediaURL 解析的相对路径。 */
 export interface SceneAsset {
   id: string
   name: string

@@ -1,0 +1,62 @@
+/*
+ * 文件职责：Tailwind v4 与 shadcn/ui 的主题入口。
+ *
+ * 分层约定（从低到高）：theme < base < legacy < components < utilities。
+ * - legacy 层存放项目原有的手写样式，保证既有视觉不变；
+ * - shadcn 组件的工具类位于 utilities 层，可以覆盖旧的全局元素样式；
+ * - legacy 声明在 base 之后，因此原有字号、按钮重置等规则优先于 Preflight。
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@import './styles.css' layer(legacy);
+@import './pet.css' layer(legacy);
+@import './interaction.css' layer(legacy);
+@import './workspace.css' layer(legacy);
+@import './shell.css' layer(legacy);
+@import './studio.css' layer(legacy);
+@import './settings-page.css' layer(legacy);
+@import './characters.css' layer(legacy);
+@import './character-controls.css' layer(legacy);
+@import './character-memories.css' layer(legacy);
+@import './overlay-manager.css' layer(legacy);
+@import './stage-effects.css' layer(legacy);
+
+/*
+ * shadcn/ui 设计令牌：沿用项目原有的淡紫主题。
+ * 使用 inline 让组件直接消费上面的 CSS 变量，避免再复制一份颜色值。
+ */
+@theme inline {
+  --font-sans: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+
+  --color-background: #ffffff;
+  --color-foreground: var(--ink);
+  --color-card: #ffffff;
+  --color-card-foreground: var(--ink);
+  --color-popover: #ffffff;
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--purple);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f2ecfa;
+  --color-secondary-foreground: #60408a;
+  --color-muted: #f6f2fa;
+  --color-muted-foreground: #8b7f9a;
+  --color-accent: #f5eefb;
+  --color-accent-foreground: #5f3d86;
+  --color-destructive: #b03e57;
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: #a17ce9;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.5rem;
+}

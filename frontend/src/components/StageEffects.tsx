@@ -1,5 +1,8 @@
+/**
+ * 文件职责：舞台氛围特效层（樱花/星光/萤火/光晕/轻雪）。
+ * 粒子位置由确定性哈希生成，避免重渲染时粒子跳动。
+ */
 import type { CSSProperties } from 'react'
-import '../assets/stage-effects.css'
 
 export const effectPresets = [
   {
@@ -48,14 +51,14 @@ const particleCounts: Record<string, number> = {
   snow: 40,
 }
 
-// A stable integer hash keeps particles in place across re-renders and changes
-// in intensity. No Math.random() runs during rendering.
+// 稳定的整数哈希让粒子在重渲染与强度变化时保持原位，渲染过程中不调用 Math.random()。
 function sample(seed: number) {
   let value = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b)
   value = Math.imul(value ^ (value >>> 13), 0xc2b2ae35)
   return ((value ^ (value >>> 16)) >>> 0) / 0x100000000
 }
 
+// 根据特效类型与粒子序号生成 CSS 变量，控制位置/大小/时长/漂移等外观。
 function particleStyle(id: string, index: number): CSSProperties {
   const salt = effectPresets.findIndex((effect) => effect.id === id) * 71 + 1
   const seed = index * 17 + salt
@@ -92,7 +95,11 @@ function particleStyle(id: string, index: number): CSSProperties {
   } as CSSProperties
 }
 
+/**
+ * @param effects 已持久化的特效设置；仅渲染已开启且强度大于 0 的预设
+ */
 export default function StageEffects({ effects }: { effects: StageEffect[] }) {
+  // 过滤并钳制强度，未知或关闭的预设不会产生 DOM。
   const activeEffects = effectPresets.flatMap((preset) => {
     const setting = effects.find((effect) => effect.id === preset.id && effect.enabled)
     if (!setting) return []
