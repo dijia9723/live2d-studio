@@ -1,0 +1,243 @@
+.stage-effects,
+.stage-effect {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.stage-effects {
+  z-index: 2;
+  isolation: isolate;
+}
+
+.stage-effects * {
+  pointer-events: none;
+}
+
+.stage-effect-particle {
+  position: absolute;
+  left: var(--particle-x);
+  top: var(--particle-y);
+  display: block;
+  width: var(--particle-size);
+  height: var(--particle-size);
+  font-style: normal;
+  opacity: calc(var(--effect-strength) * var(--particle-opacity));
+}
+
+.stage-effect-particle > b {
+  display: block;
+  width: 100%;
+  height: 100%;
+  font-weight: normal;
+}
+
+/* Falling wrappers span the stage height, so percentage transforms follow the
+   stage instead of the tiny petal. Only transforms/opacity are animated. */
+.stage-effect--sakura .stage-effect-particle,
+.stage-effect--snow .stage-effect-particle {
+  top: 0;
+  height: 100%;
+  animation: studio-effect-fall var(--particle-duration) var(--particle-delay) linear infinite;
+}
+
+.stage-effect--sakura .stage-effect-particle > b,
+.stage-effect--snow .stage-effect-particle > b {
+  height: var(--particle-size);
+  filter: blur(var(--particle-blur));
+}
+
+.stage-effect--sakura .stage-effect-particle > b {
+  border-radius: 85% 0 80% 45%;
+  background: linear-gradient(145deg, #fff5f7 4%, #f3a9c4 55%, #e889ac 100%);
+  box-shadow:
+    inset 1px 1px 1px #fff9,
+    0 0 4px #df7f9c30;
+  transform-origin: 30% 70%;
+  animation: studio-petal-turn 6s var(--particle-delay) ease-in-out infinite alternate;
+}
+
+.stage-effect--sakura .stage-effect-particle:nth-child(3n) > b {
+  border-radius: 10% 75% 25% 80%;
+  background: linear-gradient(155deg, #fff8fb, #f7c3d5 60%, #df91b1);
+  animation-direction: alternate-reverse;
+}
+
+.stage-effect--snow .stage-effect-particle > b {
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 20%, #f4faff 55%, #c8d5ebba);
+  box-shadow:
+    0 0 3px #fff,
+    0 0 1px 1px #b4c1e448;
+}
+
+.stage-effect--snow .stage-effect-particle:nth-child(4n) > b {
+  box-shadow: 0 0 6px 2px #ffffff90;
+}
+
+.stage-effect--stars .stage-effect-particle {
+  animation: studio-star-glimmer var(--particle-duration) var(--particle-delay) ease-in-out infinite;
+  filter: drop-shadow(0 0 4px #f6d7a9c0);
+}
+
+.stage-effect--stars .stage-effect-particle > b {
+  clip-path: polygon(50% 0%, 59% 37%, 100% 50%, 59% 59%, 50% 100%, 41% 59%, 0% 50%, 41% 37%);
+  background: linear-gradient(140deg, #fffef4 5%, #ffefad 55%, #e7b871);
+}
+
+.stage-effect--stars .stage-effect-particle:nth-child(3n) > b {
+  background: linear-gradient(135deg, #fff, #e3c5ff);
+  transform: rotate(25deg) scale(0.7);
+}
+
+.stage-effect--fireflies .stage-effect-particle {
+  border-radius: 50%;
+  background: #fcffc9;
+  box-shadow:
+    0 0 5px 2px #e8ed9b99,
+    0 0 13px 5px #c8d99c42;
+  animation: studio-firefly-drift var(--particle-duration) var(--particle-delay) ease-in-out
+    infinite alternate;
+}
+
+.stage-effect--fireflies .stage-effect-particle > b {
+  border-radius: 50%;
+  transform: scale(0.5);
+  background: #fff;
+  box-shadow: 0 0 2px #fff;
+}
+
+.stage-effect--fireflies .stage-effect-particle:nth-child(3n) {
+  background: #eeffd5;
+  box-shadow:
+    0 0 6px 2px #d7efab99,
+    0 0 14px 5px #b0e2b344;
+  animation-direction: alternate-reverse;
+}
+
+.stage-effect--aura {
+  opacity: calc(var(--effect-strength) * 0.8);
+}
+
+.stage-effect--aura .stage-effect-particle {
+  width: 70%;
+  height: 60%;
+  border-radius: 50%;
+  opacity: 0.72;
+  animation: studio-aura-breathe 12s ease-in-out infinite alternate;
+}
+
+.stage-effect--aura .stage-effect-particle:nth-child(1) {
+  top: 4%;
+  left: -24%;
+  background: radial-gradient(ellipse, #d4aaf2a8 0%, #dabcf45c 35%, #dabcf400 70%);
+}
+
+.stage-effect--aura .stage-effect-particle:nth-child(2) {
+  top: 38%;
+  left: 60%;
+  background: radial-gradient(ellipse, #ffc7bfa8 0%, #ffd1c95c 35%, #ffd1c900 70%);
+  animation-delay: -5s;
+  animation-direction: alternate-reverse;
+}
+
+.stage-effect--aura .stage-effect-particle:nth-child(3) {
+  top: 74%;
+  left: 4%;
+  width: 90%;
+  height: 36%;
+  background: radial-gradient(ellipse, #c3e9ef80 0%, #c7e4f050 32%, #c7e4f000 70%);
+  animation-delay: -9s;
+}
+
+@keyframes studio-effect-fall {
+  0% {
+    transform: translate3d(0, -10%, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: calc(var(--effect-strength) * var(--particle-opacity));
+  }
+  50% {
+    transform: translate3d(var(--particle-drift), 50%, 0);
+  }
+  90% {
+    opacity: calc(var(--effect-strength) * var(--particle-opacity));
+  }
+  100% {
+    transform: translate3d(calc(var(--particle-drift) * 0.4), 110%, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes studio-petal-turn {
+  from {
+    transform: rotate(var(--particle-turn)) rotateY(0deg);
+  }
+  to {
+    transform: rotate(calc(var(--particle-turn) + 160deg)) rotateY(65deg);
+  }
+}
+
+@keyframes studio-star-glimmer {
+  0%,
+  100% {
+    opacity: calc(var(--effect-strength) * 0.12);
+    transform: scale(0.48) rotate(-10deg);
+  }
+  48% {
+    opacity: calc(var(--effect-strength) * var(--particle-opacity));
+    transform: scale(1.08) rotate(8deg);
+  }
+  65% {
+    opacity: calc(var(--effect-strength) * 0.48);
+    transform: scale(0.8) rotate(0deg);
+  }
+}
+
+@keyframes studio-firefly-drift {
+  0% {
+    opacity: calc(var(--effect-strength) * 0.2);
+    transform: translate3d(0, 0, 0) scale(0.65);
+  }
+  45% {
+    opacity: calc(var(--effect-strength) * var(--particle-opacity));
+  }
+  100% {
+    opacity: calc(var(--effect-strength) * 0.45);
+    transform: translate3d(var(--particle-drift), var(--particle-float), 0) scale(1.1);
+  }
+}
+
+@keyframes studio-aura-breathe {
+  from {
+    transform: translate3d(0, 0, 0) scale(0.9);
+  }
+  to {
+    transform: translate3d(5%, -6%, 0) scale(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-effects .stage-effect-particle,
+  .stage-effects .stage-effect-particle > b {
+    animation: none;
+  }
+
+  .stage-effect--sakura .stage-effect-particle,
+  .stage-effect--snow .stage-effect-particle {
+    transform: translateY(var(--particle-y));
+    opacity: calc(var(--effect-strength) * var(--particle-opacity) * 0.65);
+  }
+
+  .stage-effect--sakura .stage-effect-particle > b {
+    transform: rotate(var(--particle-turn));
+  }
+
+  .stage-effect--stars .stage-effect-particle,
+  .stage-effect--fireflies .stage-effect-particle {
+    opacity: calc(var(--effect-strength) * var(--particle-opacity) * 0.7);
+  }
+}

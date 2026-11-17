@@ -1,0 +1,123 @@
+.stage-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 13px;
+  margin-top: 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  flex-shrink: 0;
+}
+.stage-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stage-controls .control-group {
+  flex-wrap: wrap;
+}
+.stage-controls .backgrounds {
+  margin-left: auto;
+}
+.stage-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.stage-select select {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  background: #faf8fc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: #76628a;
+  font-size: 10px;
+}
+.motion-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.motion-controls .stage-select {
+  flex: 1;
+  min-width: 110px;
+}
+.stage-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--purple);
+  padding: 5px 3px;
+}
+.stage-tool:hover:not(:disabled) {
+  background: #f2edf8;
+  border-radius: 5px;
+}
+.stage-interaction-hint {
+  font-size: 9px;
+  color: var(--muted);
+}
+.stage-feedback {
+  font-size: 10px;
+  color: #897396;
+  padding: 7px 3px 0;
+  min-height: 20px;
+}
+.stage-feedback + .companion-note {
+  padding-top: 10px;
+}
+.message-error {
+  background: #fff6f3;
+  border: 1px solid #f0ded7;
+  color: #9a6257;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 11px;
+  line-height: 1.7;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.message-error > div {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+}
+.message-error button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  color: #976b9d;
+  font-size: 10px;
+}
+.message-error button:hover {
+  text-decoration: underline;
+}
+.connection-error {
+  background: #fff6f3;
+  color: #a36759;
+  border: 1px solid #efdbd4;
+  padding: 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.pet-error {
+  color: #a36759;
+  border-color: #efdbd4;
+}
+@media (max-width: 1250px) {
+  .stage-controls {
+    padding: 10px;
+  }
+}

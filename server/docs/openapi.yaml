@@ -1,0 +1,303 @@
+openapi: 3.0.3
+info:
+  title: Live2D Studio API
+  version: 0.1.0
+  description: Local Gin API. Write requests require X-Studio-Client 1. SSE streams JSON events.
+servers:
+  - url: http://127.0.0.1:12393/api/v1
+security:
+  - StudioClient: []
+paths:
+  /health:
+    get:
+      summary: Service health and agent framework
+      responses:
+        '200': { description: Healthy }
+  /characters:
+    get:
+      summary: List characters and model paths
+      responses:
+        '200': { description: Character array in data }
+  /characters/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Update character name, description and system prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, system_prompt]
+              properties:
+                name: { type: string, maxLength: 100 }
+                description: { type: string }
+                system_prompt: { type: string, maxLength: 24000 }
+      responses:
+        '200': { description: Updated character }
+        '400': { description: Invalid input }
+        '404': { description: Character not found }
+  /characters/import:
+    post:
+      summary: Import one Cubism model from ZIP (100MB compressed, 200MB expanded)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200': { description: Imported character }
+        '400': { description: Invalid, unsafe or incomplete archive }
+  /conversations:
+    get:
+      summary: List conversations by most recent activity
+      responses:
+        '200': { description: Conversation array }
+    post:
+      summary: Create a conversation for a character
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [character_id]
+              properties:
+                character_id: { type: string }
+      responses:
+        '200': { description: Created conversation }
+        '400': { description: Invalid character }
+  /conversations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Rename a conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200': { description: Renamed }
+        '404': { description: Not found }
+    delete:
+      summary: Delete a conversation and its messages transactionally
+      responses:
+        '200': { description: Deleted }
+        '404': { description: Not found }
+        '409': { description: Conversation currently generating }
+  /conversations/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Read chronological messages including failure and interruption status
+      responses:
+        '200': { description: Message array }
+        '404': { description: Not found }
+    post:
+      summary: Send a message and receive Eino streaming output
+      description: Disconnect cancels upstream generation. At most one generation per conversation. done includes the persisted assistant message and status. error may follow done when generation failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 32000 }
+                image: { type: string, description: Optional PNG/JPEG/WebP base64 data URL, maximum 4MB decoded }
+      responses:
+        '200':
+          description: SSE data lines containing JSON events (user, delta, expression, done, error)
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: "data: {\"type\":\"delta\",\"text\":\"你好\"}\n\n"
+        '400': { description: Invalid message or image }
+        '404': { description: Not found }
+  /settings:
+    get:
+      summary: Get effective settings, secret-presence flags and environment override names
+      responses:
+        '200': { description: Settings with blank API keys }
+    put:
+      summary: Save LLM and speech settings (blank keys preserve existing secrets)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [llm, speech]
+              properties:
+                llm: { type: object, description: base_url, api_key, model, temperature, max_tokens, context_messages, tools_enabled }
+                speech: { type: object, description: mode (browser/api/off), base_url, api_key, asr_model, tts_model, voice, language }
+                clear_llm_key: { type: boolean, default: false }
+                clear_speech_key: { type: boolean, default: false }
+      responses:
+        '200': { description: Saved settings, secrets hidden }
+        '400': { description: Validation failed }
+  /settings/test:
+    post:
+      summary: Test saved effective settings through the actual Eino streaming and tools path
+      responses:
+        '200': { description: Model connection works }
+        '502': { description: Provider failed or timed out }
+  /scene-assets:
+    get:
+      summary: List local background image and video assets, newest first
+      responses:
+        '200':
+          description: SceneAsset array in data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, example: 0 }
+                  message: { type: string, example: ok }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SceneAsset' }
+    post:
+      summary: Upload a local background image or video
+      description: Images (PNG/JPEG/WebP/GIF) are limited to 15MiB, videos (MP4/WebM) to 150MiB. Format is checked from content signatures, not the filename or multipart MIME type. Files use UUID names and stay in the local data directory.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200': { description: Created SceneAsset in data }
+        '400': { description: Missing or unsupported image/video }
+        '413': { description: File or multipart body exceeded its size limit }
+  /scene-assets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    delete:
+      summary: Delete a local background record and its media file
+      responses:
+        '200': { description: Asset deleted }
+        '404': { description: Asset not found }
+  /scene-media/{filename}:
+    servers:
+      - url: http://127.0.0.1:12393
+    parameters:
+      - name: filename
+        in: path
+        required: true
+        schema: { type: string, description: Server-generated UUID with a canonical media extension }
+    get:
+      summary: Read registered local media, with byte-range seeking for videos
+      parameters:
+        - name: Range
+          in: header
+          schema: { type: string, example: 'bytes=0-1023' }
+      responses:
+        '200': { description: Original media bytes and detected Content-Type }
+        '206': { description: Requested byte range with Content-Range and Accept-Ranges headers }
+        '404': { description: Missing, unregistered or invalid media path }
+        '416': { description: Requested byte range cannot be satisfied }
+    head:
+      summary: Read media type and size headers without downloading the body
+      responses:
+        '200': { description: Content-Type, Content-Length and Accept-Ranges headers }
+        '404': { description: Media not found }
+  /speech/transcribe:
+    post:
+      summary: Transcribe an audio file with configured ASR API (25MB maximum)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200': { description: Recognized text in data.text }
+        '502': { description: Speech provider failed }
+  /speech/synthesize:
+    post:
+      summary: Synthesize text with configured TTS API
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 20000 }
+      responses:
+        '200':
+          description: MP3 audio
+          content:
+            audio/mpeg:
+              schema: { type: string, format: binary }
+        '502': { description: Speech provider failed }
+  /desktop:
+    get:
+      summary: Check if native desktop controls are available
+      responses:
+        '200': { description: data.available boolean }
+  /desktop/{action}:
+    parameters:
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [pet, pin] }
+    post:
+      summary: Show/hide pet or toggle main window on top
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200': { description: Window updated }
+        '409': { description: Requires desktop build }
+components:
+  schemas:
+    SceneAsset:
+      type: object
+      required: [id, name, kind, mime_type, size, url, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, description: Original display name, never used as a filesystem path }
+        kind: { type: string, enum: [image, video] }
+        mime_type: { type: string, enum: [image/png, image/jpeg, image/webp, image/gif, video/mp4, video/webm] }
+        size: { type: integer, format: int64, description: Original file size in bytes }
+        url: { type: string, example: '/scene-media/00000000-0000-0000-0000-000000000000.mp4' }
+        created_at: { type: string, format: date-time }
+  securitySchemes:
+    StudioClient:
+      type: apiKey
+      in: header
+      name: X-Studio-Client
+      description: Value must be 1 for writes. This is a local client marker, not authentication.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }

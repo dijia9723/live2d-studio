@@ -1,0 +1,24 @@
+version: '3'
+
+# `wails3 dev` 会读取 build/config.yml，用这里的任务编译并启动开发版本。
+vars:
+  APP_NAME: "Live2DStudio"
+  BIN_DIR: "bin"
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+
+tasks:
+  dev:build:
+    summary: 编译开发版本（保留调试信息，由 wails3 dev 调用）
+    cmds:
+      - go build -buildvcs=false -gcflags=all="-l" -o "{{.BIN_DIR}}/{{.APP_NAME}}-dev.exe" .
+
+  dev:frontend:
+    summary: 启动 Vite 开发服务器（由 wails3 dev 调用）
+    dir: frontend
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+
+  run:
+    summary: 启动开发版本（桌面窗口 + 内嵌 Gin 服务）
+    cmds:
+      - '"{{.BIN_DIR}}/{{.APP_NAME}}-dev.exe" -config server/configs/config.yaml'

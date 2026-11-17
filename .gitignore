@@ -1,0 +1,14 @@
+node_modules/
+frontend/dist/
+server/internal/webui/dist/*
+!server/internal/webui/dist/.gitkeep
+server/configs/config.yaml
+server/data/
+bin/
+.wails/
+frontend/bindings/
+*.log
+.env.local
+.DS_Store
+example/
+example/**

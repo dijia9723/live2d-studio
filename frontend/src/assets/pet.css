@@ -1,0 +1,38 @@
+html.pet-document,
+html.pet-document body,
+html.pet-document #root {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+.pet-toolbar {
+  position: absolute;
+  top: 5px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 9px;
+  background: #fff8;
+  border: 1px solid #eee2f4;
+  border-radius: 10px;
+  color: #a88dbb;
+  z-index: 10;
+}
+.pet-drag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  font-size: 10px;
+  --wails-draggable: drag;
+}
+.pet-toolbar button {
+  display: flex;
+  color: #bda6cc;
+  --wails-draggable: no-drag;
+}
+.pet-composer > svg {
+  color: #b699c9;
+  margin: 7px 3px 0 0;
+}

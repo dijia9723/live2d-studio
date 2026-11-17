@@ -1,0 +1,40 @@
+# wails3 dev 的监视与启动配置；生产构建仍使用 scripts/build.ps1。
+version: '3'
+
+info:
+  companyName: "Live2D Studio"
+  productName: "Live2D Studio"
+  productIdentifier: "com.live2d.studio"
+  description: "你的 AI 伙伴工作室"
+  copyright: "(c) 2026, Live2D Studio"
+  comments: ""
+  version: "0.1.0"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 500
+  ignore:
+    dir:
+      - .git
+      - .wails
+      - bin
+      - frontend
+      - node_modules
+      - server/data
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 task dev:build
+      type: blocking
+    - cmd: wails3 task dev:frontend
+      type: background
+    - cmd: wails3 task run
+      type: primary
+      exit_policy: shutdown

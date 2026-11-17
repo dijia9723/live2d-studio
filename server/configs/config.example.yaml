@@ -1,0 +1,20 @@
+# Relative paths resolve against this file's parent directory (server/).
+host: 127.0.0.1
+port: 12393
+data_dir: data
+llm:
+  base_url: https://api.openai.com/v1
+  api_key: ""
+  model: gpt-4o-mini
+  temperature: 0.7
+  max_tokens: 2048
+  context_messages: 40
+  tools_enabled: false
+speech:
+  mode: browser
+  base_url: https://api.openai.com/v1
+  api_key: ""
+  asr_model: whisper-1
+  tts_model: tts-1
+  voice: alloy
+  language: zh-CN

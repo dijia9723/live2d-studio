@@ -1,0 +1,16 @@
+# Publish only to the host loopback interface, including Docker Desktop.
+services:
+  studio:
+    build: .
+    ports:
+      - "127.0.0.1:12393:12393"
+    environment:
+      TZ: Asia/Shanghai
+      STUDIO_DATA_DIR: /app/data
+      STUDIO_HOST: 0.0.0.0
+      STUDIO_CONTAINER: "1"
+    volumes:
+      - studio-data:/app/data
+    restart: unless-stopped
+volumes:
+  studio-data:
