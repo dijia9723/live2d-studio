@@ -1,3 +1,5 @@
+// Package tests 是跨模块的端到端测试集合：用真实的 bootstrap 装配与 httptest
+// 上游模拟 OpenAI 兼容服务，覆盖对话、工具、设置、导入与语音等链路。
 package tests
 
 import (
@@ -22,6 +24,7 @@ import (
 	"server/internal/model"
 )
 
+// newApp 为每个用例装配独立临时数据目录，避免 SQLite 状态相互影响。
 func newApp(t *testing.T) *bootstrap.App {
 	t.Helper()
 	cfg := config.Defaults()
@@ -33,6 +36,8 @@ func newApp(t *testing.T) *bootstrap.App {
 	t.Cleanup(app.Close)
 	return app
 }
+
+// request 发送带客户端标识的 JSON 请求，模拟前端调用本地 API。
 func request(t *testing.T, app *bootstrap.App, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var data []byte
@@ -54,6 +59,8 @@ func request(t *testing.T, app *bootstrap.App, method, path string, body any) *h
 	app.Router.ServeHTTP(w, r)
 	return w
 }
+
+// decode 校验响应成功并取出统一响应体中的 data 字段。
 func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 	t.Helper()
 	if w.Code != 200 {
@@ -67,6 +74,8 @@ func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 	}
 	return result.Data
 }
+
+// configure 把模型与语音指向测试上游，并写入设置。
 func configure(t *testing.T, app *bootstrap.App, base string, tools bool) {
 	t.Helper()
 	cfg := config.Defaults().Settings
@@ -78,10 +87,14 @@ func configure(t *testing.T, app *bootstrap.App, base string, tools bool) {
 		t.Fatal(w.Body.String())
 	}
 }
+
+// conversation 为默认角色 mao 创建一个新会话。
 func conversation(t *testing.T, app *bootstrap.App) model.Conversation {
 	t.Helper()
 	return decode[model.Conversation](t, request(t, app, "POST", "/conversations", map[string]string{"character_id": "mao"}))
 }
+
+// chunk 按 OpenAI 流式格式写出一帧并立即刷新，模拟真实上游的分片下发。
 func chunk(w http.ResponseWriter, delta any, finish any) {
 	data, _ := json.Marshal(map[string]any{"id": "test", "object": "chat.completion.chunk", "created": 1, "model": "test-model", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
 	fmt.Fprintf(w, "data: %s\n\n", data)
@@ -90,6 +103,7 @@ func chunk(w http.ResponseWriter, delta any, finish any) {
 	}
 }
 
+// TestEinoStreamingAndPersistence 覆盖流式增量输出、历史透传、标题生成与删除会话时级联清理。
 func TestEinoStreamingAndPersistence(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +160,8 @@ func TestEinoStreamingAndPersistence(t *testing.T) {
 		t.Fatal("messages left after conversation deletion")
 	}
 }
+
+// TestEinoReActToolCalling 覆盖工具声明、工具结果回传模型与执行轨迹持久化。
 func TestEinoReActToolCalling(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,8 +172,8 @@ func TestEinoReActToolCalling(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		w.Header().Set("Content-Type", "text/event-stream")
 		if calls.Add(1) == 1 {
-			if len(body.Tools) != 2 {
-				t.Errorf("expected two tools, got %d", len(body.Tools))
+			if len(body.Tools) != 4 {
+				t.Errorf("expected four tools, got %d", len(body.Tools))
 			}
 			chunk(w, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "expression_1", "type": "function", "function": map[string]any{"name": "set_expression", "arguments": `{"expression":"happy"}`}}}}, nil)
 			chunk(w, map[string]any{}, "tool_calls")
@@ -187,7 +203,16 @@ func TestEinoReActToolCalling(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("ReAct made %d requests", calls.Load())
 	}
+	if !strings.Contains(w.Body.String(), `"type":"tool"`) || !strings.Contains(w.Body.String(), `"status":"running"`) {
+		t.Fatal("tool progress was not streamed")
+	}
+	messages := decode[[]model.Message](t, request(t, app, "GET", "/conversations/"+conv.ID+"/messages", nil))
+	if len(messages) != 2 || len(messages[1].ToolRuns) != 1 || messages[1].ToolRuns[0].Name != "set_expression" || messages[1].ToolRuns[0].Status != model.ToolCompleted {
+		t.Fatalf("tool result not persisted: %+v", messages)
+	}
 }
+
+// TestProviderFailureIsPersisted 校验上游失败时错误事件会下发，并把失败状态持久化。
 func TestProviderFailureIsPersisted(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, `{"error":{"message":"bad key"}}`, 401) }))
 	defer up.Close()
@@ -204,6 +229,8 @@ func TestProviderFailureIsPersisted(t *testing.T) {
 	}
 }
 
+// TestSettingsSecretsAndReopen 覆盖密钥不回显、空密钥保留旧值、重启后仍生效，
+// 以及非法服务地址被拒绝。
 func TestSettingsSecretsAndReopen(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.DataDir = t.TempDir()
@@ -246,6 +273,8 @@ func TestSettingsSecretsAndReopen(t *testing.T) {
 	}
 }
 
+// TestRejectCrossOriginAndRebinding 覆盖跨站 Origin、域名重绑定与缺少客户端
+// 标识的写请求都被拒绝。
 func TestRejectCrossOriginAndRebinding(t *testing.T) {
 	app := newApp(t)
 	for _, test := range []struct{ host, origin, client string }{{"127.0.0.1:12393", "https://evil.example", "1"}, {"attacker.example:12393", "", "1"}, {"127.0.0.1:12393", "", ""}} {
@@ -261,6 +290,7 @@ func TestRejectCrossOriginAndRebinding(t *testing.T) {
 	}
 }
 
+// archive 在内存中构造 ZIP 包，供模型导入用例复用。
 func archive(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var out bytes.Buffer
@@ -277,6 +307,8 @@ func archive(t *testing.T, files map[string]string) []byte {
 	}
 	return out.Bytes()
 }
+
+// upload 以 multipart 表单提交模型包。
 func upload(t *testing.T, app *bootstrap.App, data []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer
@@ -291,6 +323,9 @@ func upload(t *testing.T, app *bootstrap.App, data []byte) *httptest.ResponseRec
 	app.Router.ServeHTTP(w, r)
 	return w
 }
+
+// TestModelImportAndZipTraversal 覆盖模型包导入成功，以及 ZIP 路径穿越、
+// 内部路径逃逸与缺少 moc 文件等异常被拒绝。
 func TestModelImportAndZipTraversal(t *testing.T) {
 	app := newApp(t)
 	good := map[string]string{"sample/model.model3.json": `{"Version":3,"FileReferences":{"Moc":"model.moc3","Textures":["texture.png"]}}`, "sample/model.moc3": "moc", "sample/texture.png": "png"}
@@ -308,6 +343,7 @@ func TestModelImportAndZipTraversal(t *testing.T) {
 	}
 }
 
+// TestStreamCancellation 覆盖客户端断开后上游请求被取消、回复标记为 interrupted。
 func TestStreamCancellation(t *testing.T) {
 	started := make(chan struct{})
 	cancelled := make(chan struct{})
@@ -354,6 +390,7 @@ func TestStreamCancellation(t *testing.T) {
 	}
 }
 
+// TestSpeechProxy 覆盖语音转写与合成的后端代理及密钥转发。
 func TestSpeechProxy(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer speech-test" {
@@ -416,6 +453,7 @@ func TestSpeechProxy(t *testing.T) {
 	}
 }
 
+// TestConcurrentGenerationRejected 覆盖同一会话并发生成、以及生成过程中删除会话被拒绝。
 func TestConcurrentGenerationRejected(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

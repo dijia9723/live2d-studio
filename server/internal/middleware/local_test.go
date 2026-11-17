@@ -1,3 +1,5 @@
+// 本文件覆盖本地访问控制中间件对桌面来源、开发服务器来源与伪造来源的判定。
+
 package middleware
 
 import (
@@ -8,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// TestWailsOriginRequiresActiveDesktop 校验 wails.localhost 仅在桌面外壳就绪时
+// 放行，并拒绝伪造域名、带路径、带端口或缺少客户端标识的请求。
 func TestWailsOriginRequiresActiveDesktop(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	active := false

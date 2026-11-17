@@ -1,3 +1,6 @@
+// 本文件覆盖场景素材（背景图/视频）：类型嗅探、增删查、路径安全、Range 请求
+// 与大小限制。
+
 package tests
 
 import (
@@ -18,6 +21,7 @@ import (
 	"server/internal/modules/sceneassets"
 )
 
+// sceneUpload 以 multipart 上传素材，claimedType 用于验证服务端不信任客户端声明。
 func sceneUpload(t *testing.T, app *bootstrap.App, name, claimedType string, data []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer
@@ -39,6 +43,7 @@ func sceneUpload(t *testing.T, app *bootstrap.App, name, claimedType string, dat
 	return w
 }
 
+// sceneMedia 请求素材文件，byteRange 非空时模拟视频分段请求。
 func sceneMedia(app *bootstrap.App, method, url, byteRange string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "http://127.0.0.1:12393"+url, nil)
 	if byteRange != "" {
@@ -49,6 +54,7 @@ func sceneMedia(app *bootstrap.App, method, url, byteRange string) *httptest.Res
 	return w
 }
 
+// mp4Sample 构造带合法 ftyp box 的最小 MP4 头，供类型嗅探使用。
 func mp4Sample() []byte {
 	header := make([]byte, 24)
 	binary.BigEndian.PutUint32(header, 24)
@@ -57,6 +63,8 @@ func mp4Sample() []byte {
 	return append(header, []byte("video range test payload")...)
 }
 
+// TestSceneAssetsUploadListDeleteAndContentTypes 覆盖图片/视频上传、按真实内容
+// 识别类型、列表倒序、读取内容一致与删除后的清理。
 func TestSceneAssetsUploadListDeleteAndContentTypes(t *testing.T) {
 	app := newApp(t)
 	samples := []struct {
@@ -73,7 +81,7 @@ func TestSceneAssetsUploadListDeleteAndContentTypes(t *testing.T) {
 	var uploaded []model.SceneAsset
 	for _, sample := range samples {
 		t.Run(sample.mime, func(t *testing.T) {
-			// A fake multipart type must not override content sniffing.
+			// 伪造的 multipart 类型不得覆盖服务端的内容嗅探结果。
 			asset := decode[model.SceneAsset](t, sceneUpload(t, app, sample.name, "text/javascript", sample.data))
 			if asset.Name != sample.name || asset.Kind != sample.kind || asset.MIMEType != sample.mime || asset.Size != int64(len(sample.data)) || !strings.HasPrefix(asset.URL, "/scene-media/"+asset.ID) || !strings.HasSuffix(asset.URL, sample.ext) {
 				t.Fatalf("unexpected upload metadata: %+v", asset)
@@ -108,6 +116,8 @@ func TestSceneAssetsUploadListDeleteAndContentTypes(t *testing.T) {
 	}
 }
 
+// TestSceneAssetsRejectScriptsAndUnsafePaths 校验脚本、SVG、伪装视频与空文件被
+// 拒绝，越权路径返回 404，且失败上传不会残留临时文件。
 func TestSceneAssetsRejectScriptsAndUnsafePaths(t *testing.T) {
 	app := newApp(t)
 	for _, data := range [][]byte{[]byte("<script>alert('not an image')</script>"), []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"), []byte{0x1a, 0x45, 0xdf, 0xa3, 0x42, 0x82, 0x88, 'm', 'a', 't', 'r', 'o', 's', 'k', 'a'}, {}} {
@@ -126,6 +136,7 @@ func TestSceneAssetsRejectScriptsAndUnsafePaths(t *testing.T) {
 	}
 }
 
+// TestSceneVideoRangeAndHead 覆盖视频的字节区间请求、HEAD 元数据与非法区间拒绝。
 func TestSceneVideoRangeAndHead(t *testing.T) {
 	app := newApp(t)
 	data := mp4Sample()
@@ -143,6 +154,7 @@ func TestSceneVideoRangeAndHead(t *testing.T) {
 	}
 }
 
+// zeroReader 生成无限全零数据，避免为超限用例真的分配大块内存。
 type zeroReader struct{}
 
 func (zeroReader) Read(p []byte) (int, error) {
@@ -150,6 +162,7 @@ func (zeroReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// sizedSceneUpload 用手写 multipart 分片构造任意大小的上传，避免真实分配内存。
 func sizedSceneUpload(t *testing.T, app *bootstrap.App, prefix []byte, size int64) *httptest.ResponseRecorder {
 	t.Helper()
 	const boundary = "scene-size-test"
@@ -164,6 +177,8 @@ func sizedSceneUpload(t *testing.T, app *bootstrap.App, prefix []byte, size int6
 	return w
 }
 
+// TestSceneAssetSizeLimitsAndLargeVideo 覆盖图片与视频各自的体积上限，并确认
+// 大视频不会被通用 JSON 请求体限制误拦。
 func TestSceneAssetSizeLimitsAndLargeVideo(t *testing.T) {
 	app := newApp(t)
 	png := []byte("\x89PNG\r\n\x1a\n")
@@ -177,7 +192,7 @@ func TestSceneAssetSizeLimitsAndLargeVideo(t *testing.T) {
 	if len(files) != 0 {
 		t.Fatal("oversized uploads were not cleaned up")
 	}
-	// Regression: the common 26MB JSON body limit must not block videos.
+	// 回归用例：通用的 26MB JSON 请求体限制不能拦住视频上传。
 	asset := decode[model.SceneAsset](t, sizedSceneUpload(t, app, mp4Sample(), 27<<20))
 	if asset.Kind != "video" || asset.Size != 27<<20 {
 		t.Fatal("large video upload did not bypass the JSON request limit")

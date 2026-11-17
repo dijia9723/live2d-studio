@@ -1,3 +1,5 @@
+// 本文件实现素材列表、流式上传、删除与媒体读取的 HTTP 处理。
+
 package sceneassets
 
 import (
@@ -11,6 +13,7 @@ import (
 	"server/internal/pkg"
 )
 
+// list 按创建时间倒序返回全部背景素材，并补全可访问的 URL。
 func (m *Module) list(c *gin.Context) {
 	assets, err := m.Service.List(c.Request.Context())
 	if err != nil {
@@ -20,9 +23,11 @@ func (m *Module) list(c *gin.Context) {
 	pkg.OK(c, assets)
 }
 
+// upload 以流式方式解析 multipart，只处理表单字段 file，并把内容直接写入受限的临时文件，
+// 避免大视频常驻内存；实际类型由文件头嗅探而非客户端声明的 Content-Type 决定。
+// 其它字段会被丢弃，但同样受 MaxBytesReader 的总量限制。
 func (m *Module) upload(c *gin.Context) {
-	// Stream directly to a bounded temporary file instead of buffering a large
-	// video in memory or relying on the untrusted multipart Content-Type.
+	// 请求体上限比服务层限制多留 1MB，容纳 multipart 边界与其它表单字段。
 	if c.Request.ContentLength > VideoLimit+(1<<20) {
 		pkg.Fail(c, 413, ErrTooLarge.Error())
 		return
@@ -74,6 +79,7 @@ func (m *Module) upload(c *gin.Context) {
 	}
 }
 
+// remove 删除素材记录与磁盘文件，记录不存在时返回 404。
 func (m *Module) remove(c *gin.Context) {
 	err := m.Service.Delete(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -87,6 +93,8 @@ func (m *Module) remove(c *gin.Context) {
 	pkg.OK(c, nil)
 }
 
+// media 使用 http.ServeContent 输出媒体文件，自动支持 HEAD 与单段/多段 Range 请求，
+// 因此视频可以拖动进度条；文件名非法或记录不存在时统一返回 404。
 func (m *Module) media(c *gin.Context) {
 	filename := strings.TrimPrefix(c.Param("path"), "/")
 	f, asset, err := m.Service.Open(c.Request.Context(), filename)
@@ -102,6 +110,6 @@ func (m *Module) media(c *gin.Context) {
 	}
 	c.Header("Content-Type", asset.MIMEType)
 	c.Header("Cache-Control", "no-cache")
-	// ServeContent handles HEAD and single/multipart byte ranges for seeking.
+	// ServeContent 负责处理 HEAD 与单段/多段字节范围，从而支持视频拖动播放。
 	http.ServeContent(c.Writer, c.Request, asset.Filename, info.ModTime(), f)
 }

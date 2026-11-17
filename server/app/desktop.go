@@ -1,5 +1,8 @@
 //go:build !headless
 
+// 本文件实现桌面构建（未加 headless 标签）下的 Wails 主窗口与桌宠窗口；
+// headless 构建由 headless.go 提供同名 runDesktop 桩函数。
+
 package app
 
 import (
@@ -11,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+// windows 保存 Wails 应用与窗口句柄，供前端通过绑定的方法控制置顶与桌宠显示。
 type windows struct {
 	mu   sync.Mutex
 	app  *application.App
@@ -19,7 +23,10 @@ type windows struct {
 	url  string
 }
 
+// Pin 控制主窗口是否始终置顶。
 func (w *windows) Pin(enabled bool) { w.main.SetAlwaysOnTop(enabled) }
+
+// Pet 按需创建、显示或隐藏透明无边框的桌宠窗口，窗口实例会被复用。
 func (w *windows) Pet(enabled bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -33,6 +40,9 @@ func (w *windows) Pet(enabled bool) {
 		w.pet.Hide()
 	}
 }
+
+// runDesktop 启动 Wails 应用：页面资源经 DesktopHandler 代理本地 HTTP 服务，
+// 既保证原生运行时可用，又避免聊天 SSE 被 Wails 的资源层整体缓冲。
 func runDesktop(backend *bootstrap.App, address string) error {
 	proxy, err := webui.DesktopHandler(address)
 	if err != nil {

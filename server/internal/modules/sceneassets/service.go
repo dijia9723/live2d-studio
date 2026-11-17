@@ -1,3 +1,5 @@
+// 本文件实现素材的类型嗅探、流式落盘、文件名校验与记录维护。
+
 package sceneassets
 
 import (
@@ -16,21 +18,27 @@ import (
 	"server/internal/model"
 )
 
+// ImageLimit 是单张图片允许的最大字节数。
+// VideoLimit 是单个视频允许的最大字节数。
 const (
 	ImageLimit int64 = 15 << 20
 	VideoLimit int64 = 150 << 20
 )
 
 var (
+	// ErrUnsupported 表示文件头不属于允许的图片或视频类型。
 	ErrUnsupported = errors.New("请选择 PNG、JPEG、WebP、GIF 图片或 MP4、WebM 视频")
-	ErrTooLarge    = errors.New("图片最大 15MB，视频最大 150MB")
+	// ErrTooLarge 表示文件超过了对应类型的大小上限。
+	ErrTooLarge = errors.New("图片最大 15MB，视频最大 150MB")
 )
 
+// Service 负责素材落盘、类型校验与数据库记录维护，MediaDir 中只存放随机 UUID 文件名。
 type Service struct {
 	DB       *gorm.DB
 	MediaDir string
 }
 
+// List 按创建时间倒序返回全部素材，并补全访问 URL。
 func (s *Service) List(ctx context.Context) ([]model.SceneAsset, error) {
 	result := []model.SceneAsset{}
 	err := s.DB.WithContext(ctx).Order("created_at desc, rowid desc").Find(&result).Error
@@ -42,6 +50,9 @@ func (s *Service) List(ctx context.Context) ([]model.SceneAsset, error) {
 
 func mediaURL(name string) string { return "/scene-media/" + name }
 
+// mediaType 依据文件头嗅探真实类型，返回类别、MIME 与规范化扩展名，不信任客户端文件名后缀。
+// WebM 与 Matroska 共用 EBML 魔数，因此额外要求 DocType 元素，
+// 避免把浏览器无法播放的普通 MKV 当作视频接受。
 func mediaType(header []byte) (kind, mime, extension string) {
 	mime = http.DetectContentType(header)
 	switch mime {
@@ -56,8 +67,8 @@ func mediaType(header []byte) (kind, mime, extension string) {
 	case "video/mp4":
 		return "video", mime, ".mp4"
 	case "video/webm":
-		// The EBML magic is also used by Matroska. Require the WebM
-		// DocType element as well so an arbitrary MKV is not accepted.
+		// EBML 魔数同样被 Matroska 使用，需再确认 WebM 的 DocType 元素，
+		// 以免任意 MKV 被当作可播放视频接受。
 		if bytes.Contains(header, []byte{0x42, 0x82, 0x84, 'w', 'e', 'b', 'm'}) {
 			return "video", mime, ".webm"
 		}
@@ -65,6 +76,8 @@ func mediaType(header []byte) (kind, mime, extension string) {
 	return "", "", ""
 }
 
+// displayName 从上传文件名提取展示名：去掉路径与控制字符并限制为 120 个字符，
+// 为空或仅为 "." 时使用默认名称。该名称只用于展示，不参与磁盘路径拼接。
 func displayName(name string) string {
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
 	name = strings.TrimSpace(strings.Map(func(r rune) rune {
@@ -83,6 +96,8 @@ func displayName(name string) string {
 	return name
 }
 
+// Create 先读取文件头判断类型，再流式写入临时文件并把大小限制在对应上限内，
+// 随后原子重命名为 UUID 文件名并写入数据库；数据库失败时删除已落盘的文件。
 func (s *Service) Create(ctx context.Context, name string, input io.Reader) (model.SceneAsset, error) {
 	var result model.SceneAsset
 	header := make([]byte, 512)
@@ -131,6 +146,7 @@ func (s *Service) Create(ctx context.Context, name string, input io.Reader) (mod
 	return result, err
 }
 
+// validFilename 只接受“UUID + 允许的扩展名”的形式，杜绝路径穿越与任意文件读取。
 func validFilename(name string) bool {
 	ext := filepath.Ext(name)
 	switch ext {
@@ -142,6 +158,7 @@ func validFilename(name string) bool {
 	return err == nil && name == id.String()+ext
 }
 
+// Open 校验文件名与数据库记录后打开素材文件，并用 Lstat 拒绝符号链接与非普通文件。
 func (s *Service) Open(ctx context.Context, filename string) (*os.File, model.SceneAsset, error) {
 	var asset model.SceneAsset
 	if !validFilename(filename) {
@@ -159,6 +176,8 @@ func (s *Service) Open(ctx context.Context, filename string) (*os.File, model.Sc
 	return f, asset, err
 }
 
+// Delete 在事务内先删磁盘文件再删数据库记录；文件已不存在时仍继续清理记录，
+// 避免留下无法删除的条目。
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, err := uuid.Parse(id); err != nil {
 		return gorm.ErrRecordNotFound

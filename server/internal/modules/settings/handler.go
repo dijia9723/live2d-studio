@@ -1,3 +1,5 @@
+// 本文件实现设置读取、保存与模型连通性测试的 HTTP 处理。
+
 package settings
 
 import (
@@ -12,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// safe 生成可下发的配置视图：清空两项 API Key，只通过 has_*_key 告知是否已配置，
+// 并列出被环境变量覆盖、界面无法修改的字段名。
 func safe(v Values) gin.H {
 	hasLLM, hasSpeech := v.LLM.APIKey != "", v.Speech.APIKey != ""
 	v.LLM.APIKey = ""
@@ -24,6 +28,8 @@ func safe(v Values) gin.H {
 	}
 	return gin.H{"llm": v.LLM, "speech": v.Speech, "has_llm_key": hasLLM, "has_speech_key": hasSpeech, "environment_overrides": locked}
 }
+
+// get 返回生效配置的安全视图，密钥永远不会下发到前端。
 func (m *Module) get(c *gin.Context) {
 	v, err := m.Service.Get()
 	if err != nil {
@@ -33,12 +39,15 @@ func (m *Module) get(c *gin.Context) {
 	pkg.OK(c, safe(v))
 }
 
+// Request 是保存设置的请求体。
+// API Key 留空表示保留原值（界面不回传密钥），Clear*Key 为真时显式清除已保存的密钥。
 type Request struct {
 	Values
 	ClearLLMKey    bool `json:"clear_llm_key"`
 	ClearSpeechKey bool `json:"clear_speech_key"`
 }
 
+// save 校验并保存配置，成功后再返回最新的安全视图。
 func (m *Module) save(c *gin.Context) {
 	var req Request
 	if c.ShouldBindJSON(&req) != nil {
@@ -51,6 +60,9 @@ func (m *Module) save(c *gin.Context) {
 	}
 	m.get(c)
 }
+
+// test 用当前生效配置发起一次真实流式对话，只有确实收到文本才算连通，
+// 避免仅能建立连接、却无法生成回复的配置被误判为成功。
 func (m *Module) test(c *gin.Context) {
 	v, err := m.Service.Get()
 	if err != nil {
@@ -59,10 +71,9 @@ func (m *Module) test(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 	defer cancel()
-	// Use the real streaming path and parameters so a connection test cannot
-	// report success for settings that cannot actually produce a chat reply.
+	// 使用真实的流式路径与参数，确保连通性测试不会对无法产生回复的配置误报成功。
 	content := ""
-	err = (&agent.Service{}).Stream(ctx, v.LLM, model.Character{SystemPrompt: "This is a connection test. Reply briefly."}, []model.Message{{Role: "user", Content: "Reply with OK."}}, func(e agent.Event) {
+	err = m.Agent.Stream(ctx, v.LLM, model.Character{SystemPrompt: "This is a connection test. Reply briefly."}, []model.Message{{Role: "user", Content: "Reply with OK."}}, func(e agent.Event) {
 		if e.Type == "delta" {
 			content += e.Text
 		}

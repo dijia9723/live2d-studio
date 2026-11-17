@@ -1,3 +1,5 @@
+// Package config 定义配置结构、默认值、加载优先级与参数校验。
+// 配置文件只提供初始值；环境变量在读取时覆盖，但绝不回写配置文件。
 package config
 
 import (
@@ -12,16 +14,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// LLM 描述对话模型接入与生成参数。
 type LLM struct {
-	BaseURL         string  `json:"base_url" yaml:"base_url"`
-	APIKey          string  `json:"api_key" yaml:"api_key"`
-	Model           string  `json:"model" yaml:"model"`
-	Temperature     float32 `json:"temperature" yaml:"temperature"`
-	MaxTokens       int     `json:"max_tokens" yaml:"max_tokens"`
-	ContextMessages int     `json:"context_messages" yaml:"context_messages"`
-	ToolsEnabled    bool    `json:"tools_enabled" yaml:"tools_enabled"`
+	BaseURL     string  `json:"base_url" yaml:"base_url"`
+	APIKey      string  `json:"api_key" yaml:"api_key"`
+	Model       string  `json:"model" yaml:"model"`
+	Temperature float32 `json:"temperature" yaml:"temperature"`
+	MaxTokens   int     `json:"max_tokens" yaml:"max_tokens"`
+	// ContextMessages 是随请求携带的历史消息条数上限（按完整问答轮次截断）。
+	ContextMessages int `json:"context_messages" yaml:"context_messages"`
+	// ToolsEnabled 控制是否向模型声明工具（表情、记忆检索等）。
+	ToolsEnabled bool `json:"tools_enabled" yaml:"tools_enabled"`
 }
 
+// Speech 描述语音识别与合成的接入方式：mode 为 browser 时由前端直连，
+// 为 api 时经后端代理，为 off 时关闭语音功能。
 type Speech struct {
 	Mode     string `json:"mode" yaml:"mode"`
 	BaseURL  string `json:"base_url" yaml:"base_url"`
@@ -32,11 +39,13 @@ type Speech struct {
 	Language string `json:"language" yaml:"language"`
 }
 
+// Settings 是持久化到数据库、并可通过接口热更新的那部分配置。
 type Settings struct {
 	LLM    LLM    `json:"llm" yaml:"llm"`
 	Speech Speech `json:"speech" yaml:"speech"`
 }
 
+// Config 是进程级配置：监听地址、数据目录，以及内联的 Settings。
 type Config struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
@@ -44,6 +53,7 @@ type Config struct {
 	Settings `yaml:",inline"`
 }
 
+// Defaults 返回可离线启动的默认配置：只监听回环地址，语音默认交给浏览器。
 func Defaults() Config {
 	return Config{Host: "127.0.0.1", Port: 12393, DataDir: "data", Settings: Settings{
 		LLM:    LLM{BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", Temperature: 0.7, MaxTokens: 2048, ContextMessages: 40},
@@ -51,6 +61,13 @@ func Defaults() Config {
 	}}
 }
 
+// Load 读取 YAML 配置并叠加环境变量，最后做安全与范围校验。
+//
+// 优先级：内置默认值 < YAML < 环境变量（STUDIO_HOST/STUDIO_PORT/STUDIO_DATA_DIR）。
+// 文件不存在时沿用默认值，便于首次启动；其他读取或解析错误直接返回。
+// 相对 DataDir 以配置文件所在目录的上级为基准，因此数据目录与进程工作目录无关。
+// 出于桌面应用安全考虑，Host 只允许回环地址；仅在 STUDIO_CONTAINER=1 时
+// 放行 0.0.0.0，供容器端口映射使用。
 func Load(path string) (Config, error) {
 	cfg := Defaults()
 	data, err := os.ReadFile(path)
@@ -59,9 +76,11 @@ func Load(path string) (Config, error) {
 			return cfg, fmt.Errorf("读取配置: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
+		// 只有“文件不存在”可以忽略，权限等其他错误必须暴露。
 		return cfg, err
 	}
 	if !filepath.IsAbs(cfg.DataDir) {
+		// path 位于 <根>/configs/config.yaml，取两级父目录即安装根，数据目录随之稳定。
 		cfg.DataDir = filepath.Join(filepath.Dir(filepath.Dir(path)), cfg.DataDir)
 	}
 	if host := os.Getenv("STUDIO_HOST"); host != "" {
@@ -76,6 +95,7 @@ func Load(path string) (Config, error) {
 	if dir := os.Getenv("STUDIO_DATA_DIR"); dir != "" {
 		cfg.DataDir = dir
 	}
+	// 容器场景显式声明后才允许监听所有网卡，桌面环境始终限制在回环地址。
 	if cfg.Host != "localhost" && (net.ParseIP(cfg.Host) == nil || !net.ParseIP(cfg.Host).IsLoopback()) && !(cfg.Host == "0.0.0.0" && os.Getenv("STUDIO_CONTAINER") == "1") {
 		return cfg, fmt.Errorf("桌面服务只允许绑定回环地址")
 	}
@@ -85,7 +105,7 @@ func Load(path string) (Config, error) {
 	return cfg, Validate(cfg.Settings)
 }
 
-// Effective applies environment overrides at the boundary; they are never persisted.
+// Effective 在边界处应用环境变量覆盖，覆盖值只作用于本次运行，不会落盘。
 func Effective(s Settings) Settings {
 	if v := os.Getenv("STUDIO_LLM_API_KEY"); v != "" {
 		s.LLM.APIKey = v
@@ -102,7 +122,9 @@ func Effective(s Settings) Settings {
 	return s
 }
 
+// Validate 校验服务地址与模型参数范围，避免把凭据写进 URL 或使用越界参数。
 func Validate(s Settings) error {
+	// 地址必须是有效的 HTTP(S) 基地址，且不含认证信息、查询串或片段。
 	for _, raw := range []string{s.LLM.BaseURL, s.Speech.BaseURL} {
 		u, err := url.Parse(raw)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {

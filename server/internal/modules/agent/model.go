@@ -1,3 +1,5 @@
+// 本文件根据模型名称组装 OpenAI 兼容的模型参数。
+
 package agent
 
 import (
@@ -8,9 +10,10 @@ import (
 	"server/internal/config"
 )
 
-// The adapter validates these model families before sending the HTTP request.
-// Sending temperature for them makes an otherwise valid configuration fail
-// locally, even when a parameter-free connection check succeeds.
+// chatModelConfig 组装聊天模型配置。
+// gpt-5、o1、o3、o4 等系列不接受 temperature 与 max_tokens，适配层会在本地直接拒绝
+// 这些参数，因此只对它们设置 MaxCompletionTokens；其它模型才使用 Temperature 与 MaxTokens，
+// 否则一个本来可用的配置会在发起请求时本地失败。
 func chatModelConfig(cfg config.LLM, key string) *openai.ChatModelConfig {
 	model := strings.TrimSpace(cfg.Model)
 	c := &openai.ChatModelConfig{

@@ -1,3 +1,5 @@
+// 本文件实现会话的 HTTP 处理器，包含把模型流转换为 SSE 的发送逻辑。
+
 package conversation
 
 import (
@@ -17,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// list 按更新时间倒序返回全部会话。
 func (m *Module) list(c *gin.Context) {
 	v, err := m.Service.List()
 	if err != nil {
@@ -25,6 +28,8 @@ func (m *Module) list(c *gin.Context) {
 	}
 	pkg.OK(c, v)
 }
+
+// create 为指定角色创建会话，角色不存在时返回 400。
 func (m *Module) create(c *gin.Context) {
 	var req struct {
 		CharacterID string `json:"character_id"`
@@ -40,21 +45,35 @@ func (m *Module) create(c *gin.Context) {
 	}
 	pkg.OK(c, v)
 }
+
+// rename 更新会话标题，按字符数（而非字节数）限制为 1–100。
 func (m *Module) rename(c *gin.Context) {
 	var req struct {
 		Title string `json:"title"`
 	}
-	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Title) == "" || len([]rune(req.Title)) > 100 {
+	if c.ShouldBindJSON(&req) != nil {
 		pkg.Fail(c, 400, "标题须为 1–100 个字符")
 		return
 	}
-	result := m.Service.DB.Model(&model.Conversation{}).Where("id = ?", c.Param("id")).Update("title", req.Title)
-	if result.Error != nil || result.RowsAffected == 0 {
+	title := strings.TrimSpace(req.Title)
+	if title == "" || len([]rune(title)) > 100 {
+		pkg.Fail(c, 400, "标题须为 1–100 个字符")
+		return
+	}
+	result := m.Service.DB.WithContext(c.Request.Context()).Model(&model.Conversation{}).
+		Where("id = ?", c.Param("id")).UpdateColumn("title", title)
+	if result.Error != nil {
+		pkg.Fail(c, 500, "保存标题失败")
+		return
+	}
+	if result.RowsAffected == 0 {
 		pkg.Fail(c, 404, "会话不存在")
 		return
 	}
 	pkg.OK(c, nil)
 }
+
+// remove 删除会话；会话正在生成时返回 409，避免删除与流式写入竞争。
 func (m *Module) remove(c *gin.Context) {
 	if err := m.Service.Delete(c.Param("id")); err != nil {
 		if errors.Is(err, ErrBusy) {
@@ -66,6 +85,8 @@ func (m *Module) remove(c *gin.Context) {
 	}
 	pkg.OK(c, nil)
 }
+
+// messages 返回指定会话的全部消息，按创建顺序排列。
 func (m *Module) messages(c *gin.Context) {
 	v, err := m.Service.Messages(c.Param("id"))
 	if err != nil {
@@ -74,12 +95,17 @@ func (m *Module) messages(c *gin.Context) {
 	}
 	pkg.OK(c, v)
 }
+
+// send 校验文本与内联图片后建立 SSE 连接并转发流式事件。
+// 事件类型依次可能为 user（已落库的用户消息）、delta（文本增量）、expression（表情切换）、
+// tool（工具运行状态）、done（已保存的完整回复）与 error（脱敏后的错误提示）。
+// 请求超时为 3 分钟；客户端断开导致 ctx 取消时，服务层会把回复标记为 interrupted。
 func (m *Module) send(c *gin.Context) {
 	var req struct {
 		Text  string `json:"text"`
 		Image string `json:"image"`
 	}
-	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Text) == "" || len(req.Text) > 32000 {
+	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Text) == "" || len(req.Text) > maxMessageTextBytes {
 		pkg.Fail(c, 400, "消息不能为空，且最多 32000 字节")
 		return
 	}
@@ -90,7 +116,7 @@ func (m *Module) send(c *gin.Context) {
 			return
 		}
 		data, err := base64.StdEncoding.DecodeString(parts[1])
-		if err != nil || len(data) > 4<<20 {
+		if err != nil || len(data) > maxMessageImageBytes {
 			pkg.Fail(c, 400, "图片无效或大于 4MB")
 			return
 		}

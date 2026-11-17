@@ -1,3 +1,5 @@
+// 本文件实现桌面外壳的资源代理，把页面资源与业务 API 分流到本地监听地址。
+
 package webui
 
 import (
@@ -13,10 +15,13 @@ import (
 	"strings"
 )
 
-// DesktopHandler keeps page assets on the Wails origin, where the native runtime
-// works, but points business requests at the real loopback HTTP listener. Wails'
-// Windows asset response writer buffers a whole response and cannot stream SSE;
-// routing the chat API through it delays every token until generation finishes.
+// DesktopHandler 构建桌面外壳使用的资源代理：页面资源留在 Wails 源上（原生
+// 运行时才能工作），业务请求则转发到真实的回环 HTTP 监听地址。Wails 在
+// Windows 上的资源响应会整体缓冲，无法流式转发 SSE；若聊天接口走它，
+// 每个 token 都会被延迟到整段生成结束。
+//
+// 代理只接受回环目标，避免误把本地服务暴露给远端；HTML 响应会在 <head>
+// 之后注入 window.__STUDIO_API_BASE_URL__，让前端直接访问真实监听地址。
 func DesktopHandler(address string) (http.Handler, error) {
 	target, err := url.Parse(address)
 	if err != nil || target.Scheme != "http" || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || target.Path != "" {
@@ -35,8 +40,9 @@ func DesktopHandler(address string) (http.Handler, error) {
 		origin := r.Header.Get("Origin")
 		director(r)
 		r.Host = target.Host
-		// HTML must stay uncompressed so the startup configuration can be added.
+		// HTML 必须保持未压缩，才能在响应体中注入启动配置。
 		r.Header.Set("Accept-Encoding", "identity")
+		// 同源请求改写为真实监听地址的 Origin，以满足后端的来源校验。
 		if origin == "http://"+originalHost || origin == "https://"+originalHost {
 			r.Header.Set("Origin", target.Scheme+"://"+target.Host)
 		}
@@ -54,7 +60,7 @@ func DesktopHandler(address string) (http.Handler, error) {
 		if len(body) > maxHTML {
 			return fmt.Errorf("桌面页面超出大小限制")
 		}
-		// Inject before any module in the document starts using the API client.
+		// 在任何模块开始使用 API 客户端之前完成注入。
 		if !bytes.Contains(body, []byte("<head>")) {
 			return fmt.Errorf("桌面页面缺少 head 元素")
 		}

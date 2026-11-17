@@ -1,3 +1,5 @@
+// 本文件把上游模型错误归类为可安全展示的中文提示。
+
 package agent
 
 import (
@@ -10,11 +12,13 @@ import (
 	upstream "github.com/meguminnnnnnnnn/go-openai"
 )
 
+// ErrEmptyResponse 表示模型请求成功但没有返回任何可显示的文本，
+// 通常意味着模型不支持对话或输出 token 上限过小。
 var ErrEmptyResponse = errors.New("模型没有返回可显示的文本")
 
-// ErrorMessage intentionally uses fixed descriptions. Provider messages can
-// contain credentials, request bodies or private gateway URLs and must never be
-// sent to the UI or stored in the conversation history verbatim.
+// ErrorMessage 将错误转换为固定的中文提示。
+// 这里刻意不回传原始错误文本：供应商消息可能包含密钥、请求体或内网网关地址，
+// 既不能展示到界面，也不能原样写入会话历史。
 func ErrorMessage(err error) string {
 	if err == nil {
 		return ""

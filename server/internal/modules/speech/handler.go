@@ -1,3 +1,5 @@
+// 本文件实现语音识别与语音合成的转发处理，包括大小限制与上游错误映射。
+
 package speech
 
 import (
@@ -13,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// proxy 以当前语音配置向外部服务发起 POST，附加 Bearer 密钥并设置 90 秒超时；
+// 请求沿用客户端 ctx，前端取消时上游请求也会被取消。
 func (m *Module) proxy(c *gin.Context, path, contentType string, body io.Reader) (*http.Response, error) {
 	cfg, err := m.Settings.Get()
 	if err != nil {
@@ -28,6 +32,9 @@ func (m *Module) proxy(c *gin.Context, path, contentType string, body io.Reader)
 	}
 	return (&http.Client{Timeout: 90 * time.Second}).Do(req)
 }
+
+// transcribe 接收不超过 25MB 的音频，重新封装为 multipart 后转发给 /audio/transcriptions；
+// 只解析上游响应前 1MB，防止异常服务返回超大响应占用内存。
 func (m *Module) transcribe(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 25<<20)
 	f, err := c.FormFile("file")
@@ -81,6 +88,8 @@ func (m *Module) transcribe(c *gin.Context) {
 	}
 	pkg.OK(c, out)
 }
+
+// synthesize 把文本转发给 /audio/speech，并直接回传音频流（最多 30MB），不在本地缓存整段音频。
 func (m *Module) synthesize(c *gin.Context) {
 	var req struct {
 		Text string `json:"text"`

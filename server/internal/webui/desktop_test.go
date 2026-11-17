@@ -1,3 +1,5 @@
+// 本文件覆盖桌面资源代理：API 地址注入、目标地址校验与请求头规范化。
+
 package webui
 
 import (
@@ -13,9 +15,11 @@ import (
 	"time"
 )
 
+// TestDesktopHTMLPointsAPIAtRealListener 校验注入的 API 地址指向真实监听端口，
+// SSE 首帧不被缓冲，且非 HTML 资源保持原样。
 func TestDesktopHTMLPointsAPIAtRealListener(t *testing.T) {
-	// A buffered asset transport cannot deliver a live event. The injected API
-	// address must let the browser bypass that transport and reach this listener.
+	// 会整体缓冲的资源层无法传递实时事件，注入的 API 地址必须让浏览器
+	// 绕过该层直接访问本监听地址。
 	finish := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -81,6 +85,8 @@ func TestDesktopHTMLPointsAPIAtRealListener(t *testing.T) {
 	}
 }
 
+// TestDesktopHandlerRejectsRemoteTargets 校验代理拒绝非回环、带认证信息或带
+// 查询参数的远端目标。
 func TestDesktopHandlerRejectsRemoteTargets(t *testing.T) {
 	for _, address := range []string{"https://example.com", "http://example.com", "http://localhost.evil", "http://user:pass@127.0.0.1", "http://127.0.0.1?bad=1"} {
 		if _, err := DesktopHandler(address); err == nil {
@@ -89,6 +95,8 @@ func TestDesktopHandlerRejectsRemoteTargets(t *testing.T) {
 	}
 }
 
+// TestDesktopHandlerRewritesHostAndOrigin 校验转发时 Host、Origin 与
+// Accept-Encoding 被规范化。
 func TestDesktopHandlerRewritesHostAndOrigin(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host == "wails.localhost" || r.Header.Get("Origin") != "http://"+r.Host || r.Header.Get("Accept-Encoding") != "identity" {

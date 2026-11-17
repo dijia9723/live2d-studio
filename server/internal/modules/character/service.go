@@ -1,3 +1,5 @@
+// 本文件实现角色数据的持久化与 Cubism 模型压缩包的安全导入。
+
 package character
 
 import (
@@ -16,21 +18,28 @@ import (
 	"gorm.io/gorm"
 )
 
+// Service 负责角色的增删改查与模型目录管理。
+// ModelsDir 下每个角色使用独立的 UUID 目录，避免不同模型的文件互相覆盖。
 type Service struct {
 	DB        *gorm.DB
 	ModelsDir string
 }
 
+// List 按创建时间升序返回全部角色。
 func (s *Service) List() ([]model.Character, error) {
 	v := []model.Character{}
 	err := s.DB.Order("created_at asc").Find(&v).Error
 	return v, err
 }
+
+// Get 按 ID 读取单个角色，不存在时返回 gorm.ErrRecordNotFound。
 func (s *Service) Get(id string) (model.Character, error) {
 	var v model.Character
 	err := s.DB.First(&v, "id = ?", id).Error
 	return v, err
 }
+
+// Update 只更新名称、描述与提示词，保留导入时生成的模型路径等字段。
 func (s *Service) Update(id string, v model.Character) (model.Character, error) {
 	old, err := s.Get(id)
 	if err != nil {
@@ -43,8 +52,10 @@ func (s *Service) Update(id string, v model.Character) (model.Character, error) 
 	return old, err
 }
 
-// Import extracts an exported Cubism model. Archives are bounded and may not
-// escape their destination, contain symlinks, or refer to remote resources.
+// Import 解压导出的 Cubism 模型并创建角色记录。
+// 安全约束：文件数量与解压总大小受限，拒绝绝对路径、路径穿越、盘符与符号链接，
+// 忽略未知扩展名的文件，并要求压缩包内恰有一个 .model3.json。
+// 导入失败时会删除整个目标目录，不留半成品；成功后校验模型引用未越界且资源确实存在。
 func (s *Service) Import(file string) (model.Character, error) {
 	var result model.Character
 	z, err := zip.OpenReader(file)
@@ -115,6 +126,9 @@ func (s *Service) Import(file string) (model.Character, error) {
 	success = true
 	return result, nil
 }
+
+// extract 写入单个文件，并用 LimitReader 加实际字节数比对，
+// 防止压缩包声明的未压缩大小与实际内容不一致。
 func extract(f *zip.File, target string) error {
 	in, err := f.Open()
 	if err != nil {
@@ -138,6 +152,9 @@ func extract(f *zip.File, target string) error {
 	}
 	return nil
 }
+
+// validateReferences 解析 .model3.json 的 FileReferences，要求存在 Moc 引用，
+// 并确认所有被引用资源都位于解压目录内且已成功落盘，防止模型在运行时读取目录外的文件。
 func validateReferences(root, file string) error {
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
 	if err != nil {

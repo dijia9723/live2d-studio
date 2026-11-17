@@ -53,6 +53,57 @@ paths:
       responses:
         '200': { description: Imported character }
         '400': { description: Invalid, unsafe or incomplete archive }
+  /characters/{id}/memories:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: List a character's saved memories by most recent update
+      responses:
+        '200':
+          description: CharacterMemory array in data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, example: 0 }
+                  message: { type: string, example: ok }
+                  data:
+                    type: array
+                    maxItems: 100
+                    items: { $ref: '#/components/schemas/CharacterMemory' }
+        '404': { description: Character not found }
+    post:
+      summary: Save a memory for a character
+      description: If the trimmed content is already saved for this character, the existing memory is returned.
+      requestBody:
+        $ref: '#/components/requestBodies/CharacterMemoryInput'
+      responses:
+        '200': { $ref: '#/components/responses/SavedCharacterMemory' }
+        '400': { description: Invalid memory content }
+        '404': { description: Character not found }
+        '409': { description: Character has reached the 100-memory limit }
+  /characters/{id}/memories/{memoryId}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+      - name: memoryId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      summary: Update a character's saved memory
+      requestBody:
+        $ref: '#/components/requestBodies/CharacterMemoryInput'
+      responses:
+        '200': { $ref: '#/components/responses/SavedCharacterMemory' }
+        '400': { description: Invalid memory content }
+        '404': { description: Memory not found for this character }
+        '409': { description: Identical content exists in another memory for this character }
+    delete:
+      summary: Delete a character's saved memory
+      responses:
+        '200': { description: Deleted }
+        '404': { description: Memory not found for this character }
   /conversations:
     get:
       summary: List conversations by most recent activity
@@ -88,7 +139,9 @@ paths:
                 title: { type: string, minLength: 1, maxLength: 100 }
       responses:
         '200': { description: Renamed }
+        '400': { description: Invalid title }
         '404': { description: Not found }
+        '500': { description: Title could not be saved }
     delete:
       summary: Delete a conversation and its messages transactionally
       responses:
@@ -101,11 +154,22 @@ paths:
     get:
       summary: Read chronological messages including failure and interruption status
       responses:
-        '200': { description: Message array }
+        '200':
+          description: Message array in data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, example: 0 }
+                  message: { type: string, example: ok }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
         '404': { description: Not found }
     post:
       summary: Send a message and receive Eino streaming output
-      description: Disconnect cancels upstream generation. At most one generation per conversation. done includes the persisted assistant message and status. error may follow done when generation failed.
+      description: Disconnect cancels upstream generation. At most one generation per conversation. A tool event includes a ToolRun in its tool field. Updates for the same call share an ID. A done event includes the persisted assistant Message and may be followed by an error event when generation failed.
       requestBody:
         required: true
         content:
@@ -118,11 +182,17 @@ paths:
                 image: { type: string, description: Optional PNG/JPEG/WebP base64 data URL, maximum 4MB decoded }
       responses:
         '200':
-          description: SSE data lines containing JSON events (user, delta, expression, done, error)
+          description: SSE data lines containing JSON events (user, delta, expression, tool, done, error)
           content:
             text/event-stream:
               schema: { type: string }
-              example: "data: {\"type\":\"delta\",\"text\":\"你好\"}\n\n"
+              example: |
+                data: {"type":"tool","tool":{"id":"3c944b72-d4d3-4ddb-b256-651e63f53ca1","name":"current_time","status":"running"}}
+
+                data: {"type":"tool","tool":{"id":"3c944b72-d4d3-4ddb-b256-651e63f53ca1","name":"current_time","status":"completed"}}
+
+                data: {"type":"delta","text":"你好"}
+
         '400': { description: Invalid message or image }
         '404': { description: Not found }
   /settings:
@@ -277,7 +347,61 @@ paths:
         '200': { description: Window updated }
         '409': { description: Requires desktop build }
 components:
+  requestBodies:
+    CharacterMemoryInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [content]
+            properties:
+              content: { type: string, minLength: 1, maxLength: 300, description: Memory text with leading and trailing whitespace trimmed before validation }
+  responses:
+    SavedCharacterMemory:
+      description: Saved CharacterMemory in data
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: integer, example: 0 }
+              message: { type: string, example: ok }
+              data: { $ref: '#/components/schemas/CharacterMemory' }
   schemas:
+    CharacterMemory:
+      type: object
+      required: [id, character_id, content, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        character_id: { type: string }
+        content: { type: string, minLength: 1, maxLength: 300 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Message:
+      type: object
+      required: [id, conversation_id, role, content, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        image: { type: string }
+        status: { type: string, enum: [complete, failed, interrupted] }
+        error: { type: string }
+        tool_runs:
+          type: array
+          description: Assistant tool calls with their last persisted status, in call order
+          items: { $ref: '#/components/schemas/ToolRun' }
+        created_at: { type: string, format: date-time }
+    ToolRun:
+      type: object
+      description: Local tool trace containing the call ID, tool name and status. Tool arguments and results are omitted.
+      required: [id, name, status]
+      properties:
+        id: { type: string, format: uuid, description: Locally generated call ID }
+        name: { type: string, description: Registered tool name or unknown_tool }
+        status: { type: string, enum: [running, completed, failed] }
     SceneAsset:
       type: object
       required: [id, name, kind, mime_type, size, url, created_at]

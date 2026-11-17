@@ -1,3 +1,6 @@
+// 本文件覆盖配置路径解析：发布版数据根目录稳定、go run 回退源码目录、
+// 显式 -config 优先，以及候选目录全不存在时的兜底路径。
+
 package app
 
 import (
@@ -5,13 +8,15 @@ import (
 	"testing"
 )
 
+// TestPackagedConfigIndependentOfWorkingDirectory 校验发布版无论从哪个工作目录
+// 启动，都选中可执行文件旁的 configs。
 func TestPackagedConfigIndependentOfWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
 	bin := filepath.Join(workspace, "bin")
 	executable := filepath.Join(bin, "Live2DStudio.exe")
-	// The directories, not the presence of config.yaml, select the data root:
-	// first launch also needs to store settings beside the packaged executable.
+	// 依据目录是否存在而非 config.yaml 来选择数据根：首次启动同样需要在
+	// 可执行文件旁创建配置与设置。
 	directories := map[string]bool{
 		filepath.Join(bin, "configs"):                 true,
 		filepath.Join(workspace, "server", "configs"): true,
@@ -28,6 +33,8 @@ func TestPackagedConfigIndependentOfWorkingDirectory(t *testing.T) {
 	}
 }
 
+// TestGoRunConfigFallsBackToSourceDirectories 校验 go run（可执行文件位于临时
+// 构建目录）时回退到 server/configs。
 func TestGoRunConfigFallsBackToSourceDirectories(t *testing.T) {
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
@@ -42,6 +49,8 @@ func TestGoRunConfigFallsBackToSourceDirectories(t *testing.T) {
 	}
 }
 
+// TestExplicitConfigWinsOverPackagedConfig 校验显式 -config 完全跳过自动目录
+// 探测，相对路径基于工作目录展开。
 func TestExplicitConfigWinsOverPackagedConfig(t *testing.T) {
 	root := t.TempDir()
 	cwd := filepath.Join(root, "working")
@@ -61,6 +70,8 @@ func TestExplicitConfigWinsOverPackagedConfig(t *testing.T) {
 	}
 }
 
+// TestConfigFallbackAnchoredToExecutable 校验所有候选目录都不存在时，
+// 兜底路径仍锚定可执行文件旁。
 func TestConfigFallbackAnchoredToExecutable(t *testing.T) {
 	root := t.TempDir()
 	executable := filepath.Join(root, "bin", "Live2DStudio.exe")

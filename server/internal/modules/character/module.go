@@ -1,3 +1,5 @@
+// Package character 管理 Live2D 角色的查询、修改与模型压缩包导入，
+// 路由前缀为 /api/v1/characters。
 package character
 
 import (
@@ -11,8 +13,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Module 注册角色路由并校验请求参数。
 type Module struct{ Service *Service }
 
+// Register 挂载角色列表、更新与模型导入接口。
 func (m *Module) Register(r *gin.RouterGroup) {
 	r.GET("/characters", func(c *gin.Context) {
 		v, err := m.Service.List()
@@ -37,6 +41,9 @@ func (m *Module) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/characters/import", m.importModel)
 }
+
+// importModel 接收 multipart 上传的模型 ZIP，先落到临时文件再交给 Service 校验。
+// MaxBytesReader 限制请求体，临时文件在函数返回时删除，避免大文件常驻内存或残留磁盘。
 func (m *Module) importModel(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 100<<20)
 	f, err := c.FormFile("file")
