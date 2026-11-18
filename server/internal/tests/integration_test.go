@@ -165,15 +165,23 @@ func TestEinoStreamingAndPersistence(t *testing.T) {
 func TestEinoReActToolCalling(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Tools    []any
-			Messages []struct{ Role string }
+		body := readUpstreamChatRequest(t, r)
+		if body == nil {
+			return
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
 		w.Header().Set("Content-Type", "text/event-stream")
 		if calls.Add(1) == 1 {
-			if len(body.Tools) != 4 {
-				t.Errorf("expected four tools, got %d", len(body.Tools))
+			advertised := make(map[string]bool, len(body.Tools))
+			for _, tool := range body.Tools {
+				advertised[tool.Function.Name] = true
+			}
+			for _, name := range []string{
+				"current_time", "set_expression", "calculate", "get_character_actions", "play_motion",
+				"set_model_expression", "update_character", "search_memories", "save_memory",
+			} {
+				if !advertised[name] {
+					t.Errorf("request did not advertise %s", name)
+				}
 			}
 			chunk(w, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "expression_1", "type": "function", "function": map[string]any{"name": "set_expression", "arguments": `{"expression":"happy"}`}}}}, nil)
 			chunk(w, map[string]any{}, "tool_calls")

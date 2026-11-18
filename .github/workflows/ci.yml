@@ -4,13 +4,13 @@ jobs:
   check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26.4'
           cache-dependency-path: |
@@ -23,7 +23,7 @@ jobs:
         working-directory: server
       - run: go vet -tags headless ./...
         working-directory: server
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: live2d-studio-windows
           path: |

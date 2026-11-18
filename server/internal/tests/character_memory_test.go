@@ -3,7 +3,6 @@
 package tests
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,23 +18,19 @@ func TestCharacterMemoryInChatAndSearch(t *testing.T) {
 	const note = "我喜欢抹茶蛋糕"
 	const otherNote = "我喜欢蓝莓蛋糕"
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Tools    []any
-			Messages []struct{ Role, Content string }
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Error(err)
+		body := readUpstreamChatRequest(t, r)
+		if body == nil {
 			return
 		}
 		var prompt, user, result string
 		for _, message := range body.Messages {
 			switch message.Role {
 			case "system":
-				prompt = message.Content
+				prompt = message.Text
 			case "user":
-				user = message.Content
+				user = message.Text
 			case "tool":
-				result = message.Content
+				result = message.Text
 			}
 		}
 		wantNote := user == "开启工具时记得什么" || user == "关闭工具时记得什么"
