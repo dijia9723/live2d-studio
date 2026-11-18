@@ -68,6 +68,79 @@
   flex: 1;
   display: flex;
 }
+.camera-panel {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.camera-panel-content {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+.camera-panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.camera-panel-heading h3 {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+}
+.camera-panel-heading p,
+.camera-panel-status,
+.camera-panel-privacy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.camera-panel-heading p {
+  margin-top: 3px;
+}
+.camera-panel-heading > button {
+  white-space: nowrap;
+}
+.camera-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 48vh;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #201a2b;
+  color: #ede4f8;
+}
+.camera-preview video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scaleX(-1);
+}
+.camera-preview-label {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: #23192ec9;
+  font-size: 11px;
+}
+.camera-preview-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.camera-panel-status.error {
+  color: #a52047;
+}
 .panel-busy-dot {
   display: inline-block;
   width: 6px;

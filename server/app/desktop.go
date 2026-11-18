@@ -6,6 +6,7 @@
 package app
 
 import (
+	"os"
 	"sync"
 
 	"server/internal/bootstrap"
@@ -60,7 +61,7 @@ func (w *windows) Pet(enabled bool) {
 // runDesktop 启动 Wails 应用：页面资源经 DesktopHandler 代理本地 HTTP 服务，
 // 既保证原生运行时可用，又避免聊天 SSE 被 Wails 的资源层整体缓冲。
 func runDesktop(backend *bootstrap.App, address string) error {
-	proxy, err := webui.DesktopHandler(address)
+	proxy, err := webui.DesktopHandler(address, os.Getenv("FRONTEND_DEVSERVER_URL"))
 	if err != nil {
 		return err
 	}

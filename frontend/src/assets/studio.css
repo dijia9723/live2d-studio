@@ -218,7 +218,7 @@
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
-  gap: 26px;
+  gap: clamp(6px, 1.6vw, 26px);
   background: white;
 }
 
@@ -233,6 +233,7 @@
   font-size: 13px;
   font-weight: 600;
   box-shadow: none;
+  white-space: nowrap;
 }
 
 .studio-workbench .workspace-tabs > button[aria-selected='true'] {

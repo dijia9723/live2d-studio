@@ -8,6 +8,7 @@
 }
 .stage-view-toolbar {
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   flex: none;
   min-height: 40px;
@@ -17,6 +18,16 @@
 }
 .stage-view-actions {
   gap: 5px;
+  flex-wrap: wrap;
+}
+.stage-camera-status {
+  flex: none;
+  padding: 0 4px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.stage-camera-status.error {
+  color: #a52047;
 }
 .stage-view-toolbar button,
 .stage-aspect-select {

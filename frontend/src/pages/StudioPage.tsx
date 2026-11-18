@@ -1,6 +1,6 @@
 /**
  * 页面：AI 对话主工作台，组合 Live2D 舞台、消息列表与输入区。
- * 左侧舞台承载背景/特效/叠加与角色控制，右侧标签页切换聊天与舞台设置。
+ * 左侧显示角色舞台，右侧切换对话、舞台设置与摄像头预览。
  * 同时管理草稿、图片附件、自动滚动、语音输入与朗读、历史导出等交互。
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -31,6 +31,7 @@ import {
   Settings2,
   Sparkles,
   Square,
+  Video,
   Volume2,
   VolumeX,
   X,
@@ -46,6 +47,7 @@ import StageOverlay from '../components/StageOverlay'
 import CanvasLayer from '../components/CanvasLayer'
 import CanvasToolbar from '../components/CanvasToolbar'
 import StageViewToolbar from '../components/StageViewToolbar'
+import CameraPanel from '../components/CameraPanel'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +57,7 @@ import {
 import { useStudio, notify } from '../store/studio'
 import { draftKey, emptyDraft, updateDraft, useChatDrafts } from '../store/chatDrafts'
 import { useChat } from '../hooks/useChat'
+import { useCameraTracking } from '../hooks/useCameraTracking'
 import { useStageFrame } from '../hooks/useStageFrame'
 import { useSpeech } from '../hooks/useSpeech'
 import { api } from '../api/client'
@@ -64,11 +67,18 @@ const messageLimit = 32000
 const dateFormat = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' })
 const timeFormat = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' })
 const promptSuggestions = ['陪我聊聊今天', '给我一个放松的小建议', '你记得我哪些偏好？']
+const workspacePanels = [
+  { id: 'chat', label: '对话', icon: MessageCircle },
+  { id: 'stage', label: '舞台设置', icon: Layers },
+  { id: 'camera', label: '摄像头', icon: Video },
+] as const
+type WorkspacePanel = (typeof workspacePanels)[number]['id']
 
 export default function StudioPage() {
   const s = useStudio()
   const navigate = useNavigate()
   const character = s.characters.find((c) => c.id === s.characterID) || s.characters[0]
+  const camera = useCameraTracking(!!character)
   const draftID = draftKey(s.conversationID, s.characterID)
   const { text, image } = useChatDrafts((drafts) => drafts[draftID] ?? emptyDraft)
   const setText = useCallback(
@@ -93,7 +103,7 @@ export default function StudioPage() {
   const stageRef = useRef<Live2DStageHandle>(null)
   const [capabilities, setCapabilities] = useState<Live2DCapabilities | null>(null)
   const [interaction, setInteraction] = useState('')
-  const [rightPanel, setRightPanel] = useState<'chat' | 'stage'>('chat')
+  const [rightPanel, setRightPanel] = useState<WorkspacePanel>('chat')
   const [stageCategory, setStageCategory] = useState('character')
   const inspectCanvas = useCallback(() => {
     setRightPanel('stage')
@@ -234,22 +244,27 @@ export default function StudioPage() {
     if (document.fullscreenElement) void document.exitFullscreen()
     else void container.current?.requestFullscreen().catch(() => notify('当前窗口不支持全屏'))
   }
-  const switchPanel = (panel: 'chat' | 'stage') => {
-    setRightPanel(panel)
+  const toggleStageCamera = () => {
+    if (!camera.enabled) {
+      setRightPanel('camera')
+      dock.current?.scrollIntoView({ block: 'nearest' })
+    }
+    camera.toggle()
   }
   // 键盘切换右侧面板：左右方向键循环，Home/End 跳到首/末。
   const switchPanelWithKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
-    const next =
+    const current = workspacePanels.findIndex(({ id }) => id === rightPanel)
+    const count = workspacePanels.length
+    const nextIndex =
       event.key === 'Home'
-        ? 'chat'
+        ? 0
         : event.key === 'End'
-          ? 'stage'
-          : rightPanel === 'chat'
-            ? 'stage'
-            : 'chat'
-    switchPanel(next)
+          ? count - 1
+          : (current + (event.key === 'ArrowRight' ? 1 : -1) + count) % count
+    const next = workspacePanels[nextIndex].id
+    setRightPanel(next)
     document.getElementById(`workspace-tab-${next}`)?.focus()
   }
   if (!character) return null
@@ -270,6 +285,9 @@ export default function StudioPage() {
           aria-label="Live2D 舞台"
         >
           <StageViewToolbar
+            cameraAvailable={!!character}
+            cameraEnabled={camera.enabled}
+            onToggleCamera={toggleStageCamera}
             onTemplates={() => {
               setRightPanel('stage')
               setStageCategory('templates')
@@ -277,6 +295,14 @@ export default function StudioPage() {
               document.getElementById('stage-tab-templates')?.focus({ preventScroll: true })
             }}
           />
+          {rightPanel !== 'camera' && camera.message && (
+            <div
+              className={camera.error ? 'stage-camera-status error' : 'stage-camera-status'}
+              role="status"
+            >
+              {camera.message}
+            </div>
+          )}
           <div className="stage-viewport" ref={container}>
             <div
               className={`stage stage-${s.stage} ${background ? 'has-media' : ''}`}
@@ -354,6 +380,7 @@ export default function StudioPage() {
                   ref={stageRef}
                   modelPath={character.model_path}
                   actionNames={character.action_names}
+                  cameraSample={camera.sample}
                   onCapabilitiesChange={setCapabilities}
                   onInteraction={setInteraction}
                 />
@@ -418,7 +445,7 @@ export default function StudioPage() {
             )}
             <button
               onClick={() => {
-                switchPanel('stage')
+                setRightPanel('stage')
                 dock.current?.scrollIntoView({ block: 'nearest' })
                 document.getElementById('workspace-tab-stage')?.focus({ preventScroll: true })
               }}
@@ -435,28 +462,24 @@ export default function StudioPage() {
             aria-label="工作台面板"
             onKeyDown={switchPanelWithKey}
           >
-            <button
-              id="workspace-tab-chat"
-              role="tab"
-              aria-selected={rightPanel === 'chat'}
-              aria-controls="workspace-chat"
-              tabIndex={rightPanel === 'chat' ? 0 : -1}
-              onClick={() => switchPanel('chat')}
-            >
-              <MessageCircle size={16} />
-              对话{s.busy && <span className="panel-busy-dot" />}
-            </button>
-            <button
-              id="workspace-tab-stage"
-              role="tab"
-              aria-selected={rightPanel === 'stage'}
-              aria-controls="workspace-stage"
-              tabIndex={rightPanel === 'stage' ? 0 : -1}
-              onClick={() => switchPanel('stage')}
-            >
-              <Layers size={16} />
-              舞台设置
-            </button>
+            {workspacePanels.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                id={`workspace-tab-${id}`}
+                type="button"
+                role="tab"
+                aria-selected={rightPanel === id}
+                aria-controls={`workspace-${id}`}
+                tabIndex={rightPanel === id ? 0 : -1}
+                onClick={() => setRightPanel(id)}
+              >
+                <Icon size={16} aria-hidden="true" />
+                {label}
+                {((id === 'chat' && s.busy) || (id === 'camera' && camera.previewStream)) && (
+                  <span className="panel-busy-dot" aria-hidden="true" />
+                )}
+              </button>
+            ))}
           </div>
           <section
             id="workspace-chat"
@@ -869,6 +892,23 @@ export default function StudioPage() {
               onCategoryChange={setStageCategory}
             />
           </div>
+          <section
+            id="workspace-camera"
+            role="tabpanel"
+            aria-labelledby="workspace-tab-camera"
+            className="camera-panel"
+            hidden={rightPanel !== 'camera'}
+          >
+            {rightPanel === 'camera' && (
+              <CameraPanel
+                stream={camera.previewStream}
+                enabled={camera.enabled}
+                message={camera.message}
+                error={camera.error}
+                onToggle={camera.toggle}
+              />
+            )}
+          </section>
         </aside>
       </div>
       {memoryDialog && (

@@ -1,9 +1,10 @@
 /**
  * 文件职责：Live2D 画布组件。
- * 负责加载 Cubism Core 与模型、计算缩放布局、鼠标跟随、点击播放动作、
+ * 负责加载 Cubism Core 与模型、计算缩放布局、鼠标/摄像头跟随、点击播放动作、
  * 情绪参数/模型原生表情切换、口型同步，并在卸载时按顺序释放资源。
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { Application, Ticker } from 'pixi.js'
 import { AlertCircle, LoaderCircle, RotateCcw } from 'lucide-react'
 import type { Cubism4InternalModel, Live2DModel } from 'pixi-live2d-display/cubism4'
@@ -18,6 +19,11 @@ import {
 import type { Live2DCapabilities } from '../utils/live2d'
 import type { ActionNames } from '../types/api'
 import { actionDisplayName, moodNames } from '../utils/actionNames'
+import {
+  createCameraParameterDriver,
+  currentCameraSample,
+  type CameraSample,
+} from '../utils/cameraTracking'
 
 export type { Live2DCapabilities } from '../utils/live2d'
 
@@ -65,6 +71,7 @@ interface Props {
   miniature?: boolean
   /** 独立编辑预览：保持默认缩放，情绪与口型不跟随聊天状态。 */
   isolated?: boolean
+  cameraSample?: RefObject<CameraSample | null>
   onCapabilitiesChange?: (capabilities: Live2DCapabilities) => void
   onInteraction?: (message: string) => void
 }
@@ -75,6 +82,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
     actionNames,
     miniature = false,
     isolated = false,
+    cameraSample,
     onCapabilitiesChange,
     onInteraction,
   },
@@ -284,6 +292,11 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         )
         callbacks.current.onCapabilitiesChange?.(capabilities.current)
         const lips = lipSyncParameters(bindings, internal.motionManager.lipSyncIds)
+        const driveCamera =
+          cameraSample && !isolated ? createCameraParameterDriver(bindings) : undefined
+        let lastCameraFrame = performance.now()
+        const applyCameraParameter = (index: number, value: number, weight: number) =>
+          core.setParameterValueByIndex(index, value, weight)
         // 转换模型对鼠标跟随也保留 PARAM_* 命名，这里做候选映射后回填真实参数名。
         const focusIDs = {
           idParamAngleX: ['ParamAngleX'],
@@ -305,6 +318,13 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
           if (!nativeExpressionRef.current)
             for (const p of moodParameters(moodRef.current, bindings))
               core.setParameterValueByIndex(p.index, p.value)
+          if (driveCamera && cameraSample) {
+            const now = performance.now()
+            const tracked = currentCameraSample(cameraSample.current, now)
+            if (tracked) internal.focusController.focus(0, 0, true)
+            driveCamera(tracked, now - lastCameraFrame, applyCameraParameter)
+            lastCameraFrame = now
+          }
           if (speakingRef.current) {
             const value = 0.2 + Math.abs(Math.sin(performance.now() / 110)) * 0.65
             for (const p of lips)
@@ -320,7 +340,10 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
           canvas.addEventListener(
             'pointermove',
             (event) => {
-              if (!pixi) return
+              if (
+                !pixi ||
+                (driveCamera && cameraSample && currentCameraSample(cameraSample.current, performance.now()))
+              ) return
               // 将画布坐标换算到 pixi 屏幕坐标，驱动角色视线跟随。
               const rect = canvas.getBoundingClientRect()
               live.focus(
@@ -387,7 +410,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       layoutRef.current = () => {}
       pixi?.destroy(true, { children: true, texture: false, baseTexture: false })
     }
-  }, [path, miniature, revision])
+  }, [path, miniature, isolated, revision, cameraSample])
   // 缩放变化时只重排布局，不重建模型。
   useEffect(() => {
     layoutRef.current()

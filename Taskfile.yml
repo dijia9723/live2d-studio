@@ -12,7 +12,8 @@ tasks:
     cmds:
       - go build -buildvcs=false -gcflags=all="-l" -o "{{.BIN_DIR}}/{{.APP_NAME}}-dev.exe" .
 
-  dev:frontend:
+  common:dev:frontend:
+    aliases: [dev:frontend]
     summary: 启动 Vite 开发服务器（由 wails3 dev 调用）
     dir: frontend
     cmds:
