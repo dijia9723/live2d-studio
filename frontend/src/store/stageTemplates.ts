@@ -89,7 +89,10 @@ function restoreStage(snapshot: StageSnapshot) {
   const assets = useStudio.getState().sceneAssets
   let missing = false
   for (const key of ['backgroundAssetID', 'overlayAssetID'] as const) {
-    if (appearance[key] && !assets.some((asset) => asset.id === appearance[key])) {
+    if (
+      appearance[key] &&
+      !assets.some((asset) => asset.id === appearance[key] && (key !== 'overlayAssetID' || asset.kind !== 'html'))
+    ) {
       appearance[key] = null
       missing = true
     }

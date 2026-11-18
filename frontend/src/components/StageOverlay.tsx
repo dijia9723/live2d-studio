@@ -8,7 +8,7 @@ import { useStudio } from '../store/studio'
 
 export default function StageOverlay() {
   const { sceneAssets, overlayAssetID, overlayOpacity, overlayBlendMode } = useStudio()
-  const asset = sceneAssets.find((item) => item.id === overlayAssetID)
+  const asset = sceneAssets.find((item) => item.id === overlayAssetID && item.kind !== 'html')
   const [failedID, setFailedID] = useState('')
   // 切换素材时清除上一次的加载失败记录。
   useEffect(() => setFailedID(''), [overlayAssetID])

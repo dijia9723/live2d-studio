@@ -48,7 +48,8 @@ export default function OverlayManager() {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const selected = s.sceneAssets.find((asset) => asset.id === s.overlayAssetID)
+  const overlayAssets = s.sceneAssets.filter((asset) => asset.kind !== 'html')
+  const selected = overlayAssets.find((asset) => asset.id === s.overlayAssetID)
 
   useEffect(() => {
     mounted.current = true
@@ -132,7 +133,7 @@ export default function OverlayManager() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">不使用叠加素材</SelectItem>
-              {s.sceneAssets.map((asset) => (
+              {overlayAssets.map((asset) => (
                 <SelectItem value={asset.id} key={asset.id}>
                   {asset.kind === 'video' ? '视频' : '图片'} · {asset.name}
                 </SelectItem>

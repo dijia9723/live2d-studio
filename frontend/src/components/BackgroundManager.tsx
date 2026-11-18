@@ -4,7 +4,18 @@
  * 以及背景适配/压暗/视频播放等显示参数。
  */
 import { useEffect, useRef, useState } from 'react'
-import { Check, Film, ImagePlus, LoaderCircle, Pause, Play, Trash2, Upload, X } from 'lucide-react'
+import {
+  Check,
+  FileCode,
+  Film,
+  ImagePlus,
+  LoaderCircle,
+  Pause,
+  Play,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
 import { api, mediaURL } from '../api/client'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { notify, useStudio } from '../store/studio'
@@ -16,6 +27,12 @@ const backgrounds = [
   { id: 'mint', name: '薄荷清晨' },
   { id: 'night', name: '静谧夜色' },
 ]
+const assetKinds = {
+  image: { name: '图片', Icon: ImagePlus },
+  video: { name: '视频', Icon: Film },
+  html: { name: 'HTML', Icon: FileCode },
+}
+
 export default function BackgroundManager() {
   const s = useStudio()
   const input = useRef<HTMLInputElement>(null)
@@ -37,12 +54,14 @@ export default function BackgroundManager() {
   const upload = async (file?: File) => {
     if (!file || uploading) return
     const video = /\.(mp4|webm)$/i.test(file.name)
-    if (!/\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(file.name)) {
-      setError('支持 PNG、JPEG、WebP、GIF 图片和 MP4、WebM 视频')
+    const html = /\.html?$/i.test(file.name)
+    if (!video && !html && !/\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
+      setError('支持 PNG、JPEG、WebP、GIF 图片，MP4、WebM 视频和 HTML 文件')
       return
     }
-    if (file.size > (video ? 150 : 15) * 1024 * 1024) {
-      setError(video ? '视频最大支持 150MB' : '图片最大支持 15MB')
+    const limit = video ? 150 : html ? 5 : 15
+    if (file.size > limit * 1024 * 1024) {
+      setError(`${video ? '视频' : html ? 'HTML' : '图片'}最大支持 ${limit}MB`)
       return
     }
     setUploading(true)
@@ -55,6 +74,7 @@ export default function BackgroundManager() {
         backgroundAssetID: asset.id,
         videoPlaying: true,
       }))
+      if (filter !== 'all' && filter !== asset.kind) setFilter(asset.kind)
       notify(`已添加并应用背景：${asset.name}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '背景上传失败')
@@ -108,7 +128,7 @@ export default function BackgroundManager() {
           {uploading ? <LoaderCircle className="spin" size={23} /> : <Upload size={23} />}
         </span>
         <strong>{uploading ? `正在导入 ${Math.min(progress, 100)}%` : '点击或拖入背景素材'}</strong>
-        <small>图片 ≤ 15MB · 视频 ≤ 150MB</small>
+        <small>图片 ≤ 15MB · 视频 ≤ 150MB · HTML ≤ 5MB</small>
         {uploading && (
           <span className="upload-progress" style={{ width: `${Math.min(progress, 100)}%` }} />
         )}
@@ -117,7 +137,7 @@ export default function BackgroundManager() {
         ref={input}
         type="file"
         hidden
-        accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+        accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,.html,.htm"
         onChange={(e) => {
           void upload(e.target.files?.[0])
           e.target.value = ''
@@ -150,8 +170,7 @@ export default function BackgroundManager() {
         <div className="media-filter">
           {[
             { id: 'all', name: '全部' },
-            { id: 'image', name: '图片' },
-            { id: 'video', name: '视频' },
+            ...Object.entries(assetKinds).map(([id, { name }]) => ({ id, name })),
           ].map((item) => (
             <button
               key={item.id}
@@ -167,47 +186,52 @@ export default function BackgroundManager() {
       <div className="background-library">
         {s.sceneAssets
           .filter((asset) => filter === 'all' || filter === asset.kind)
-          .map((asset) => (
-            <div
-              key={asset.id}
-              className={`media-card ${s.backgroundAssetID === asset.id ? 'selected' : ''}`}
-            >
-              <button
-                className="media-select"
-                aria-label={`应用背景 ${asset.name}`}
-                aria-pressed={s.backgroundAssetID === asset.id}
-                onClick={() => s.patch({ backgroundAssetID: asset.id, videoPlaying: true })}
+          .map((asset) => {
+            const { name, Icon } = assetKinds[asset.kind]
+            return (
+              <div
+                key={asset.id}
+                className={`media-card ${s.backgroundAssetID === asset.id ? 'selected' : ''}`}
               >
-                <div className="media-thumbnail">
-                  {asset.kind === 'image' ? (
-                    <img loading="lazy" src={mediaURL(asset.url)} alt="" />
-                  ) : (
-                    <video src={mediaURL(asset.url)} muted playsInline preload="metadata" />
-                  )}
-                  <span className="media-kind">
-                    {asset.kind === 'video' ? <Film size={11} /> : <ImagePlus size={11} />}
-                    {asset.kind === 'video' ? '视频' : '图片'}
-                  </span>
-                  {s.backgroundAssetID === asset.id && (
-                    <span className="media-check">
-                      <Check size={12} />
+                <button
+                  className="media-select"
+                  aria-label={`应用背景 ${asset.name}`}
+                  aria-pressed={s.backgroundAssetID === asset.id}
+                  onClick={() => s.patch({ backgroundAssetID: asset.id, videoPlaying: true })}
+                >
+                  <div className="media-thumbnail">
+                    {asset.kind === 'image' ? (
+                      <img loading="lazy" src={mediaURL(asset.url)} alt="" />
+                    ) : asset.kind === 'video' ? (
+                      <video src={mediaURL(asset.url)} muted playsInline preload="metadata" />
+                    ) : (
+                      <FileCode className="media-html-icon" size={28} aria-hidden="true" />
+                    )}
+                    <span className="media-kind">
+                      <Icon size={11} />
+                      {name}
                     </span>
-                  )}
-                </div>
-                <span className="media-name" title={asset.name}>
-                  {asset.name}
-                </span>
-                <small>{(asset.size / 1024 / 1024).toFixed(1)} MB</small>
-              </button>
-              <button
-                className="media-delete"
-                aria-label={`删除背景 ${asset.name}`}
-                onClick={() => setRemoving(asset)}
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+                    {s.backgroundAssetID === asset.id && (
+                      <span className="media-check">
+                        <Check size={12} />
+                      </span>
+                    )}
+                  </div>
+                  <span className="media-name" title={asset.name}>
+                    {asset.name}
+                  </span>
+                  <small>{(asset.size / 1024 / 1024).toFixed(1)} MB</small>
+                </button>
+                <button
+                  className="media-delete"
+                  aria-label={`删除背景 ${asset.name}`}
+                  onClick={() => setRemoving(asset)}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            )
+          })}
       </div>
       {!s.sceneAssets.some((asset) => filter === 'all' || filter === asset.kind) && (
         <div className="media-empty">
@@ -218,21 +242,27 @@ export default function BackgroundManager() {
       {selected && (
         <div className="background-adjustments">
           <div className="panel-label">背景显示</div>
-          <label>
-            画面适配
-            <Select
-              value={s.backgroundFit}
-              onValueChange={(value) => s.patch({ backgroundFit: value as 'cover' | 'contain' })}
-            >
-              <SelectTrigger size="sm" aria-label="背景画面适配" className="h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cover">铺满画布</SelectItem>
-                <SelectItem value="contain">完整显示</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
+          {selected.kind === 'html' ? (
+            <p className="media-html-hint">
+              HTML 随画布大小调整，支持内联 CSS 动画和嵌入图片，不加载外部资源或运行脚本。
+            </p>
+          ) : (
+            <label>
+              画面适配
+              <Select
+                value={s.backgroundFit}
+                onValueChange={(value) => s.patch({ backgroundFit: value as 'cover' | 'contain' })}
+              >
+                <SelectTrigger size="sm" aria-label="背景画面适配" className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cover">铺满画布</SelectItem>
+                  <SelectItem value="contain">完整显示</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+          )}
           <label>
             背景压暗<span>{Math.round(s.backgroundDim * 100)}%</span>
             <input

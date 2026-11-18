@@ -136,7 +136,7 @@ export interface StageAction {
 export interface SceneAsset {
   id: string
   name: string
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'html'
   mime_type: string
   size: number
   url: string

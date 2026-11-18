@@ -45,6 +45,8 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
 /** 全部后端接口的集合，按业务域分组（素材、角色、会话、设置、桌面、语音）。 */
 export const api = {
   sceneAssets: () => get<SceneAsset[]>('/scene-assets'),
+  sceneAssetHTML: async (url: string, signal: AbortSignal) =>
+    (await http.get<string>(mediaURL(url), { responseType: 'text', signal })).data,
   // 上传背景/叠加素材，用 onUploadProgress 回传 0–100 的百分比。
   uploadSceneAsset: async (
     file: File,

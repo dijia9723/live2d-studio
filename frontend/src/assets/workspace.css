@@ -325,11 +325,15 @@
   background: #2b2436;
 }
 .stage-media > img,
-.stage-media > video {
+.stage-media > video,
+.stage-media > iframe {
   position: absolute;
   width: 100%;
   height: 100%;
   inset: 0;
+}
+.stage-media > iframe {
+  border: 0;
 }
 .stage-media-shade {
   position: absolute;
@@ -510,6 +514,18 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.media-html-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--purple);
+}
+.media-html-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 .media-kind {
   position: absolute;
