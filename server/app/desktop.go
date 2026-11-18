@@ -32,7 +32,23 @@ func (w *windows) Pet(enabled bool) {
 	defer w.mu.Unlock()
 	if enabled {
 		if w.pet == nil {
-			w.pet = w.app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "pet", Title: "Live2D Studio · 桌宠", Width: 380, Height: 540, MinWidth: 280, MinHeight: 380, AlwaysOnTop: true, Frameless: true, BackgroundType: application.BackgroundTypeTransparent, BackgroundColour: application.NewRGBA(0, 0, 0, 0), URL: "/?pet=1"})
+			w.pet = w.app.Window.NewWithOptions(application.WebviewWindowOptions{
+				Name:             "pet",
+				Title:            "Live2D Studio · 桌宠",
+				Width:            380,
+				Height:           540,
+				MinWidth:         280,
+				MinHeight:        380,
+				AlwaysOnTop:      true,
+				Frameless:        true,
+				BackgroundType:   application.BackgroundTypeTransparent,
+				BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+				URL:              "/?pet=1",
+				Windows: application.WindowsWindow{
+					DisableFramelessWindowDecorations: true,
+					WebView2CompositionHosting:        true,
+				},
+			})
 		} else {
 			w.pet.Show()
 		}

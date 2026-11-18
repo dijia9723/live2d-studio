@@ -4,15 +4,21 @@
  * 维护 busy 状态以及中断/失败时的状态收敛。
  */
 import { useCallback, useEffect, useRef } from 'react'
+import type { RefObject } from 'react'
+import type { Live2DStageHandle } from '../components/Live2DStage'
 import { streamMessage } from '../api/client'
-import { useStudio } from '../store/studio'
+import { notify, useStudio } from '../store/studio'
 import type { Message } from '../types/api'
 
 /**
  * @param onReply 流结束后收到完整助手回复（用于自动朗读）
+ * @param stageRef 当前舞台，用于执行经过后端校验的模型动作和原生表情请求
  * @returns send：发送消息；stop：中断当前生成
  */
-export function useChat(onReply: (text: string) => void) {
+export function useChat(
+  onReply: (text: string) => void,
+  stageRef?: RefObject<Live2DStageHandle | null>,
+) {
   const controller = useRef<AbortController | null>(null)
   const stop = useCallback(() => {
     controller.current?.abort()
@@ -66,12 +72,63 @@ export function useChat(onReply: (text: string) => void) {
           }
           if (!accepted) return
           switch (event.type) {
+            case 'stage_action': {
+              const action = event.stage_action
+              if (!action || abort.signal.aborted) break
+              const studio = useStudio.getState()
+              const character =
+                studio.characters.find((item) => item.id === studio.characterID) ??
+                studio.characters[0]
+              if (
+                character?.id !== action.character_id ||
+                character.model_path !== action.model_path
+              ) {
+                notify('当前角色已切换，已忽略之前的舞台请求')
+                break
+              }
+              const stage = stageRef?.current
+              if (!stage) {
+                notify('当前舞台尚未就绪，请稍后再试')
+                break
+              }
+              const run =
+                action.type === 'motion'
+                  ? stage.playMotion(action.id)
+                  : action.type === 'expression'
+                    ? stage.setExpression(action.id)
+                    : Promise.resolve(false)
+              void run
+                .then((ok) => {
+                  if (!abort.signal.aborted)
+                    notify(
+                      ok
+                        ? action.type === 'motion'
+                          ? '角色动作已开始播放'
+                          : '模型原生表情已切换'
+                        : '舞台未能执行，请检查角色是否加载完成或模型资源是否完整',
+                    )
+                })
+                .catch(() => {
+                  if (!abort.signal.aborted) notify('舞台执行失败，请检查模型资源')
+                })
+              break
+            }
             case 'delta':
               updateReply((reply) => ({ ...reply, content: reply.content + (event.text ?? '') }))
               break
             case 'expression':
               useStudio.getState().setMood(event.expression || 'neutral')
               break
+            case 'character': {
+              const character = event.character
+              if (character)
+                useStudio.setState((studio) => ({
+                  characters: studio.characters.map((item) =>
+                    item.id === character.id ? character : item,
+                  ),
+                }))
+              break
+            }
             case 'tool': {
               const tool = event.tool
               if (tool)
@@ -117,7 +174,7 @@ export function useChat(onReply: (text: string) => void) {
           .catch(() => {})
       }
     },
-    [onReply],
+    [onReply, stageRef],
   )
   return { send, stop }
 }

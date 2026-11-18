@@ -98,7 +98,7 @@ func (m *Module) messages(c *gin.Context) {
 
 // send 校验文本与内联图片后建立 SSE 连接并转发流式事件。
 // 事件类型依次可能为 user（已落库的用户消息）、delta（文本增量）、expression（表情切换）、
-// tool（工具运行状态）、done（已保存的完整回复）与 error（脱敏后的错误提示）。
+// stage_action（模型动作/原生表情请求）、character（已保存角色资料）、tool（工具运行状态）、done（已保存的完整回复）与 error（脱敏后的错误提示）。
 // 请求超时为 3 分钟；客户端断开导致 ctx 取消时，服务层会把回复标记为 interrupted。
 func (m *Module) send(c *gin.Context) {
 	var req struct {

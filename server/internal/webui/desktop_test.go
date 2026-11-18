@@ -57,6 +57,15 @@ func TestDesktopHTMLPointsAPIAtRealListener(t *testing.T) {
 	if !strings.HasPrefix(body, "<!doctype html><html><head><script>window.__STUDIO_API_BASE_URL__=") || strings.Count(body, "__STUDIO_API_BASE_URL__") != 1 {
 		t.Fatalf("configuration must precede the application module: %s", body)
 	}
+	const runtime = `<script type="module" src="/wails/runtime.js"></script>`
+	if strings.Contains(body, runtime) {
+		t.Fatal("main window unexpectedly loads the pet window runtime")
+	}
+	pet := httptest.NewRecorder()
+	handler.ServeHTTP(pet, httptest.NewRequest(http.MethodGet, "http://wails.localhost/?pet=1", nil))
+	if pet.Code != http.StatusOK || !strings.Contains(pet.Body.String(), runtime+`<script type="module" src="/app.js"></script>`) {
+		t.Fatalf("pet window must load the Wails runtime before the application module: %d %s", pet.Code, pet.Body.String())
+	}
 	if page.Header().Get("Cache-Control") != "no-store" || page.Header().Get("ETag") != "" || page.Header().Get("Content-Length") != fmt.Sprint(len(body)) {
 		t.Fatal("rewritten document has stale cache or content length headers")
 	}

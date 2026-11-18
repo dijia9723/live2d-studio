@@ -38,7 +38,7 @@ test('presets clamp to actual model ranges and never write nonexistent parameter
 test('Shizuku actions are read from its manifest; random reactions exclude Idle', async () => {
   const manifest = JSON.parse(
     await readFile(
-      new URL('../../public/live2d-models/shizuku/runtime/shizuku.model3.json', import.meta.url),
+      new URL('../../../server/internal/modules/character/assets/shizuku/runtime/shizuku.model3.json', import.meta.url),
     ),
   )
   const caps = modelCapabilities(
@@ -62,7 +62,7 @@ test('Shizuku actions are read from its manifest; random reactions exclude Idle'
 test('Mao retains named native expressions and valid empty-group motions', async () => {
   const manifest = JSON.parse(
     await readFile(
-      new URL('../../public/live2d-models/mao_pro/runtime/mao_pro.model3.json', import.meta.url),
+      new URL('../../../server/internal/modules/character/assets/mao_pro/runtime/mao_pro.model3.json', import.meta.url),
     ),
   )
   const caps = modelCapabilities(

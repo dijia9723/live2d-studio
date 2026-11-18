@@ -76,6 +76,13 @@
   opacity: 0.45;
 }
 
+.character-mood-card > span {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .character-mood-face {
   display: block;
   width: 36px;

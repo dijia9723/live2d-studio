@@ -3,6 +3,7 @@
 package character
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -18,6 +19,39 @@ type Module struct{ Service *Service }
 
 // Register 挂载角色列表、更新与模型导入接口。
 func (m *Module) Register(r *gin.RouterGroup) {
+	r.PUT("/characters/:id/action-names", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+		var req ActionNamesRequest
+		if c.ShouldBindJSON(&req) != nil || req.ModelPath == "" || req.Names == nil {
+			pkg.Fail(c, 400, ErrActionNames.Error())
+			return
+		}
+		saved, err := m.Service.SaveActionNames(c.Request.Context(), c.Param("id"), req)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrActionNames):
+				pkg.Fail(c, 400, ErrActionNames.Error())
+			case errors.Is(err, ErrActions):
+				pkg.Fail(c, 422, ErrActions.Error())
+			default:
+				pkg.Fail(c, 404, "角色不存在或命名保存失败")
+			}
+			return
+		}
+		pkg.OK(c, saved)
+	})
+	r.GET("/characters/:id/actions", func(c *gin.Context) {
+		v, err := m.Service.Actions(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			if errors.Is(err, ErrActions) {
+				pkg.Fail(c, 422, ErrActions.Error())
+			} else {
+				pkg.Fail(c, 404, "角色不存在或动作读取失败")
+			}
+			return
+		}
+		pkg.OK(c, v)
+	})
 	r.GET("/characters", func(c *gin.Context) {
 		v, err := m.Service.List()
 		if err != nil {

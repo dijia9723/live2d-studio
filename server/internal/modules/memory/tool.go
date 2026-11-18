@@ -1,4 +1,4 @@
-// 本文件把角色记忆暴露为 Eino 的 search_memories 工具。
+// 本文件把角色记忆暴露为智能体的检索与保存工具。
 
 package memory
 
@@ -16,6 +16,10 @@ var ErrSearchQuery = errors.New("记忆搜索关键词须为 1–300 个字符")
 
 type searchParams struct {
 	Query string `json:"query" jsonschema:"description=要查找的完整关键词或短语，最多 300 个字符"`
+}
+
+type saveParams struct {
+	Content string `json:"content" jsonschema:"description=要保存为当前角色长期记忆的事实或偏好，最多 300 个字符"`
 }
 
 // SearchTool 为指定角色构造 search_memories 工具：对已保存记忆做不区分大小写的子串匹配，
@@ -42,5 +46,22 @@ func (s *Service) SearchTool(characterID string) (tool.BaseTool, error) {
 			}
 		}
 		return matches, nil
+	})
+}
+
+// SaveTool 创建绑定角色的 save_memory 工具，模型无法选择其它角色的记忆范围。
+func (s *Service) SaveTool(characterID string) (tool.BaseTool, error) {
+	return utils.InferTool("save_memory", "将用户明确要求记住的事实或偏好保存到当前角色的长期记忆。不要保存密码、密钥或其他敏感信息。", func(ctx context.Context, params saveParams) (string, error) {
+		_, err := s.Create(ctx, characterID, params.Content)
+		switch {
+		case err == nil:
+			return "已保存到当前角色的长期记忆。", nil
+		case errors.Is(err, ErrContent):
+			return "", ErrContent
+		case errors.Is(err, ErrLimit):
+			return "", ErrLimit
+		default:
+			return "", errors.New("保存记忆失败")
+		}
 	})
 }

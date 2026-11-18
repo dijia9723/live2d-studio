@@ -48,8 +48,12 @@ func (s *Service) Update(id string, v model.Character) (model.Character, error) 
 	old.Name = v.Name
 	old.Description = v.Description
 	old.SystemPrompt = v.SystemPrompt
-	err = s.DB.Save(&old).Error
-	return old, err
+	// 按列更新，避免并发保存人设时覆盖动作命名。
+	err = s.DB.Model(&model.Character{}).Where("id = ?", id).Updates(map[string]any{"name": old.Name, "description": old.Description, "system_prompt": old.SystemPrompt}).Error
+	if err != nil {
+		return old, err
+	}
+	return s.Get(id)
 }
 
 // Import 解压导出的 Cubism 模型并创建角色记录。
@@ -57,18 +61,24 @@ func (s *Service) Update(id string, v model.Character) (model.Character, error) 
 // 忽略未知扩展名的文件，并要求压缩包内恰有一个 .model3.json。
 // 导入失败时会删除整个目标目录，不留半成品；成功后校验模型引用未越界且资源确实存在。
 func (s *Service) Import(file string) (model.Character, error) {
-	var result model.Character
 	z, err := zip.OpenReader(file)
 	if err != nil {
-		return result, fmt.Errorf("无法读取 ZIP 文件")
+		return model.Character{}, fmt.Errorf("无法读取 ZIP 文件")
 	}
 	defer z.Close()
+	return s.importArchive(&z.Reader, "")
+}
+
+// importArchive 是上传导入与初始模型导入共用的资源校验、解压及落库流程。
+// existingID 非空时只更新已有角色的模型路径，保留人设、命名、会话与记忆。
+func (s *Service) importArchive(z *zip.Reader, existingID string) (model.Character, error) {
+	var result model.Character
 	if len(z.File) > 4000 {
 		return result, fmt.Errorf("模型文件数量过多")
 	}
 	id := uuid.NewString()
 	dest := filepath.Join(s.ModelsDir, id)
-	if err = os.MkdirAll(dest, 0700); err != nil {
+	if err := os.MkdirAll(dest, 0700); err != nil {
 		return result, err
 	}
 	success := false
@@ -78,6 +88,7 @@ func (s *Service) Import(file string) (model.Character, error) {
 		}
 	}()
 	var total uint64
+	var err error
 	var models []string
 	for _, f := range z.File {
 		name := strings.ReplaceAll(f.Name, "\\", "/")
@@ -120,8 +131,22 @@ func (s *Service) Import(file string) (model.Character, error) {
 	}
 	name := strings.TrimSuffix(path.Base(modelFile), ".model3.json")
 	result = model.Character{ID: id, Name: name, Description: "导入的 Live2D 角色", ModelPath: "/models/" + id + "/" + modelFile, Color: "#a78bfa", SystemPrompt: "你是" + name + "，一位友好温暖的虚拟伙伴。用自然、简短的中文与用户交流。"}
-	if err = s.DB.Create(&result).Error; err != nil {
-		return result, err
+	if existingID == "" {
+		if err = s.DB.Create(&result).Error; err != nil {
+			return result, err
+		}
+	} else {
+		modelPath := result.ModelPath
+		result = model.Character{}
+		err = s.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&model.Character{}).Where("id = ?", existingID).Update("model_path", modelPath).Error; err != nil {
+				return err
+			}
+			return tx.First(&result, "id = ?", existingID).Error
+		})
+		if err != nil {
+			return result, err
+		}
 	}
 	success = true
 	return result, nil

@@ -86,7 +86,22 @@ export function modelCapabilities(
 
 /** 按 id 精确选择动作；未指定时优先从非 Idle 的“反应动作”中随机选择。 */
 export function chooseMotion(motions: Live2DMotion[], id?: string, random = Math.random) {
-  if (id !== undefined) return motions.find((m) => m.id === id)
+  if (id !== undefined) {
+    try {
+      const key: unknown = JSON.parse(id)
+      // 后端 JSON 会转义 & 等字符；按组名和索引匹配，兼容不同的合法 JSON 写法。
+      if (
+        !Array.isArray(key) ||
+        key.length !== 2 ||
+        typeof key[0] !== 'string' ||
+        !Number.isInteger(key[1])
+      )
+        return undefined
+      return motions.find((m) => m.group === key[0] && m.index === key[1])
+    } catch {
+      return undefined
+    }
+  }
   const reactions = motions.filter((m) => !/^idle$/i.test(m.group))
   const candidates = reactions.length ? reactions : motions
   return candidates[Math.floor(random() * candidates.length)]

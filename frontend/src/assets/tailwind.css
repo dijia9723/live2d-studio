@@ -23,6 +23,8 @@
 @import './character-memories.css' layer(legacy);
 @import './overlay-manager.css' layer(legacy);
 @import './stage-effects.css' layer(legacy);
+@import './canvas-widgets.css' layer(legacy);
+@import './stage-layout.css' layer(legacy);
 
 /*
  * shadcn/ui 设计令牌：沿用项目原有的淡紫主题。

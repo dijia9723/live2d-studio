@@ -43,6 +43,9 @@ import StageSettingsPanel from '../components/StageSettingsPanel'
 import StageBackground from '../components/StageBackground'
 import StageEffects from '../components/StageEffects'
 import StageOverlay from '../components/StageOverlay'
+import CanvasLayer from '../components/CanvasLayer'
+import CanvasToolbar from '../components/CanvasToolbar'
+import StageViewToolbar from '../components/StageViewToolbar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +55,7 @@ import {
 import { useStudio, notify } from '../store/studio'
 import { draftKey, emptyDraft, updateDraft, useChatDrafts } from '../store/chatDrafts'
 import { useChat } from '../hooks/useChat'
+import { useStageFrame } from '../hooks/useStageFrame'
 import { useSpeech } from '../hooks/useSpeech'
 import { api } from '../api/client'
 import { download } from '../utils/format'
@@ -82,13 +86,40 @@ export default function StudioPage() {
   const composer = useRef<HTMLTextAreaElement>(null)
   const upload = useRef<HTMLInputElement>(null)
   const imageReader = useRef<FileReader | null>(null)
-  const container = useRef<HTMLDivElement>(null)
+  const stageFrame = useStageFrame(s.aspect, !!character)
+  const container = stageFrame.ref
   const dock = useRef<HTMLElement>(null)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const stageRef = useRef<Live2DStageHandle>(null)
   const [capabilities, setCapabilities] = useState<Live2DCapabilities | null>(null)
   const [interaction, setInteraction] = useState('')
   const [rightPanel, setRightPanel] = useState<'chat' | 'stage'>('chat')
+  const [stageCategory, setStageCategory] = useState('character')
+  const inspectCanvas = useCallback(() => {
+    setRightPanel('stage')
+    setStageCategory('widgets')
+  }, [])
+  useEffect(() => {
+    const handleKey = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
+        return
+      const target = event.target as HTMLElement | null
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]',
+        )
+      )
+        return
+      if (document.querySelector('[role="dialog"]')) return
+      if (event.key.toLowerCase() === 'h') {
+        event.preventDefault()
+        const state = useStudio.getState()
+        state.patch({ controlsVisible: !state.controlsVisible })
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
   const background = s.sceneAssets.find((item) => item.id === s.backgroundAssetID)
   const activeEffects =
     s.effects.filter((effect) => effect.enabled).length + (s.overlayAssetID ? 1 : 0)
@@ -113,7 +144,7 @@ export default function StudioPage() {
     },
     [voice.speak],
   )
-  const chat = useChat(reply)
+  const chat = useChat(reply, stageRef)
   useEffect(() => setInteraction(''), [character?.model_path])
   stopRef.current = chat.stop
   // 切换会话时回到“跟随最新消息”的滚动模式。
@@ -234,119 +265,144 @@ export default function StudioPage() {
         )}
       </header>
       <div className="studio-scene">
-        <section className="stage-column" aria-label="Live2D 舞台">
-          <div
-            className={`stage stage-${s.stage} ${background ? 'has-media' : ''}`}
-            ref={container}
-          >
-            <StageBackground />
-            {!background && <div className="stage-light" aria-hidden="true" />}
-            <div className="stage-top">
-              <div className="character-switch">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild disabled={s.busy}>
+        <section
+          className={`stage-column ${s.controlsVisible ? '' : 'is-clean-preview'}`}
+          aria-label="Live2D 舞台"
+        >
+          <StageViewToolbar
+            onTemplates={() => {
+              setRightPanel('stage')
+              setStageCategory('templates')
+              dock.current?.scrollIntoView({ block: 'nearest' })
+              document.getElementById('stage-tab-templates')?.focus({ preventScroll: true })
+            }}
+          />
+          <div className="stage-viewport" ref={container}>
+            <div
+              className={`stage stage-${s.stage} ${background ? 'has-media' : ''}`}
+              style={stageFrame.style}
+              data-aspect={s.aspect}
+            >
+              <StageBackground />
+              {!background && <div className="stage-light" aria-hidden="true" />}
+              {s.controlsVisible && (
+                <div className="stage-top">
+                  <div className="character-switch">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild disabled={s.busy}>
+                        <button
+                          className="character-pill"
+                          aria-label={`切换角色，当前为 ${character.name}`}
+                        >
+                          <span
+                            className="avatar-mini"
+                            style={{ background: character.color }}
+                            aria-hidden="true"
+                          >
+                            {character.name[0]}
+                          </span>
+                          <span>{character.name}</span>
+                          <ChevronDown size={14} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-40">
+                        {s.characters.map((c) => (
+                          <DropdownMenuItem
+                            key={c.id}
+                            disabled={s.busy}
+                            onSelect={() => {
+                              if (character.id !== c.id) {
+                                voice.stopSpeaking()
+                                s.selectCharacter(c.id)
+                              }
+                            }}
+                          >
+                            <span className="color-dot" style={{ background: c.color }} />
+                            <span className="flex-1 truncate">{c.name}</span>
+                            {s.characterID === c.id && <Check size={14} />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <div className="stage-actions">
+                    <CanvasToolbar onOpen={inspectCanvas} />
+                    {s.desktop && (
+                      <button
+                        className="icon-button glass"
+                        aria-label="窗口置顶"
+                        aria-pressed={pinned}
+                        title="窗口置顶"
+                        onClick={() => void togglePin()}
+                      >
+                        <Pin size={16} />
+                      </button>
+                    )}
                     <button
-                      className="character-pill"
-                      aria-label={`切换角色，当前为 ${character.name}`}
+                      className="icon-button glass"
+                      aria-label="全屏舞台"
+                      title="全屏舞台"
+                      onClick={fullscreen}
                     >
-                      <span
-                        className="avatar-mini"
-                        style={{ background: character.color }}
-                        aria-hidden="true"
-                      >
-                        {character.name[0]}
-                      </span>
-                      <span>{character.name}</span>
-                      <ChevronDown size={14} />
+                      <Maximize2 size={16} />
                     </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="min-w-40">
-                    {s.characters.map((c) => (
-                      <DropdownMenuItem
-                        key={c.id}
-                        disabled={s.busy}
-                        onSelect={() => {
-                          if (character.id !== c.id) {
-                            voice.stopSpeaking()
-                            s.selectCharacter(c.id)
-                          }
-                        }}
-                      >
-                        <span className="color-dot" style={{ background: c.color }} />
-                        <span className="flex-1 truncate">{c.name}</span>
-                        {s.characterID === c.id && <Check size={14} />}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <div className="stage-actions">
-                {s.desktop && (
-                  <button
-                    className="icon-button glass"
-                    aria-label="窗口置顶"
-                    aria-pressed={pinned}
-                    title="窗口置顶"
-                    onClick={() => void togglePin()}
-                  >
-                    <Pin size={16} />
-                  </button>
-                )}
-                <button
-                  className="icon-button glass"
-                  aria-label="全屏舞台"
-                  title="全屏舞台"
-                  onClick={fullscreen}
-                >
-                  <Maximize2 size={16} />
-                </button>
-              </div>
-            </div>
-            <div className="model-position">
-              <Live2DStage
-                ref={stageRef}
-                modelPath={character.model_path}
-                onCapabilitiesChange={setCapabilities}
-                onInteraction={setInteraction}
-              />
-            </div>
-            <StageEffects effects={s.effects} />
-            <StageOverlay />
-            <div className="stage-bottom">
-              {activity && (
-                <div className="stage-status">
-                  <span className="status-dot pulse" />
-                  {activity}
+                  </div>
                 </div>
               )}
-              <div className="zoom-controls" role="group" aria-label="画布缩放">
-                <button
-                  aria-label="缩小"
-                  disabled={s.zoom <= 0.5}
-                  onClick={() => s.patch({ zoom: Math.max(0.5, s.zoom - 0.1) })}
-                >
-                  <Minus size={14} />
-                </button>
-                <span>{Math.round(s.zoom * 100)}%</span>
-                <button
-                  aria-label="放大"
-                  disabled={s.zoom >= 1.7}
-                  onClick={() => s.patch({ zoom: Math.min(1.7, s.zoom + 0.1) })}
-                >
-                  <Plus size={14} />
-                </button>
-                <i />
-                <button
-                  aria-label="重置视图"
-                  onClick={() => {
-                    s.patch({ zoom: 1 })
-                    s.setMood('neutral')
-                    stageRef.current?.reset()
-                  }}
-                >
-                  <RefreshCw size={13} />
-                </button>
+              <div className="model-position">
+                <Live2DStage
+                  ref={stageRef}
+                  modelPath={character.model_path}
+                  actionNames={character.action_names}
+                  onCapabilitiesChange={setCapabilities}
+                  onInteraction={setInteraction}
+                />
               </div>
+              <StageEffects effects={s.effects} />
+              <StageOverlay />
+              <CanvasLayer
+                onInspect={inspectCanvas}
+                controlsVisible={s.controlsVisible}
+                scale={stageFrame.contentScale}
+              />
+              {s.controlsVisible && (
+                <div className="stage-bottom">
+                  {activity && (
+                    <div className="stage-status">
+                      <span className="status-dot pulse" />
+                      {activity}
+                    </div>
+                  )}
+                  <div className="zoom-controls" role="group" aria-label="画布缩放">
+                    <button
+                      aria-label="缩小"
+                      disabled={s.zoom <= 0.5}
+                      onClick={() => s.patch({ zoom: Math.max(0.5, s.zoom - 0.1) })}
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span>{Math.round(s.zoom * 100)}%</span>
+                    <button
+                      aria-label="放大"
+                      disabled={s.zoom >= 1.7}
+                      onClick={() => s.patch({ zoom: Math.min(1.7, s.zoom + 0.1) })}
+                    >
+                      <Plus size={14} />
+                    </button>
+                    <i />
+                    <button
+                      aria-label="重置视图"
+                      onClick={() => {
+                        s.patch({ zoom: 1 })
+                        s.setMood('neutral')
+                        stageRef.current?.reset()
+                      }}
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="canvas-footer">
@@ -809,6 +865,8 @@ export default function StudioPage() {
               stageRef={stageRef}
               capabilities={capabilities}
               interaction={interaction}
+              category={stageCategory}
+              onCategoryChange={setStageCategory}
             />
           </div>
         </aside>

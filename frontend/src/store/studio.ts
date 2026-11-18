@@ -6,11 +6,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Character, Conversation, Message, SceneAsset, Settings } from '../types/api'
-import type { StageEffectSetting } from '../types/stage'
+import type { StageAppearance } from '../types/stage'
 import { api } from '../api/client'
 import { draftKey, moveDraft } from './chatDrafts'
 
-interface State {
+interface State extends StageAppearance {
   characters: Character[]
   conversations: Conversation[]
   messages: Message[]
@@ -24,17 +24,7 @@ interface State {
   speechEnabled: boolean
   expression: string
   expressionRevision: number
-  stage: string
   sceneAssets: SceneAsset[]
-  backgroundAssetID: string | null
-  backgroundFit: 'cover' | 'contain'
-  backgroundDim: number
-  videoPlaying: boolean
-  effects: StageEffectSetting[]
-  overlayAssetID: string | null
-  overlayOpacity: number
-  overlayBlendMode: 'normal' | 'screen' | 'lighten'
-  zoom: number
   desktop: boolean
   notice: string
   chatError: string
@@ -100,6 +90,8 @@ export const useStudio = create<State>()(
       expression: 'neutral',
       expressionRevision: 0,
       stage: 'lavender',
+      aspect: 'auto',
+      controlsVisible: true,
       sceneAssets: [],
       backgroundAssetID: null,
       backgroundFit: 'cover',
@@ -212,6 +204,8 @@ export const useStudio = create<State>()(
         characterID: s.characterID,
         speechEnabled: s.speechEnabled,
         stage: s.stage,
+        aspect: s.aspect,
+        controlsVisible: s.controlsVisible,
         backgroundAssetID: s.backgroundAssetID,
         backgroundFit: s.backgroundFit,
         backgroundDim: s.backgroundDim,

@@ -208,7 +208,7 @@
 }
 .characters-page .character-card-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, auto)) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
   margin-top: auto;
   padding-top: 5px;
@@ -276,14 +276,6 @@
 }
 .character-form-error {
   margin-top: 12px;
-}
-@media (max-width: 650px) {
-  .characters-page .character-card-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .character-card-actions .character-chat {
-    grid-column: 1 / -1;
-  }
 }
 @media (max-width: 460px) {
   .characters-page .characters-header {

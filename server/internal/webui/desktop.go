@@ -33,6 +33,7 @@ func DesktopHandler(address string) (http.Handler, error) {
 	}
 	base, _ := json.Marshal(address + "/api/v1")
 	script := []byte("<script>window.__STUDIO_API_BASE_URL__=" + string(base) + ";</script>")
+	petRuntime := []byte(`<script type="module" src="/wails/runtime.js"></script>`)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
@@ -64,7 +65,11 @@ func DesktopHandler(address string) (http.Handler, error) {
 		if !bytes.Contains(body, []byte("<head>")) {
 			return fmt.Errorf("桌面页面缺少 head 元素")
 		}
-		body = bytes.Replace(body, []byte("<head>"), append([]byte("<head>"), script...), 1)
+		head := append([]byte("<head>"), script...)
+		if r.Request.URL.Query().Get("pet") == "1" {
+			head = append(head, petRuntime...)
+		}
+		body = bytes.Replace(body, []byte("<head>"), head, 1)
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		r.ContentLength = int64(len(body))
 		r.Header.Set("Content-Length", strconv.Itoa(len(body)))

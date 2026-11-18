@@ -38,6 +38,42 @@ paths:
         '200': { description: Updated character }
         '400': { description: Invalid input }
         '404': { description: Character not found }
+  /characters/{id}/actions:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Read motions and native expressions from the character's actual model3.json
+      description: Initial and uploaded models use the same backend model storage. Only existing resource files within the character model directory are returned. Motions use a JSON pair of group and index as their ID, including empty group names. label uses the character's saved custom name; default_label preserves the original name. Unavailable counts distinguish incomplete files from a legitimate empty list.
+      responses:
+        '200': { description: data contains character_id, model_path, action_names, motions (id/group/index/label/default_label), expressions and moods (id/label/default_label), unavailable_motions and unavailable_expressions }
+        '404': { description: Character not found or read failed }
+        '422': { description: Model manifest unavailable or invalid }
+  /characters/{id}/action-names:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Replace custom motion, expression and mood names for one character
+      description: Stores names in character configuration without changing model files or resource IDs. Empty or omitted names restore defaults. Known names for temporarily unavailable resources are retained. Only the naming column is updated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model_path, action_names]
+              properties:
+                model_path: { type: string, description: Current model_path from the actions response }
+                action_names:
+                  type: object
+                  properties:
+                    motions: { type: object, additionalProperties: { type: string, maxLength: 60 } }
+                    expressions: { type: object, additionalProperties: { type: string, maxLength: 60 } }
+                    moods: { type: object, additionalProperties: { type: string, maxLength: 60 } }
+      responses:
+        '200': { description: Updated character including action_names }
+        '400': { description: Invalid name, resource ID or stale model_path }
+        '404': { description: Character not found or save failed }
+        '422': { description: Model manifest unavailable or invalid }
   /characters/import:
     post:
       summary: Import one Cubism model from ZIP (100MB compressed, 200MB expanded)
@@ -169,7 +205,7 @@ paths:
         '404': { description: Not found }
     post:
       summary: Send a message and receive Eino streaming output
-      description: Disconnect cancels upstream generation. At most one generation per conversation. A tool event includes a ToolRun in its tool field. Updates for the same call share an ID. A done event includes the persisted assistant Message and may be followed by an error event when generation failed.
+      description: Disconnect cancels upstream generation. At most one generation per conversation. A tool event includes a ToolRun in its tool field. Updates for the same call share an ID. A stage_action event carries stage_action (character_id, model_path, type motion/expression, id) after server validation; the client checks its current character/model before executing and displays the actual result. The tool result acknowledges dispatch, not successful playback. A character event includes the saved Character in its character field when update_character succeeds; it only modifies the current conversation character. A done event includes the persisted assistant Message and may be followed by an error event when generation failed.
       requestBody:
         required: true
         content:
@@ -182,7 +218,7 @@ paths:
                 image: { type: string, description: Optional PNG/JPEG/WebP base64 data URL, maximum 4MB decoded }
       responses:
         '200':
-          description: SSE data lines containing JSON events (user, delta, expression, tool, done, error)
+          description: SSE data lines containing JSON events (user, delta, expression, stage_action, character, tool, done, error)
           content:
             text/event-stream:
               schema: { type: string }
@@ -199,9 +235,9 @@ paths:
     get:
       summary: Get effective settings, secret-presence flags and environment override names
       responses:
-        '200': { description: Settings with blank API keys }
+        '200': { description: Settings with blank API keys and llm_profile_saved indicating whether the current service has saved configuration }
     put:
-      summary: Save LLM and speech settings (blank keys preserve existing secrets)
+      summary: Save and activate the selected LLM service profile and shared speech settings (blank LLM key preserves only that service's secret)
       requestBody:
         required: true
         content:
@@ -210,19 +246,62 @@ paths:
               type: object
               required: [llm, speech]
               properties:
-                llm: { type: object, description: base_url, api_key, model, temperature, max_tokens, context_messages, tools_enabled }
+                llm: { type: object, description: 'provider (openai/deepseek/ollama/lmstudio; legacy configurations infer their provider from the URL), base_url, api_key, model, temperature, max_tokens, context_messages, tools_enabled. Each provider keeps an independent profile and secret. Ollama accepts its root URL, /api or /v1 and never receives the saved cloud API key.' }
                 speech: { type: object, description: mode (browser/api/off), base_url, api_key, asr_model, tts_model, voice, language }
                 clear_llm_key: { type: boolean, default: false }
                 clear_speech_key: { type: boolean, default: false }
       responses:
         '200': { description: Saved settings, secrets hidden }
         '400': { description: Validation failed }
+  /settings/llm/{provider}:
+    get:
+      summary: Read the saved configuration for one LLM service without activating it
+      description: Returns the database profile, or backend defaults only if none exists. Legacy single-profile settings are preserved. Credentials are never returned; has_llm_key reports presence. Environment overrides are not applied to this profile view.
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [openai, deepseek, ollama, lmstudio] }
+      responses:
+        '200':
+          description: LLM profile with its API key blanked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      llm: { type: object }
+                      has_llm_key: { type: boolean }
+                      saved: { type: boolean }
+        '400': { description: Unsupported service }
+        '500': { description: Database read failed }
   /settings/test:
     post:
       summary: Test saved effective settings through the actual Eino streaming and tools path
       responses:
         '200': { description: Model connection works }
         '502': { description: Provider failed or timed out }
+  /settings/ollama/models:
+    post:
+      summary: List installed Ollama models from an unsaved service address
+      description: Reads the native /api/tags endpoint without credentials. Accepts the service root, /api or /v1, including a reverse proxy prefix. Does not change saved settings. Upstream timeout is 8 seconds and response is limited to 2MiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_url]
+              properties:
+                base_url: { type: string, format: uri, example: 'http://127.0.0.1:11434' }
+      responses:
+        '200':
+          description: data.models contains installed models with name, model, size, modified_at and details (family, parameter_size, quantization_level). Empty installations return an empty array.
+        '400': { description: Invalid service address or request body }
+        '502': { description: Service unavailable, invalid response or timeout }
   /scene-assets:
     get:
       summary: List local background image and video assets, newest first

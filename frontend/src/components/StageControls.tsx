@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Play, RotateCcw, Shuffle } from 'lucide-react'
+import { actionDisplayName } from '../utils/actionNames'
 import type { Live2DCapabilities, Live2DStageHandle } from './Live2DStage'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { useStudio } from '../store/studio'
@@ -68,6 +69,7 @@ export default function StageControls({
   capabilities: Live2DCapabilities | null
 }) {
   const s = useStudio()
+  const character = s.characters.find((item) => item.id === s.characterID) ?? s.characters[0]
   const [motion, setMotion] = useState('')
   const [expression, setExpression] = useState('')
   // nativeRequest 用于丢弃已失效的原生表情切换结果。
@@ -118,7 +120,9 @@ export default function StageControls({
               onClick={() => mood(e.key)}
             >
               <MoodFace mood={e.key} />
-              <span>{e.label}</span>
+              <span title={e.label}>
+                {actionDisplayName(character?.action_names, 'moods', e.key, e.label)}
+              </span>
             </button>
           ))}
         </div>
@@ -145,7 +149,7 @@ export default function StageControls({
               {!capabilities?.motions.length && <SelectItem value="none">暂无动作</SelectItem>}
               {capabilities?.motions.map((item) => (
                 <SelectItem key={item.id} value={item.id}>
-                  {item.label}
+                  {actionDisplayName(character?.action_names, 'motions', item.id, item.label)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -200,7 +204,7 @@ export default function StageControls({
               <SelectItem value="none">自然 / 情绪表情</SelectItem>
               {capabilities.expressions.map((item) => (
                 <SelectItem key={item.id} value={item.id}>
-                  {item.label}
+                  {actionDisplayName(character?.action_names, 'expressions', item.id, item.label)}
                 </SelectItem>
               ))}
             </SelectContent>

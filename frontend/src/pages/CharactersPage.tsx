@@ -1,6 +1,6 @@
 /**
  * 页面：角色库。
- * 支持导入 Live2D 模型 ZIP、搜索角色、预览模型、编辑人设、管理记忆与开始对话。
+ * 支持导入模型、编辑人设及动作命名、管理记忆与开始对话。
  */
 import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -15,11 +15,13 @@ import {
   Play,
   Save,
   Search,
+  Tags,
   Upload,
   X,
 } from 'lucide-react'
 import Live2DStage from '../components/Live2DStage'
 import CharacterMemories from '../components/CharacterMemories'
+import CharacterActionNames from '../components/CharacterActionNames'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { notify, useStudio } from '../store/studio'
 import { api } from '../api/client'
@@ -32,6 +34,7 @@ export default function CharactersPage() {
   const navigate = useNavigate()
   const [editing, setEditing] = useState<Character | null>(null)
   const [memoryCharacter, setMemoryCharacter] = useState<Character | null>(null)
+  const [namingCharacter, setNamingCharacter] = useState<Character | null>(null)
   const [importing, setImporting] = useState(false)
   const [search, setSearch] = useState('')
   const [previewChoice, setPreviewChoice] = useState<string | null>(null)
@@ -41,10 +44,12 @@ export default function CharactersPage() {
     `${character.name}\n${character.description}`.toLowerCase().includes(query),
   )
   // Cubism 的着色器状态在模型之间共享，同一时刻只能有一个预览占用 WebGL 上下文。
-  const previewID =
-    visibleCharacters.find((character) => character.id === previewChoice)?.id ??
-    visibleCharacters.find((character) => character.id === characterID)?.id ??
-    visibleCharacters[0]?.id
+  // 命名弹窗接管模型预览，暂停卡片中的实例，避免共享的着色器状态互相影响。
+  const previewID = namingCharacter
+    ? undefined
+    : (visibleCharacters.find((character) => character.id === previewChoice)?.id ??
+      visibleCharacters.find((character) => character.id === characterID)?.id ??
+      visibleCharacters[0]?.id)
 
   // 导入模型 ZIP：限制 100MB，成功后追加角色并直接打开编辑弹窗。
   const importModel = async (model: File) => {
@@ -71,7 +76,7 @@ export default function CharactersPage() {
       <header className="page-header characters-header">
         <div>
           <h1>角色库</h1>
-          <p>选择聊天伙伴，管理角色人设和跨会话记忆。</p>
+          <p>选择聊天伙伴，管理人设、动作与表情名称和跨会话记忆。</p>
         </div>
         <button
           className="button primary character-import"
@@ -175,6 +180,14 @@ export default function CharactersPage() {
                       </button>
                       <button
                         className="button ghost"
+                        aria-label={`自定义 ${character.name} 的动作与表情名称`}
+                        onClick={() => setNamingCharacter(character)}
+                      >
+                        <Tags size={15} />
+                        动作与表情
+                      </button>
+                      <button
+                        className="button ghost"
                         aria-label={`管理 ${character.name} 的记忆`}
                         onClick={() => setMemoryCharacter(character)}
                       >
@@ -224,6 +237,13 @@ export default function CharactersPage() {
           key={memoryCharacter.id}
           character={memoryCharacter}
           onClose={() => setMemoryCharacter(null)}
+        />
+      )}
+      {namingCharacter && (
+        <CharacterActionNames
+          key={namingCharacter.id}
+          character={characters.find((item) => item.id === namingCharacter.id) ?? namingCharacter}
+          onClose={() => setNamingCharacter(null)}
         />
       )}
       {editing && (

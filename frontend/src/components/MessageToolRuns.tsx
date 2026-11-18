@@ -10,6 +10,11 @@ const names = new Map([
   ['set_expression', '切换表情'],
   ['calculate', '计算'],
   ['search_memories', '查找角色记忆'],
+  ['save_memory', '保存角色记忆'],
+  ['update_character', '修改角色设定'],
+  ['get_character_actions', '查询模型动作'],
+  ['play_motion', '发送动作播放请求'],
+  ['set_model_expression', '发送模型表情请求'],
   ['unknown_tool', '未知工具'],
 ])
 const statuses = {

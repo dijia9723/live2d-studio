@@ -5,6 +5,7 @@ package settings
 import (
 	"context"
 	"os"
+	"server/internal/config"
 	"server/internal/model"
 	"server/internal/modules/agent"
 	"server/internal/pkg"
@@ -21,7 +22,7 @@ func safe(v Values) gin.H {
 	v.LLM.APIKey = ""
 	v.Speech.APIKey = ""
 	locked := []string{}
-	for _, key := range []string{"STUDIO_LLM_API_KEY", "STUDIO_LLM_BASE_URL", "STUDIO_LLM_MODEL", "STUDIO_SPEECH_API_KEY"} {
+	for _, key := range []string{"STUDIO_LLM_PROVIDER", "STUDIO_LLM_API_KEY", "STUDIO_LLM_BASE_URL", "STUDIO_LLM_MODEL", "STUDIO_SPEECH_API_KEY"} {
 		if os.Getenv(key) != "" {
 			locked = append(locked, key)
 		}
@@ -36,7 +37,30 @@ func (m *Module) get(c *gin.Context) {
 		pkg.Fail(c, 500, "读取设置失败")
 		return
 	}
-	pkg.OK(c, safe(v))
+	_, saved, err := m.Service.Profile(v.LLM.Provider)
+	if err != nil {
+		pkg.Fail(c, 500, "读取模型服务配置失败")
+		return
+	}
+	result := safe(v)
+	result["llm_profile_saved"] = saved
+	pkg.OK(c, result)
+}
+
+// profile 只读取指定服务，不切换聊天当前使用的服务，且绝不返回密钥内容。
+func (m *Module) profile(c *gin.Context) {
+	if _, ok := config.LLMProviderDefaults(c.Param("provider")); !ok {
+		pkg.Fail(c, 400, "不支持的模型服务类型")
+		return
+	}
+	v, saved, err := m.Service.Profile(c.Param("provider"))
+	if err != nil {
+		pkg.Fail(c, 500, "读取模型服务配置失败，请稍后重试")
+		return
+	}
+	hasKey := v.APIKey != ""
+	v.APIKey = ""
+	pkg.OK(c, gin.H{"llm": v, "has_llm_key": hasKey, "saved": saved})
 }
 
 // Request 是保存设置的请求体。
@@ -69,7 +93,11 @@ func (m *Module) test(c *gin.Context) {
 		pkg.Fail(c, 500, "读取设置失败")
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
+	timeout := 60 * time.Second
+	if v.LLM.Provider == "ollama" {
+		timeout = 120 * time.Second // 首次加载本地模型可能需要更长时间。
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 	// 使用真实的流式路径与参数，确保连通性测试不会对无法产生回复的配置误报成功。
 	content := ""

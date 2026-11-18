@@ -1,13 +1,14 @@
 /**
- * 文件职责：舞台设置面板，用标签页组合角色控制、背景管理与氛围特效。
+ * 文件职责：舞台设置面板，组合角色控制、背景、特效与自由画布组件。
  * 包含完整的方向键/Home/End 键盘导航与 ARIA tab 语义。
  */
-import { useState } from 'react'
 import type { RefObject } from 'react'
-import { Image, Smile, Sparkles } from 'lucide-react'
+import { Image, LayoutTemplate, PanelsTopLeft, Smile, Sparkles } from 'lucide-react'
 import StageControls from './StageControls'
 import BackgroundManager from './BackgroundManager'
 import OverlayManager from './OverlayManager'
+import CanvasWidgetManager from './CanvasWidgetManager'
+import StageTemplateManager from './StageTemplateManager'
 import { effectPresets } from './StageEffects'
 import { Switch } from './ui/switch'
 import { useStudio } from '../store/studio'
@@ -17,23 +18,30 @@ const categories = [
   { id: 'character', name: '表情与动作', Icon: Smile },
   { id: 'background', name: '背景', Icon: Image },
   { id: 'effects', name: '特效', Icon: Sparkles },
+  { id: 'widgets', name: '组件', Icon: LayoutTemplate },
+  { id: 'templates', name: '模板', Icon: PanelsTopLeft },
 ]
 
 /**
  * @param stageRef 舞台控制句柄，透传给角色控制子面板
  * @param capabilities 当前模型能力
  * @param interaction 舞台反馈文案（来自 Live2DStage）
+ * @param category 当前分类，由工作台控制以支持从画布打开组件编辑器
+ * @param onCategoryChange 分类切换回调
  */
 export default function StageSettingsPanel({
   stageRef,
   capabilities,
   interaction,
+  category: tab,
+  onCategoryChange: setTab,
 }: {
   stageRef: RefObject<Live2DStageHandle | null>
   capabilities: Live2DCapabilities | null
   interaction: string
+  category: string
+  onCategoryChange: (category: string) => void
 }) {
-  const [tab, setTab] = useState('character')
   const s = useStudio()
   // 合并写入单个特效设置：不存在时创建，已存在时覆盖指定字段。
   const setEffect = (id: string, patch: { enabled?: boolean; intensity?: number }) => {
@@ -184,6 +192,22 @@ export default function StageSettingsPanel({
             })}
           </div>
           <OverlayManager />
+        </div>
+        <div
+          role="tabpanel"
+          id="stage-category-widgets"
+          aria-labelledby="stage-tab-widgets"
+          hidden={tab !== 'widgets'}
+        >
+          <CanvasWidgetManager />
+        </div>
+        <div
+          role="tabpanel"
+          id="stage-category-templates"
+          aria-labelledby="stage-tab-templates"
+          hidden={tab !== 'templates'}
+        >
+          <StageTemplateManager />
         </div>
       </div>
       <div className="stage-settings-footer">

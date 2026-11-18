@@ -23,9 +23,13 @@ import {
   Smile,
   Volume2,
   WandSparkles,
+  UserRoundPen,
+  ListChecks,
+  Play,
 } from 'lucide-react'
 import { api } from '../api/client'
 import CharacterMemories from '../components/CharacterMemories'
+import OllamaModels from '../components/OllamaModels'
 import {
   Select,
   SelectContent,
@@ -35,14 +39,15 @@ import {
 } from '../components/ui/select'
 import { Switch } from '../components/ui/switch'
 import { useStudio } from '../store/studio'
+import { useLLMProfiles } from '../hooks/useLLMProfiles'
 import type { Settings } from '../types/api'
 
 const presets = [
-  { name: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  { name: 'DeepSeek', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { name: 'Ollama', url: 'http://localhost:11434/v1', model: 'qwen3:8b' },
-  { name: 'LM Studio', url: 'http://localhost:1234/v1', model: 'local-model' },
-]
+  { name: 'OpenAI', provider: 'openai' },
+  { name: 'DeepSeek', provider: 'deepseek' },
+  { name: 'Ollama', provider: 'ollama' },
+  { name: 'LM Studio', provider: 'lmstudio' },
+] as const
 const sections = [
   { id: 'llm', name: '语言模型', icon: Cpu },
   { id: 'speech', name: '语音交互', icon: Volume2 },
@@ -55,7 +60,24 @@ const tools = [
   { name: '查询时间', icon: Clock3, description: '获取当前日期和时间，支持指定时区。' },
   { name: '计算', icon: Calculator, description: '计算整数、小数的四则运算，支持括号。' },
   { name: '检索记忆', icon: Brain, description: '按关键词查找当前角色的已保存记忆。' },
+  { name: '保存记忆', icon: Brain, description: '按你的明确要求，将事实或偏好保存到当前角色。' },
   { name: '切换表情', icon: Smile, description: '切换自然、开心、难过或惊讶表情。' },
+  {
+    name: '查询模型动作',
+    icon: ListChecks,
+    description: '读取当前模型真实存在的动作和原生表情列表。',
+  },
+  {
+    name: '播放模型动作',
+    icon: Play,
+    description: '播放指定动作或随机动作，舞台显示实际执行结果。',
+  },
+  { name: '模型原生表情', icon: Smile, description: '切换模型自带的表情，自动校验表情是否存在。' },
+  {
+    name: '修改角色设定',
+    icon: UserRoundPen,
+    description: '按你的要求保存当前角色的名称、自我介绍或人设，可同时修改多项。',
+  },
 ]
 
 export default function SettingsPage() {
@@ -64,12 +86,12 @@ export default function SettingsPage() {
   const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
   const page = useRef<HTMLDivElement>(null)
-  const [form, setForm] = useState<Settings>(() => structuredClone(s.settings!))
+  const profiles = useLLMProfiles(s.settings!)
+  const { form, setForm, clearLLM, setClearLLM } = profiles
   const [activity, setActivity] = useState<Activity | null>(null)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [connection, setConnection] = useState<Connection | null>(null)
-  const [clearLLM, setClearLLM] = useState(false)
   const [clearSpeech, setClearSpeech] = useState(false)
   const [showMemories, setShowMemories] = useState(false)
   const character = s.characters.find((item) => item.id === s.characterID) ?? s.characters[0]
@@ -77,10 +99,14 @@ export default function SettingsPage() {
   const dirty =
     clearLLM ||
     clearSpeech ||
-    JSON.stringify(form.llm) !== JSON.stringify(s.settings?.llm) ||
+    JSON.stringify(form.llm) !== JSON.stringify(profiles.baseline) ||
     JSON.stringify(form.speech) !== JSON.stringify(s.settings?.speech)
+  const switchingService = form.llm.provider !== s.settings?.llm.provider
+  const needsSave = dirty || switchingService
+  const profileUnavailable = profiles.loading || !!profiles.error
   // 推理模型使用固定采样策略，温度控件对其禁用。
-  const reasoningModel = /^(gpt-5|o[134](?:-|$))/i.test(form.llm.model.trim())
+  const isOllama = form.llm.provider === 'ollama'
+  const reasoningModel = !isOllama && /^(gpt-5|o[134](?:-|$))/i.test(form.llm.model.trim())
   const connected = connection?.status === 'passed'
 
   // 切换分区时把页面滚回顶部。
@@ -100,21 +126,20 @@ export default function SettingsPage() {
   }
   // 提交：按需先保存再测试；测试失败时区分“已保存但连接失败”与保存失败。
   const submit = async (test = false) => {
-    if (activity || (!dirty && !test)) return
-    let phase: Activity = dirty ? 'saving' : 'testing'
+    if (activity || profileUnavailable || (!needsSave && !test)) return
+    let phase: Activity = needsSave ? 'saving' : 'testing'
     setActivity(phase)
     setSaveError('')
     if (test) setConnection(null)
     try {
-      if (dirty) {
+      if (needsSave) {
         const result = await api.saveSettings({
           ...form,
           clear_llm_key: clearLLM,
           clear_speech_key: clearSpeech,
         })
         s.patch({ settings: result })
-        setForm(structuredClone(result))
-        setClearLLM(false)
+        profiles.markSaved(result)
         setClearSpeech(false)
         setSaved(true)
       }
@@ -126,7 +151,7 @@ export default function SettingsPage() {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : '请稍后重试。'
-      if (phase === 'testing') setConnection({ status: 'failed', message, saved: dirty })
+      if (phase === 'testing') setConnection({ status: 'failed', message, saved: needsSave })
       else setSaveError(message)
     } finally {
       setActivity(null)
@@ -143,9 +168,14 @@ export default function SettingsPage() {
               ? '流式回复验证通过'
               : '发送一条测试消息，验证模型能否回复。'}
         </span>
-        <button type="button" className="button soft" onClick={() => void submit(true)}>
+        <button
+          type="button"
+          className="button soft"
+          disabled={profileUnavailable}
+          onClick={() => void submit(true)}
+        >
           {activity ? <LoaderCircle className="spin" size={15} /> : <Plug size={15} />}
-          {dirty ? '保存并测试连接' : '测试连接'}
+          {needsSave ? '保存并测试连接' : '测试连接'}
         </button>
       </div>
       {connection?.status === 'failed' && (
@@ -165,19 +195,23 @@ export default function SettingsPage() {
         </div>
         <div className="settings-save-actions">
           <span className="settings-save-state" role="status">
-            {activity === 'saving'
-              ? '正在保存…'
-              : activity === 'testing'
-                ? '正在测试连接…'
-                : dirty
-                  ? '有未保存的更改'
-                  : saved
-                    ? '设置已保存'
-                    : ''}
+            {profiles.loading
+              ? '正在读取服务配置…'
+              : activity === 'saving'
+                ? '正在保存…'
+                : activity === 'testing'
+                  ? '正在测试连接…'
+                  : dirty
+                    ? '有未保存的更改'
+                    : switchingService
+                      ? '保存后启用此服务'
+                      : saved
+                        ? '设置已保存'
+                        : ''}
           </span>
           <button
             className="button primary"
-            disabled={!dirty || activity !== null}
+            disabled={!needsSave || activity !== null || profileUnavailable}
             onClick={() => void submit()}
           >
             {activity === 'saving' ? (
@@ -215,6 +249,14 @@ export default function SettingsPage() {
               保存失败。{saveError}
             </p>
           )}
+          {profiles.error && (
+            <div className="settings-profile-error" role="alert">
+              <span>读取服务配置失败。{profiles.error}</span>
+              <button type="button" onClick={profiles.retry}>
+                重新读取
+              </button>
+            </div>
+          )}
           {form.environment_overrides.length > 0 && (
             <div className="settings-note">
               <Info size={18} />
@@ -230,127 +272,175 @@ export default function SettingsPage() {
                   </span>
                   <div>
                     <h2>连接模型服务</h2>
-                    <p>选择服务预设，或填写 OpenAI 兼容接口。</p>
+                    <p>连接云端服务，或选择本机 Ollama 中已安装的模型。</p>
                   </div>
                 </div>
                 <div className="preset-grid">
-                  {presets.map((p) => (
-                    <button
-                      className={form.llm.base_url === p.url ? 'active' : ''}
-                      aria-pressed={form.llm.base_url === p.url}
-                      key={p.name}
-                      onClick={() => llm({ base_url: p.url, model: p.model })}
-                    >
-                      {p.name}
-                      {form.llm.base_url === p.url && <Check size={13} />}
-                    </button>
-                  ))}
+                  {presets.map((p) => {
+                    const active = profiles.provider === p.provider
+                    return (
+                      <button
+                        className={active ? 'active' : ''}
+                        aria-pressed={active}
+                        key={p.name}
+                        onClick={() => {
+                          setConnection(null)
+                          setSaveError('')
+                          setSaved(false)
+                          profiles.selectProvider(p.provider)
+                        }}
+                      >
+                        {p.name}
+                        {active && <Check size={13} />}
+                      </button>
+                    )
+                  })}
                 </div>
-                <label className="form-field">
-                  服务地址 / Base URL
-                  <input
-                    type="url"
-                    value={form.llm.base_url}
-                    onChange={(e) => llm({ base_url: e.target.value })}
-                    placeholder="https://api.openai.com/v1"
-                  />
-                  <small>填写到 /v1 或服务商提供的兼容前缀，勿添加 /chat/completions。</small>
-                </label>
-                <label className="form-field">
-                  API Key
-                  <span className="input-icon">
-                    <KeyRound size={16} />
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={form.llm.api_key}
-                      onChange={(e) => llm({ api_key: e.target.value })}
-                      placeholder={
-                        form.has_llm_key
-                          ? '已保存密钥，留空保留'
-                          : '输入你的 API Key，本地服务可留空'
-                      }
-                    />
-                  </span>
-                </label>
-                {form.has_llm_key && (
-                  <label className="checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={clearLLM}
-                      onChange={(e) => {
-                        setClearLLM(e.target.checked)
-                        setConnection(null)
-                        setSaveError('')
-                      }}
-                    />
-                    清除已保存的密钥
-                  </label>
+                {profiles.loading && (
+                  <p className="settings-profile-status" role="status">
+                    <LoaderCircle className="spin" size={16} />
+                    正在读取已保存的服务配置…
+                  </p>
                 )}
-                <label className="form-field">
-                  模型名称
-                  <input value={form.llm.model} onChange={(e) => llm({ model: e.target.value })} />
-                  <small>使用服务商模型 ID，或 Ollama / LM Studio 中已加载的模型名称。</small>
-                </label>
-                {connectionTest}
+                {!profileUnavailable && (
+                  <>
+                    <p className="settings-profile-source">
+                      {profiles.profileSaved
+                        ? '已读取该服务的已保存配置'
+                        : '该服务尚未保存，使用初始配置'}
+                      {!dirty && !switchingService && ' · 当前使用中'}
+                    </p>
+                    <label className="form-field">
+                      服务地址 / Base URL
+                      <input
+                        type="url"
+                        value={form.llm.base_url}
+                        onChange={(e) => llm({ base_url: e.target.value })}
+                        placeholder={
+                          isOllama ? 'http://127.0.0.1:11434' : 'https://api.openai.com/v1'
+                        }
+                      />
+                      <small>
+                        {isOllama
+                          ? '填写 Ollama 服务地址，支持根地址、/v1 或 /api。本地服务无需 API Key。'
+                          : '填写到 /v1 或服务商提供的兼容前缀，勿添加 /chat/completions。'}
+                      </small>
+                    </label>
+                    {isOllama && (
+                      <OllamaModels
+                        baseURL={form.llm.base_url}
+                        selected={form.llm.model}
+                        onSelect={(model) => llm({ model })}
+                      />
+                    )}
+                    {!isOllama && (
+                      <label className="form-field">
+                        API Key
+                        <span className="input-icon">
+                          <KeyRound size={16} />
+                          <input
+                            type="password"
+                            autoComplete="off"
+                            value={form.llm.api_key}
+                            onChange={(e) => llm({ api_key: e.target.value })}
+                            placeholder={
+                              form.has_llm_key
+                                ? '已保存密钥，留空保留'
+                                : '输入你的 API Key，本地服务可留空'
+                            }
+                          />
+                        </span>
+                      </label>
+                    )}
+                    {!isOllama && form.has_llm_key && (
+                      <label className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={clearLLM}
+                          onChange={(e) => {
+                            setClearLLM(e.target.checked)
+                            setConnection(null)
+                            setSaveError('')
+                          }}
+                        />
+                        清除已保存的密钥
+                      </label>
+                    )}
+                    <label className="form-field">
+                      模型名称
+                      <input
+                        value={form.llm.model}
+                        onChange={(e) => llm({ model: e.target.value })}
+                      />
+                      <small>
+                        {isOllama
+                          ? '点击上方模型即可填入，也可以手动填写完整名称（包含标签）。'
+                          : '使用服务商模型 ID，或 LM Studio 中已加载的模型名称。'}
+                      </small>
+                    </label>
+                    {connectionTest}
+                  </>
+                )}
               </section>
-              <section className="settings-card">
-                <div className="card-heading">
-                  <span className="card-icon">
-                    <SlidersHorizontal size={20} />
-                  </span>
-                  <div>
-                    <h2>回复参数</h2>
-                    <p>调整生成长度和发送给模型的会话上下文。</p>
-                  </div>
-                </div>
-                <div className="form-row">
-                  <label className="form-field">
-                    <span className="settings-range-label">
-                      创造性 / Temperature
-                      <span>{form.llm.temperature.toFixed(1)}</span>
+              {!profileUnavailable && (
+                <section className="settings-card">
+                  <div className="card-heading">
+                    <span className="card-icon">
+                      <SlidersHorizontal size={20} />
                     </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      disabled={reasoningModel}
-                      value={form.llm.temperature}
-                      onChange={(e) => llm({ temperature: Number(e.target.value) })}
-                    />
-                    <small>
-                      {reasoningModel
-                        ? '此推理模型使用固定采样策略，保存时将自动适配。'
-                        : '越低越严谨，越高越有想象力。'}
-                    </small>
-                  </label>
-                  <label className="form-field">
-                    回复长度 / Max Tokens
+                    <div>
+                      <h2>回复参数</h2>
+                      <p>调整生成长度和发送给模型的会话上下文。</p>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <label className="form-field">
+                      <span className="settings-range-label">
+                        创造性 / Temperature
+                        <span>{form.llm.temperature.toFixed(1)}</span>
+                      </span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        disabled={reasoningModel}
+                        value={form.llm.temperature}
+                        onChange={(e) => llm({ temperature: Number(e.target.value) })}
+                      />
+                      <small>
+                        {reasoningModel
+                          ? '此推理模型使用固定采样策略，保存时将自动适配。'
+                          : '越低越严谨，越高越有想象力。'}
+                      </small>
+                    </label>
+                    <label className="form-field">
+                      回复长度 / Max Tokens
+                      <input
+                        type="number"
+                        min={1}
+                        max={131072}
+                        value={form.llm.max_tokens}
+                        onChange={(e) => llm({ max_tokens: Number(e.target.value) })}
+                      />
+                    </label>
+                  </div>
+                  <label className="form-field narrow">
+                    上下文消息数
                     <input
                       type="number"
-                      min={1}
-                      max={131072}
-                      value={form.llm.max_tokens}
-                      onChange={(e) => llm({ max_tokens: Number(e.target.value) })}
+                      min={2}
+                      max={200}
+                      step={2}
+                      value={form.llm.context_messages}
+                      onChange={(e) => llm({ context_messages: Number(e.target.value) })}
                     />
+                    <small>
+                      设置发送给模型的历史消息数量上限。较大的历史文字和图片会优先保留近期内容。
+                    </small>
                   </label>
-                </div>
-                <label className="form-field narrow">
-                  上下文消息数
-                  <input
-                    type="number"
-                    min={2}
-                    max={200}
-                    step={2}
-                    value={form.llm.context_messages}
-                    onChange={(e) => llm({ context_messages: Number(e.target.value) })}
-                  />
-                  <small>
-                    设置发送给模型的历史消息数量上限。较大的历史文字和图片会优先保留近期内容。
-                  </small>
-                </label>
-              </section>
+                </section>
+              )}
             </>
           )}
           {tab === 'speech' && (
@@ -484,6 +574,7 @@ export default function SettingsPage() {
                     aria-labelledby="agent-tools-label"
                     aria-describedby="agent-tools-help"
                     checked={form.llm.tools_enabled}
+                    disabled={profileUnavailable}
                     onCheckedChange={(checked) => llm({ tools_enabled: checked })}
                   />
                 </div>

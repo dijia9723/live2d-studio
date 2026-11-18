@@ -7,42 +7,65 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	"server/internal/model"
+	"server/internal/modules/character"
 	"server/internal/modules/memory"
 )
 
-// observeToolRun 包装工具调用，向界面推送 running/completed/failed 状态。
-// 工具执行出错时转换为结构化结果回传模型而不是中断整轮对话；
-// 但上游 ctx 已取消时必须原样返回 ctx 错误，让对话层把回复标记为 interrupted。
-func observeToolRun(emit func(Event)) compose.InvokableToolMiddleware {
-	return func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
-		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			id := uuid.NewString()
-			emitToolRun(emit, id, input.Name, model.ToolRunning)
-			output, err := next(ctx, input)
-			if err == nil {
-				emitToolRun(emit, id, input.Name, model.ToolCompleted)
-				return output, nil
-			}
-			emitToolRun(emit, id, input.Name, model.ToolFailed)
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			message := "工具调用失败。请检查参数，或说明该工具暂不可用。"
-			var inputErr toolInputError
-			switch {
-			case errors.As(err, &inputErr):
-				message = inputErr.Error()
-			case errors.Is(err, memory.ErrSearchQuery):
-				message = memory.ErrSearchQuery.Error()
-			}
-			return &compose.ToolOutput{Result: toolErrorResult(message)}, nil
+// toolRunMiddleware 推送工具状态；普通错误脱敏后回传模型，允许继续回复。
+type toolRunMiddleware struct {
+	*adk.TypedBaseChatModelAgentMiddleware[*schema.AgenticMessage]
+	emit func(Event)
+}
+
+func (m *toolRunMiddleware) WrapInvokableToolCall(_ context.Context, next adk.InvokableToolCallEndpoint, toolCtx *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
+	name := "unknown_tool"
+	id := uuid.NewString()
+	if toolCtx != nil {
+		if toolCtx.Name != "" {
+			name = toolCtx.Name
 		}
+	}
+	// 上游可能在不同迭代中复用 CallID；界面状态使用独立 ID，避免覆盖前次调用。
+	return func(ctx context.Context, arguments string, opts ...tool.Option) (string, error) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		emitToolRun(m.emit, id, name, model.ToolRunning)
+		result, err := next(ctx, arguments, opts...)
+		if err == nil {
+			emitToolRun(m.emit, id, name, model.ToolCompleted)
+			return result, nil
+		}
+		emitToolRun(m.emit, id, name, model.ToolFailed)
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return toolErrorResult(safeToolError(err)), nil
+	}, nil
+}
+
+func safeToolError(err error) string {
+	var inputErr toolInputError
+	switch {
+	case errors.As(err, &inputErr):
+		return inputErr.Error()
+	case errors.Is(err, character.ErrProfile):
+		return character.ErrProfile.Error()
+	case errors.Is(err, character.ErrActions):
+		return character.ErrActions.Error()
+	case errors.Is(err, memory.ErrSearchQuery):
+		return memory.ErrSearchQuery.Error()
+	case errors.Is(err, memory.ErrContent):
+		return memory.ErrContent.Error()
+	case errors.Is(err, memory.ErrLimit):
+		return memory.ErrLimit.Error()
+	default:
+		return "工具调用失败。请检查参数，或说明该工具暂不可用。"
 	}
 }
 

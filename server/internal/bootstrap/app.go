@@ -87,13 +87,17 @@ func New(cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	// 业务服务按依赖方向自底向上构造：设置与记忆不依赖其他模块，
-	// 对话服务再组合角色、设置与 Eino Agent。
+	// 对话服务再组合角色、设置与 agentcore ADK 智能体。
 	ss := settings.New(db, cfg)
 	cs := &character.Service{DB: db, ModelsDir: modelsDir}
+	if err = cs.EnsureInitialModels(); err != nil {
+		sqlDB.Close()
+		return nil, err
+	}
 	ds := &desktop.Module{}
 	assets := &sceneassets.Module{Service: &sceneassets.Service{DB: db, MediaDir: mediaDir}}
 	memories := &memory.Service{DB: db}
-	chatAgent := &agent.Service{Memory: memories}
+	chatAgent := &agent.Service{Memory: memories, Characters: cs}
 	conversations := &conversation.Service{DB: db, Characters: cs, Settings: ss, Agent: chatAgent}
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -111,7 +115,7 @@ func New(cfg config.Config) (*App, error) {
 		c.Next()
 	})
 	// 健康检查供前端判断后端是否已就绪。
-	r.GET("/api/v1/health", func(c *gin.Context) { pkg.OK(c, gin.H{"status": "ok", "version": "0.1.0", "agent": "eino"}) })
+	r.GET("/api/v1/health", func(c *gin.Context) { pkg.OK(c, gin.H{"status": "ok", "version": "0.1.0", "agent": "agentcore"}) })
 	// 业务模块统一挂载到 /api/v1；场景媒体路由不经过 API 分组，单独注册。
 	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Settings: ss}, ds, assets, &memory.Module{Service: memories})
 	assets.RegisterMedia(r)

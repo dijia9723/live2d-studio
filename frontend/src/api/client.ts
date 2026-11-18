@@ -6,9 +6,14 @@
 import axios from 'axios'
 import type {
   Character,
+  CharacterActions,
+  ActionNames,
   CharacterMemory,
   Conversation,
   Message,
+  LLMProfile,
+  LLMProvider,
+  OllamaModel,
   SceneAsset,
   Settings,
   StreamEvent,
@@ -57,10 +62,22 @@ export const api = {
   },
   deleteSceneAsset: (id: string) => http.delete(`/scene-assets/${id}`),
   characters: () => get<Character[]>('/characters'),
+  characterActions: (id: string, signal: AbortSignal) =>
+    get<CharacterActions>(`/characters/${id}/actions`, signal),
+  saveActionNames: async (
+    id: string,
+    model_path: string,
+    action_names: ActionNames,
+  ): Promise<Character> =>
+    (await http.put(`/characters/${id}/action-names`, { model_path, action_names })).data.data,
   characterMemories: (id: string, signal: AbortSignal) =>
     get<CharacterMemory[]>(`/characters/${id}/memories`, signal),
   // 传入 memoryID 时更新已有记忆，否则新建；返回值统一为最新记忆对象。
-  saveCharacterMemory: async (id: string, content: string, memoryID?: string): Promise<CharacterMemory> => {
+  saveCharacterMemory: async (
+    id: string,
+    content: string,
+    memoryID?: string,
+  ): Promise<CharacterMemory> => {
     const path = `/characters/${id}/memories`
     const response = memoryID
       ? await http.put(`${path}/${memoryID}`, { content })
@@ -83,12 +100,17 @@ export const api = {
   deleteConversation: (id: string) => http.delete(`/conversations/${id}`),
   renameConversation: (id: string, title: string) => http.put(`/conversations/${id}`, { title }),
   messages: (id: string) => get<Message[]>(`/conversations/${id}/messages`),
-  settings: () => get<Settings>('/settings'),
+  settings: (signal?: AbortSignal) => get<Settings>('/settings', signal),
+  llmProfile: (provider: LLMProvider, signal: AbortSignal) =>
+    get<LLMProfile>(`/settings/llm/${provider}`, signal),
   // clear_*_key 为 true 时表示用户主动要求清除已保存的密钥。
   saveSettings: async (
     s: Settings & { clear_llm_key?: boolean; clear_speech_key?: boolean },
   ): Promise<Settings> => (await http.put('/settings', s)).data.data,
-  testConnection: () => http.post('/settings/test'),
+  testConnection: () => http.post('/settings/test', undefined, { timeout: 150000 }),
+  ollamaModels: async (base_url: string, signal: AbortSignal): Promise<OllamaModel[]> =>
+    (await http.post('/settings/ollama/models', { base_url }, { signal, timeout: 12000 })).data.data
+      .models,
   desktop: () => get<{ available: boolean }>('/desktop'),
   // 控制桌面端窗口行为：pet 开关桌宠窗口，pin 切换置顶。
   window: (action: 'pet' | 'pin', enabled: boolean) => http.post(`/desktop/${action}`, { enabled }),

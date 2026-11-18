@@ -1,48 +1,68 @@
 html.pet-document,
 html.pet-document body,
-html.pet-document #root {
-  background: transparent !important;
-  background-color: transparent !important;
+html.pet-document #root,
+html.pet-document .boot-screen {
+  background: transparent;
 }
-.pet-toolbar {
-  position: absolute;
-  top: 8px;
-  left: 12px;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 6px 5px 10px;
-  background: #ffffffe8;
+.pet-model {
+  --wails-draggable: drag;
+  cursor: grab;
+  user-select: none;
+}
+.pet-model:active {
+  cursor: grabbing;
+}
+.pet-model .canvas-state button {
+  --wails-draggable: no-drag;
+}
+.pet-menu {
+  z-index: 20;
+  min-width: 136px;
+  padding: 4px;
+  background: #fff;
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: 0 8px 24px #30214326;
   color: var(--ink);
-  z-index: 10;
 }
-.pet-drag {
+.pet-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  padding: 7px 9px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  user-select: none;
   font-size: 12px;
-  font-weight: 600;
-  --wails-draggable: drag;
+  white-space: nowrap;
 }
-.pet-toolbar button,
-.pet-speech {
-  display: grid;
-  place-items: center;
-  width: 29px;
-  height: 29px;
-  border-radius: 7px;
-  color: var(--muted);
-  --wails-draggable: no-drag;
-}
-.pet-toolbar button:hover,
-.pet-speech:hover:not(:disabled) {
+.pet-menu-item[data-highlighted] {
   background: #eee7fa;
   color: var(--purple);
 }
-.pet-speech[aria-pressed='true']:not(:disabled) {
-  color: var(--purple);
+.pet-menu-item[data-disabled] {
+  opacity: 0.48;
+  cursor: default;
+}
+.pet-menu-divider {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--border);
+}
+
+.pet-action-notice {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 82px;
+  z-index: 12;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fffffff2;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
 }

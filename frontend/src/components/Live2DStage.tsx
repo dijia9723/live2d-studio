@@ -16,6 +16,8 @@ import {
   moodParameters,
 } from '../utils/live2d'
 import type { Live2DCapabilities } from '../utils/live2d'
+import type { ActionNames } from '../types/api'
+import { actionDisplayName, moodNames } from '../utils/actionNames'
 
 export type { Live2DCapabilities } from '../utils/live2d'
 
@@ -33,13 +35,6 @@ const emptyCapabilities = (): Live2DCapabilities => ({
   motions: [],
   supportsMoods: false,
 })
-
-const moodNames: Record<string, string> = {
-  neutral: '自然',
-  happy: '开心',
-  sad: '难过',
-  surprised: '惊讶',
-}
 
 // Cubism Core 是全局脚本，多个舞台共享同一次加载（模块级 Promise 缓存）。
 let corePromise: Promise<void> | undefined
@@ -65,19 +60,31 @@ function loadCore() {
 interface Props {
   /** 模型 model3.json 路径 */
   modelPath: string
+  actionNames?: ActionNames
   /** 是否为缩略图预览模式（不响应鼠标、不播口型） */
   miniature?: boolean
+  /** 独立编辑预览：保持默认缩放，情绪与口型不跟随聊天状态。 */
+  isolated?: boolean
   onCapabilitiesChange?: (capabilities: Live2DCapabilities) => void
   onInteraction?: (message: string) => void
 }
 
 const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
-  { modelPath: path, miniature = false, onCapabilitiesChange, onInteraction },
+  {
+    modelPath: path,
+    actionNames,
+    miniature = false,
+    isolated = false,
+    onCapabilitiesChange,
+    onInteraction,
+  },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null)
   const model = useRef<Live2DModel | null>(null)
   const capabilities = useRef(emptyCapabilities())
+  const namesRef = useRef(actionNames)
+  namesRef.current = actionNames
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -87,10 +94,10 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   const speaking = useStudio((s) => s.speaking)
   // 用 ref 保存最新值，供 pixi 每帧回调读取，避免重建整个舞台。
   const zoomRef = useRef(zoom)
-  zoomRef.current = zoom
+  zoomRef.current = isolated ? 1 : zoom
   const speakingRef = useRef(speaking)
-  speakingRef.current = speaking
-  const moodRef = useRef(expression)
+  speakingRef.current = !isolated && speaking
+  const moodRef = useRef(isolated ? 'neutral' : expression)
   const nativeExpressionRef = useRef(false)
   // 版本号用于取消过期的异步表情/动作加载。
   const expressionVersion = useRef(0)
@@ -131,9 +138,8 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       const started = await live.motion(motion.group, motion.index, 3)
       // 模型已被替换或已有更新的请求时，丢弃本次结果。
       if (model.current !== live || version !== motionVersion.current) return false
-      report(
-        started ? `正在播放：${motion.label}` : `动作未能播放：${motion.label}，请检查模型资源`,
-      )
+      const label = actionDisplayName(namesRef.current, 'motions', motion.id, motion.label)
+      report(started ? `正在播放：${label}` : `动作未能播放：${label}，请检查模型资源`)
       return started
     } catch {
       if (model.current === live && version === motionVersion.current)
@@ -148,7 +154,10 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       if (!capabilities.current.ready) report('角色仍在加载，请稍后再试')
       else if (mood !== 'neutral' && !capabilities.current.supportsMoods)
         report('当前角色没有通用面部参数，请选择模型自带的表情')
-      else report(`已切换为${moodNames[mood] || mood}表情`)
+      else
+        report(
+          `已切换为${actionDisplayName(namesRef.current, 'moods', mood, moodNames[mood] || mood)}表情`,
+        )
     },
     setExpression: async (name) => {
       const live = model.current
@@ -179,7 +188,8 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         const index = manager.getExpressionIndex(name)
         const available = changed || !!manager.expressions[index]
         if (!available) nativeExpressionRef.current = false
-        report(available ? `已应用模型表情：${name}` : `表情加载失败：${name}`)
+        const label = actionDisplayName(namesRef.current, 'expressions', name, name)
+        report(available ? `已应用模型表情：${label}` : `表情加载失败：${label}`)
         return available
       } catch {
         if (model.current === live && version === expressionVersion.current) {
@@ -384,8 +394,8 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   }, [zoom])
   // 表情或 revision 变化时重新应用情绪（加载完成后也会触发一次）。
   useEffect(() => {
-    applyMood(expression)
-  }, [expression, expressionRevision, loaded])
+    if (!isolated) applyMood(expression)
+  }, [expression, expressionRevision, loaded, isolated])
   return (
     <div className="live2d-host" ref={host}>
       {!loaded && !error && (

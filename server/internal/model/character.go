@@ -13,7 +13,16 @@ type Character struct {
 	ModelPath string `json:"model_path"`
 	// SystemPrompt 是该角色的人设提示词，会拼接到每次对话的系统消息中。
 	SystemPrompt string `json:"system_prompt"`
+	// ActionNames 只覆盖展示名称，动作组、索引和表情 ID 保持稳定。
+	ActionNames ActionNames `gorm:"serializer:json;type:text" json:"action_names"`
 	// Color 是界面展示该角色时使用的主色。
 	Color     string    `json:"color"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// ActionNames 是每位角色独立保存的动作、原生表情与情绪预设命名。
+type ActionNames struct {
+	Motions     map[string]string `json:"motions"`
+	Expressions map[string]string `json:"expressions"`
+	Moods       map[string]string `json:"moods"`
 }

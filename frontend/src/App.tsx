@@ -8,7 +8,7 @@ import Router from './router'
 import PetPage from './pages/PetPage'
 import { useStudio } from './store/studio'
 
-export default function App() {
+export default function App({ pet }: { pet: boolean }) {
   const s = useStudio()
   useEffect(() => {
     void s.initialize()
@@ -36,6 +36,6 @@ export default function App() {
       </div>
     )
   // 桌宠窗口通过查询参数区分，复用同一份全局状态。
-  if (new URLSearchParams(window.location.search).get('pet') === '1') return <PetPage />
+  if (pet) return <PetPage />
   return <Router />
 }

@@ -16,6 +16,7 @@ import (
 
 // LLM 描述对话模型接入与生成参数。
 type LLM struct {
+	Provider    string  `json:"provider" yaml:"provider"`
 	BaseURL     string  `json:"base_url" yaml:"base_url"`
 	APIKey      string  `json:"api_key" yaml:"api_key"`
 	Model       string  `json:"model" yaml:"model"`
@@ -56,7 +57,7 @@ type Config struct {
 // Defaults 返回可离线启动的默认配置：只监听回环地址，语音默认交给浏览器。
 func Defaults() Config {
 	return Config{Host: "127.0.0.1", Port: 12393, DataDir: "data", Settings: Settings{
-		LLM:    LLM{BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", Temperature: 0.7, MaxTokens: 2048, ContextMessages: 40},
+		LLM:    LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", Temperature: 0.7, MaxTokens: 2048, ContextMessages: 40},
 		Speech: Speech{Mode: "browser", BaseURL: "https://api.openai.com/v1", ASRModel: "whisper-1", TTSModel: "tts-1", Voice: "alloy", Language: "zh-CN"},
 	}}
 }
@@ -107,6 +108,9 @@ func Load(path string) (Config, error) {
 
 // Effective 在边界处应用环境变量覆盖，覆盖值只作用于本次运行，不会落盘。
 func Effective(s Settings) Settings {
+	if v := os.Getenv("STUDIO_LLM_PROVIDER"); v != "" {
+		s.LLM.Provider = v
+	}
 	if v := os.Getenv("STUDIO_LLM_API_KEY"); v != "" {
 		s.LLM.APIKey = v
 	}
@@ -124,6 +128,16 @@ func Effective(s Settings) Settings {
 
 // Validate 校验服务地址与模型参数范围，避免把凭据写进 URL 或使用越界参数。
 func Validate(s Settings) error {
+	if s.LLM.Provider != "" {
+		if _, ok := LLMProviderDefaults(s.LLM.Provider); !ok {
+			return fmt.Errorf("不支持的模型服务类型")
+		}
+	}
+	if s.LLM.Provider == "ollama" {
+		if _, _, err := OllamaEndpoints(s.LLM.BaseURL); err != nil {
+			return err
+		}
+	}
 	// 地址必须是有效的 HTTP(S) 基地址，且不含认证信息、查询串或片段。
 	for _, raw := range []string{s.LLM.BaseURL, s.Speech.BaseURL} {
 		u, err := url.Parse(raw)

@@ -1469,18 +1469,17 @@ select:focus {
   color: #b2a0bf;
 }
 .pet-page {
-  background: transparent !important;
   height: 100dvh;
   position: relative;
   overflow: hidden;
 }
 .pet-model {
   position: absolute;
-  inset: 66px 0 61px;
+  inset: 0;
 }
 .pet-bubble {
   position: absolute;
-  top: 56px;
+  top: 12px;
   left: 15px;
   right: 15px;
   border: 1px solid var(--border);
@@ -1526,12 +1525,6 @@ select:focus {
   background: var(--purple);
   color: white;
   border-radius: 8px;
-}
-.pet-page .live2d-host {
-  --wails-draggable: drag;
-}
-.pet-page .live2d-host canvas {
-  --wails-draggable: drag;
 }
 @keyframes fadein {
   from {
