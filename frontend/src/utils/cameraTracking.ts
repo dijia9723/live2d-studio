@@ -1,4 +1,9 @@
-import type { FaceLandmarkerResult, Landmark, PoseLandmarkerResult } from '@mediapipe/tasks-vision'
+import type {
+  FaceLandmarkerResult,
+  Landmark,
+  NormalizedLandmark,
+  PoseLandmarkerResult,
+} from '@mediapipe/tasks-vision'
 import type { ParameterBinding } from './live2d.ts'
 
 const parameterNames = {
@@ -24,6 +29,18 @@ type TrackingValues = Partial<Record<Channel, number>>
 export interface CameraSample {
   time: number
   values: TrackingValues
+}
+
+interface LandmarkFrame {
+  time: number
+  points: NormalizedLandmark[]
+}
+
+export interface CameraLandmarks {
+  width: number
+  height: number
+  face?: LandmarkFrame
+  pose?: LandmarkFrame
 }
 
 export const cameraSampleMaxAge = 350
@@ -68,7 +85,7 @@ export function faceTrackingValues(face: FaceLandmarkerResult): TrackingValues {
   return values
 }
 
-function isVisible(point: Landmark | undefined): point is Landmark {
+export function isVisiblePoseLandmark(point: Landmark | undefined): point is Landmark {
   return !!point && point.visibility >= 0.55 && [point.x, point.y, point.z].every(Number.isFinite)
 }
 
@@ -78,13 +95,16 @@ export function bodyTrackingValues(
 ): TrackingValues {
   const nose = pose.landmarks[0]?.[0]
   const faceNose = face?.faceLandmarks[0]?.[1]
-  if (faceNose && (!isVisible(nose) || Math.hypot(nose.x - faceNose.x, nose.y - faceNose.y) > 0.15))
+  if (
+    faceNose &&
+    (!isVisiblePoseLandmark(nose) || Math.hypot(nose.x - faceNose.x, nose.y - faceNose.y) > 0.15)
+  )
     return {}
 
   const landmarks = pose.worldLandmarks[0]
   const left = landmarks?.[11]
   const right = landmarks?.[12]
-  if (!isVisible(left) || !isVisible(right)) return {}
+  if (!isVisiblePoseLandmark(left) || !isVisiblePoseLandmark(right)) return {}
   const width = left.x - right.x
   const depth = left.z - right.z
   if (Math.hypot(width, depth) < 0.08) return {}
@@ -95,7 +115,7 @@ export function bodyTrackingValues(
   if (width > 0.08) values.bodyz = clamp(Math.atan2(left.y - right.y, width) * degrees, -10, 10)
   const leftHip = landmarks[23]
   const rightHip = landmarks[24]
-  if (isVisible(leftHip) && isVisible(rightHip)) {
+  if (isVisiblePoseLandmark(leftHip) && isVisiblePoseLandmark(rightHip)) {
     const height = (leftHip.y + rightHip.y - left.y - right.y) / 2
     const lean = (leftHip.z + rightHip.z - left.z - right.z) / 2
     if (height > 0.1) values.bodyy = clamp((-Math.atan2(lean, height) * degrees) / 2, -10, 10)

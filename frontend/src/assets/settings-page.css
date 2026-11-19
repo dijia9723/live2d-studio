@@ -25,6 +25,13 @@
   color: var(--muted);
   font-size: 12px;
 }
+.settings-range-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 
 .settings-profile-status,
 .settings-profile-source {
@@ -157,6 +164,51 @@
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.hotkey-list {
+  margin-bottom: 14px;
+  list-style: none;
+}
+
+.hotkey-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.hotkey-list kbd {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f4eef9;
+  color: var(--purple-dark);
+  font: inherit;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.hotkey-row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+@container (max-width: 480px) {
+  .hotkey-list > li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hotkey-list kbd {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .hotkey-row-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
 }
 
 .settings-page .preset-grid {
@@ -492,7 +544,7 @@
   }
 
   .settings-section-nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
   }
 
   .settings-section-nav a {
@@ -510,6 +562,10 @@
 }
 
 @container (max-width: 480px) {
+  .settings-section-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .settings-page .page-header {
     flex-wrap: wrap;
     gap: 12px;

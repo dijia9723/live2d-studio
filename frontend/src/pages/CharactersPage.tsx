@@ -2,7 +2,7 @@
  * 页面：角色库。
  * 支持导入模型、编辑人设及动作命名、管理记忆与开始对话。
  */
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -10,21 +10,24 @@ import {
   Brain,
   Check,
   FileArchive,
+  FolderOpen,
   LoaderCircle,
   Pencil,
-  Play,
   Save,
   Search,
   Tags,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react'
-import Live2DStage from '../components/Live2DStage'
+import CharacterPreview from '../components/CharacterPreview'
 import CharacterMemories from '../components/CharacterMemories'
 import CharacterActionNames from '../components/CharacterActionNames'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { notify, useStudio } from '../store/studio'
 import { api } from '../api/client'
+import { packageModelDirectory } from '../utils/modelImport'
+import { createCharacterPreviewRenderer } from '../utils/characterPreviewRenderer'
 import type { Character } from '../types/api'
 
 export default function CharactersPage() {
@@ -35,30 +38,49 @@ export default function CharactersPage() {
   const [editing, setEditing] = useState<Character | null>(null)
   const [memoryCharacter, setMemoryCharacter] = useState<Character | null>(null)
   const [namingCharacter, setNamingCharacter] = useState<Character | null>(null)
+  const [removingCharacter, setRemovingCharacter] = useState<Character | null>(null)
   const [importing, setImporting] = useState(false)
   const [search, setSearch] = useState('')
-  const [previewChoice, setPreviewChoice] = useState<string | null>(null)
+  const [viewportIDs, setViewportIDs] = useState<ReadonlySet<string>>(() => new Set())
+  const [previewRenderer] = useState(createCharacterPreviewRenderer)
+  const grid = useRef<HTMLDivElement>(null)
   const file = useRef<HTMLInputElement>(null)
+  const folder = useRef<HTMLInputElement>(null)
   const query = search.trim().toLowerCase()
-  const visibleCharacters = characters.filter((character) =>
-    `${character.name}\n${character.description}`.toLowerCase().includes(query),
+  const visibleCharacters = useMemo(
+    () =>
+      characters.filter((character) =>
+        `${character.name}\n${character.description}`.toLowerCase().includes(query),
+      ),
+    [characters, query],
   )
-  // Cubism 的着色器状态在模型之间共享，同一时刻只能有一个预览占用 WebGL 上下文。
-  // 命名弹窗接管模型预览，暂停卡片中的实例，避免共享的着色器状态互相影响。
-  const previewID = namingCharacter
-    ? undefined
-    : (visibleCharacters.find((character) => character.id === previewChoice)?.id ??
-      visibleCharacters.find((character) => character.id === characterID)?.id ??
-      visibleCharacters[0]?.id)
 
-  // 导入模型 ZIP：限制 100MB，成功后追加角色并直接打开编辑弹窗。
-  const importModel = async (model: File) => {
-    if (!model.name.toLowerCase().endsWith('.zip') || model.size > 100 * 1024 ** 2) {
-      notify('请选择不超过 100MB 的模型 ZIP 文件')
-      return
-    }
+  useEffect(() => {
+    const previews = grid.current?.querySelectorAll<HTMLElement>('[data-character-preview]')
+    if (!previews?.length) return
+    const ids = new Set<string>()
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.characterPreview!
+          if (entry.isIntersecting) ids.add(id)
+          else ids.delete(id)
+        }
+        setViewportIDs(new Set(ids))
+      },
+      { root: grid.current?.closest('.workspace') ?? null },
+    )
+    previews.forEach((preview) => observer.observe(preview))
+    return () => observer.disconnect()
+  }, [visibleCharacters])
+
+  const importModel = async (selection: File | File[]) => {
     setImporting(true)
     try {
+      const model = Array.isArray(selection) ? await packageModelDirectory(selection) : selection
+      if (!model.name.toLowerCase().endsWith('.zip')) {
+        throw new Error('请选择模型 ZIP 文件')
+      }
       const character = await api.importModel(model)
       const state = useStudio.getState()
       state.patch({ characters: [...state.characters, character] })
@@ -78,14 +100,37 @@ export default function CharactersPage() {
           <h1>角色库</h1>
           <p>选择聊天伙伴，管理人设、动作与表情名称和跨会话记忆。</p>
         </div>
-        <button
-          className="button primary character-import"
-          disabled={importing}
-          onClick={() => file.current?.click()}
-        >
-          {importing ? <LoaderCircle className="spin" size={17} /> : <Upload size={17} />}
-          {importing ? '正在导入…' : '导入 Live2D 模型'}
-        </button>
+        <div className="character-import-actions">
+          <button
+            className="button ghost character-import"
+            disabled={importing}
+            onClick={() => folder.current?.click()}
+          >
+            <FolderOpen size={17} />
+            导入模型文件夹
+          </button>
+          <button
+            className="button primary character-import"
+            disabled={importing}
+            onClick={() => file.current?.click()}
+          >
+            {importing ? <LoaderCircle className="spin" size={17} /> : <Upload size={17} />}
+            {importing ? '正在导入…' : '导入 Live2D ZIP'}
+          </button>
+        </div>
+        <input
+          hidden
+          ref={(input) => {
+            folder.current = input
+            input?.setAttribute('webkitdirectory', '')
+          }}
+          type="file"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? [])
+            event.target.value = ''
+            if (files.length) void importModel(files)
+          }}
+        />
         <input
           hidden
           ref={file}
@@ -120,10 +165,11 @@ export default function CharactersPage() {
         </div>
 
         {visibleCharacters.length ? (
-          <div className="character-grid">
+          <div className="character-grid" ref={grid}>
             {visibleCharacters.map((character) => {
               const selected = characterID === character.id
-              const previewing = previewID === character.id
+              // 动作弹窗使用独立的 WebGL 上下文，打开时暂停卡片预览。
+              const previewing = !namingCharacter && viewportIDs.has(character.id)
               return (
                 <article
                   className={`character-card${selected ? ' selected' : ''}`}
@@ -132,33 +178,17 @@ export default function CharactersPage() {
                 >
                   <div
                     className="character-preview"
+                    data-character-preview={character.id}
                     role="group"
                     aria-label={`${character.name} 的模型`}
-                    tabIndex={-1}
                   >
                     <div className="preview-orbit" aria-hidden="true" />
                     {previewing ? (
-                      <>
-                        <Live2DStage modelPath={character.model_path} miniature />
-                        <span className="character-preview-state">实时预览</span>
-                      </>
+                      <CharacterPreview modelPath={character.model_path} renderer={previewRenderer} />
                     ) : (
-                      <button
-                        className="character-preview-trigger"
-                        aria-label={`预览 ${character.name} 模型`}
-                        onClick={(event) => {
-                          event.currentTarget.parentElement?.focus({ preventScroll: true })
-                          setPreviewChoice(character.id)
-                        }}
-                      >
-                        <span className="character-preview-avatar" aria-hidden="true">
-                          {Array.from(character.name)[0]}
-                        </span>
-                        <span className="character-preview-action">
-                          <Play size={14} />
-                          预览模型
-                        </span>
-                      </button>
+                      <div className="character-preview-placeholder" aria-hidden="true">
+                        <span className="character-preview-avatar">{Array.from(character.name)[0]}</span>
+                      </div>
                     )}
                     {selected && (
                       <span className="selected-badge">
@@ -195,6 +225,14 @@ export default function CharactersPage() {
                         管理记忆
                       </button>
                       <button
+                        className="button ghost"
+                        aria-label={`删除 ${character.name}`}
+                        onClick={() => setRemovingCharacter(character)}
+                      >
+                        <Trash2 size={15} />
+                        删除
+                      </button>
+                      <button
                         className="button soft character-chat"
                         disabled={busy}
                         onClick={() => {
@@ -227,8 +265,10 @@ export default function CharactersPage() {
         <div className="character-import-note">
           <FileArchive size={17} aria-hidden="true" />
           <p>
-            导入支持不超过 100MB 的 ZIP，需包含 <code>.model3.json</code> 及其引用的模型资源。内置
-            Mao 与 Shizuku 样本模型版权归 Live2D Inc. 所有。
+            每次选择一个模型文件夹或 ZIP，支持新版 <code>.model3.json</code>{' '}
+            与旧版 <code>.model.json</code> / <code>model.json</code>，以及只含 <code>.moc</code>
+            的旧版模型；文件夹内含多个模型时自动选择 normal/普通形态导入。旧版模型播放需要另行配置
+            Cubism 2 Core。内置 Mao 与 Shizuku 样本模型版权归 Live2D Inc. 所有。
           </p>
         </div>
       </section>
@@ -249,7 +289,125 @@ export default function CharactersPage() {
       {editing && (
         <CharacterEditor key={editing.id} character={editing} onClose={() => setEditing(null)} />
       )}
+      {removingCharacter && (
+        <CharacterDeleteDialog
+          character={removingCharacter}
+          onClose={() => setRemovingCharacter(null)}
+        />
+      )}
     </div>
+  )
+}
+
+/** 删除角色确认弹窗：确认后同时移除会话、记忆与导入的模型文件。 */
+function CharacterDeleteDialog({
+  character,
+  onClose,
+}: {
+  character: Character
+  onClose: () => void
+}) {
+  const [removing, setRemoving] = useState(false)
+  const [error, setError] = useState('')
+
+  const close = () => {
+    if (removing) return
+    onClose()
+  }
+
+  const remove = async () => {
+    if (removing) return
+    setRemoving(true)
+    setError('')
+    try {
+      await api.deleteCharacter(character.id)
+      const state = useStudio.getState()
+      const characters = state.characters.filter((item) => item.id !== character.id)
+      const conversations = state.conversations.filter(
+        (item) => item.character_id !== character.id,
+      )
+      // 删除当前角色时回落到列表首位；删除当前会话所属角色时清空会话。
+      const patch: Parameters<typeof state.patch>[0] = { characters, conversations }
+      if (state.characterID === character.id) {
+        patch.characterID = characters[0]?.id ?? ''
+        patch.conversationID = null
+        patch.messages = []
+      } else if (
+        state.conversationID &&
+        !conversations.some((item) => item.id === state.conversationID)
+      ) {
+        patch.conversationID = null
+        patch.messages = []
+      }
+      state.patch(patch)
+      onClose()
+      notify(`已删除角色 ${character.name}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '删除角色失败')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) close()
+      }}
+    >
+      <DialogContent
+        className="modal character-dialog character-delete-dialog"
+        showCloseButton={false}
+        aria-labelledby="character-delete-title"
+        onEscapeKeyDown={(event) => {
+          if (removing) event.preventDefault()
+        }}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
+        <header className="character-dialog-heading">
+          <span className="character-dialog-icon">
+            <Trash2 size={19} />
+          </span>
+          <div>
+            <DialogTitle asChild>
+              <h2 id="character-delete-title">删除 {character.name}？</h2>
+            </DialogTitle>
+            <p>角色的会话记录、记忆与导入的模型文件会一并删除，且无法恢复。</p>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="关闭删除确认"
+            disabled={removing}
+            onClick={close}
+          >
+            <X size={20} />
+          </button>
+        </header>
+        <div className="character-delete-body">
+          {error && (
+            <p className="character-form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <footer className="modal-actions">
+            <button type="button" className="button ghost" disabled={removing} onClick={close}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              disabled={removing}
+              onClick={() => void remove()}
+            >
+              {removing ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}
+              删除角色
+            </button>
+          </footer>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

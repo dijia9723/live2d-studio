@@ -35,12 +35,16 @@ test('presets clamp to actual model ranges and never write nonexistent parameter
 })
 
 // 场景：从 Shizuku 的 model3.json 读取动作，随机反应动作需排除 Idle。
-test('Shizuku actions are read from its manifest; random reactions exclude Idle', async () => {
-  const manifest = JSON.parse(
-    await readFile(
-      new URL('../../../server/internal/modules/character/assets/shizuku/runtime/shizuku.model3.json', import.meta.url),
-    ),
+test('Shizuku actions are read from its manifest; random reactions exclude Idle', async (t) => {
+  const file = new URL(
+    '../../../server/data/assets/shizuku/runtime/shizuku.model3.json',
+    import.meta.url,
   )
+  if (!(await readFile(file).catch(() => null))) {
+    t.skip('本机未放置 Shizuku 初始模型，跳过清单解析用例')
+    return
+  }
+  const manifest = JSON.parse(await readFile(file, 'utf8'))
   const caps = modelCapabilities(
     manifest.FileReferences.Expressions,
     manifest.FileReferences.Motions,
@@ -59,12 +63,16 @@ test('Shizuku actions are read from its manifest; random reactions exclude Idle'
 })
 
 // 场景：Mao 模型保留具名原生表情，并支持动作组名为空的合法动作。
-test('Mao retains named native expressions and valid empty-group motions', async () => {
-  const manifest = JSON.parse(
-    await readFile(
-      new URL('../../../server/internal/modules/character/assets/mao_pro/runtime/mao_pro.model3.json', import.meta.url),
-    ),
+test('Mao retains named native expressions and valid empty-group motions', async (t) => {
+  const file = new URL(
+    '../../../server/data/assets/mao_pro/runtime/mao_pro.model3.json',
+    import.meta.url,
   )
+  if (!(await readFile(file).catch(() => null))) {
+    t.skip('本机未放置 Mao 初始模型，跳过清单解析用例')
+    return
+  }
+  const manifest = JSON.parse(await readFile(file, 'utf8'))
   const caps = modelCapabilities(
     manifest.FileReferences.Expressions,
     manifest.FileReferences.Motions,

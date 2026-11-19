@@ -6,7 +6,18 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Character, Conversation, Message, SceneAsset, Settings } from '../types/api'
-import type { StageAppearance } from '../types/stage'
+import {
+  clampModelPosition,
+  clampModelZoom,
+  defaultModelDragLimits,
+  defaultModelPosition,
+  defaultModelZoomLimits,
+  validModelDragLimits,
+  validModelZoomLimits,
+  type ModelDragLimits,
+  type ModelZoomLimits,
+  type StageAppearance,
+} from '../types/stage'
 import { api } from '../api/client'
 import { draftKey, moveDraft } from './chatDrafts'
 
@@ -28,12 +39,16 @@ interface State extends StageAppearance {
   desktop: boolean
   notice: string
   chatError: string
+  modelZoomLimits: ModelZoomLimits
+  modelDragLimits: ModelDragLimits
   patch: (p: Partial<State>) => void
+  setModelZoomLimits: (limits: ModelZoomLimits) => void
+  setModelDragLimits: (limits: ModelDragLimits) => void
   setMood: (mood: string) => void
   initialize: () => Promise<void>
   refreshConversations: () => Promise<void>
   refreshSceneAssets: () => Promise<void>
-  openConversation: (c: Conversation) => Promise<void>
+  openConversation: (c: Conversation) => Promise<boolean>
   newConversation: (characterID?: string) => Promise<Conversation>
   selectCharacter: (id: string) => void
 }
@@ -102,10 +117,33 @@ export const useStudio = create<State>()(
       overlayOpacity: 0.7,
       overlayBlendMode: 'screen',
       zoom: 1,
+      modelPosition: defaultModelPosition,
+      modelZoomLimits: defaultModelZoomLimits,
+      modelDragLimits: defaultModelDragLimits,
       desktop: false,
       notice: '',
       chatError: '',
-      patch: set,
+      patch: (p) => {
+        const { modelZoomLimits, modelDragLimits } = get()
+        set({
+          ...p,
+          ...(p.zoom !== undefined && { zoom: clampModelZoom(p.zoom, modelZoomLimits) }),
+          ...(p.modelPosition && { modelPosition: clampModelPosition(p.modelPosition, modelDragLimits) }),
+        })
+      },
+      setModelZoomLimits: (limits) => {
+        if (validModelZoomLimits(limits)) {
+          set((state) => ({ modelZoomLimits: limits, zoom: clampModelZoom(state.zoom, limits) }))
+        }
+      },
+      setModelDragLimits: (limits) => {
+        if (validModelDragLimits(limits)) {
+          set((state) => ({
+            modelDragLimits: limits,
+            modelPosition: clampModelPosition(state.modelPosition, limits),
+          }))
+        }
+      },
       // revision 自增用于通知舞台重新应用表情（相同表情也能触发一次过渡）。
       setMood: (expression) =>
         set((s) => ({ expression, expressionRevision: s.expressionRevision + 1 })),
@@ -152,21 +190,28 @@ export const useStudio = create<State>()(
         set({ sceneAssets: await api.sceneAssets() })
       },
       openConversation: async (c) => {
-        if (get().busy) return
+        if (get().busy || get().characterID !== c.character_id) return false
         const version = ++openVersion
         const messages = await api.messages(c.id)
-        // 生成中或已有更新的切换请求时，丢弃这次迟到结果。
-        if (version === openVersion && !get().busy) {
-          set({
-            messages,
-            conversationID: c.id,
-            characterID: c.character_id,
-            expression: 'neutral',
-            expressionRevision: get().expressionRevision + 1,
-            chatError: '',
-          })
-          rememberConversation(c.id)
+        // 请求期间角色可能已切换，或会话已被删除。
+        const state = get()
+        if (
+          version !== openVersion ||
+          state.busy ||
+          state.characterID !== c.character_id ||
+          !state.conversations.some((item) => item.id === c.id)
+        ) {
+          return false
         }
+        set({
+          messages,
+          conversationID: c.id,
+          expression: 'neutral',
+          expressionRevision: state.expressionRevision + 1,
+          chatError: '',
+        })
+        rememberConversation(c.id)
+        return true
       },
       newConversation: async (id) => {
         ++openVersion
@@ -215,7 +260,27 @@ export const useStudio = create<State>()(
         overlayOpacity: s.overlayOpacity,
         overlayBlendMode: s.overlayBlendMode,
         zoom: s.zoom,
+        modelPosition: s.modelPosition,
+        modelZoomLimits: s.modelZoomLimits,
+        modelDragLimits: s.modelDragLimits,
       }),
+      merge: (stored, state) => {
+        const saved = stored as Partial<State> | undefined
+        const modelZoomLimits = validModelZoomLimits(saved?.modelZoomLimits)
+          ? saved.modelZoomLimits
+          : defaultModelZoomLimits
+        const modelDragLimits = validModelDragLimits(saved?.modelDragLimits)
+          ? saved.modelDragLimits
+          : defaultModelDragLimits
+        return {
+          ...state,
+          ...saved,
+          zoom: clampModelZoom(saved?.zoom ?? state.zoom, modelZoomLimits),
+          modelPosition: clampModelPosition(saved?.modelPosition, modelDragLimits),
+          modelZoomLimits,
+          modelDragLimits,
+        }
+      },
     },
   ),
 )

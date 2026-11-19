@@ -55,25 +55,28 @@ export function createParameterBindings(
   return bindings
 }
 
-/** 从 model3.json 的 Expressions / Motions 定义推导舞台可用的表情与动作列表。 */
+/** 从两代 Cubism 清单定义推导舞台可用的表情与动作列表。 */
 export function modelCapabilities(
-  expressions: { Name: string; File: string }[] | undefined,
-  motions: Partial<Record<string, { File: string }[]>>,
+  expressions: ({ Name: string } | { name: string })[] | undefined,
+  motions: Partial<Record<string, ({ File: string } | { file: string })[]>>,
   bindings: Map<string, ParameterBinding>,
 ): Live2DCapabilities {
   return {
     ready: true,
-    expressions: (expressions || []).map((e) => ({ id: e.Name, label: e.Name })),
+    expressions: (expressions || []).map((expression) => {
+      const name = 'Name' in expression ? expression.Name : expression.name
+      return { id: name, label: name }
+    }),
     motions: Object.entries(motions).flatMap(([group, items]) =>
       (items || []).map((m, index) => ({
         id: JSON.stringify([group, index]),
         group,
         index,
-        // 用文件名（去掉 .motion3.json 后缀）作为展示名，空组名回退为“动作”。
         label: `${group || '动作'} · ${
-          m.File.split(/[\\/]/)
+          ('File' in m ? m.File : m.file)
+            .split(/[\\/]/)
             .pop()
-            ?.replace(/\.motion3?\.json$/i, '') || index + 1
+            ?.replace(/(?:\.motion3?\.json|\.mtn)$/i, '') || index + 1
         }`,
       })),
     ),

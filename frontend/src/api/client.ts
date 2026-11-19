@@ -90,7 +90,8 @@ export const api = {
     http.delete(`/characters/${id}/memories/${memoryID}`),
   saveCharacter: async (c: Character): Promise<Character> =>
     (await http.put(`/characters/${c.id}`, c)).data.data,
-  // 导入 Live2D 模型 ZIP（含 model3.json 及其引用资源）。
+  deleteCharacter: (id: string) => http.delete(`/characters/${id}`),
+  // 导入 Live2D 模型 ZIP。
   importModel: async (file: File): Promise<Character> => {
     const form = new FormData()
     form.append('file', file)

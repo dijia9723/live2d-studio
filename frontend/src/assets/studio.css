@@ -213,20 +213,20 @@
 }
 
 .studio-workbench .workspace-tabs {
-  padding: 0 16px;
+  padding: 0 8px;
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
-  gap: clamp(6px, 1.6vw, 26px);
+  gap: 0;
   background: white;
 }
 
 .studio-workbench .workspace-tabs > button {
-  flex: none;
-  gap: 8px;
+  flex: 1 0 auto;
+  gap: 4px;
   min-height: 51px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--muted);
@@ -760,6 +760,7 @@
   }
   .studio-scene {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content auto;
     gap: 9px;
     padding-bottom: 16px;
   }
@@ -831,6 +832,12 @@
   }
   .studio-workbench .canvas-footer {
     min-height: 35px;
+  }
+}
+
+@media (max-width: 390px) {
+  .studio-workbench .workspace-tabs > button > svg {
+    display: none;
   }
 }
 

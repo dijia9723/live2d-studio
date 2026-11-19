@@ -1,4 +1,4 @@
-// 本文件从当前角色的真实 model3.json 和资源文件读取动作、原生表情。
+// 本文件从当前角色的模型清单和资源文件读取动作、原生表情。
 package character
 
 import (
@@ -68,7 +68,8 @@ func (s *Service) Actions(ctx context.Context, characterID string) (Actions, err
 	default:
 		return result, ErrActions
 	}
-	if !fs.ValidPath(relative) || strings.Contains(relative, "\\") || !strings.HasSuffix(relative, ".model3.json") {
+	kind := modelManifestKind(relative)
+	if !fs.ValidPath(relative) || strings.Contains(relative, "\\") || kind == 0 {
 		return result, ErrActions
 	}
 	f, err := open(relative)
@@ -76,19 +77,21 @@ func (s *Service) Actions(ctx context.Context, characterID string) (Actions, err
 		return result, ErrActions
 	}
 	defer f.Close()
-	const maxManifestBytes = 2 << 20
 	data, err := io.ReadAll(io.LimitReader(f, maxManifestBytes+1))
 	if err != nil || len(data) > maxManifestBytes {
 		return result, ErrActions
 	}
-	var manifest struct {
-		FileReferences *struct {
-			Motions     map[string][]struct{ File string } `json:"Motions"`
-			Expressions []struct{ Name, File string }      `json:"Expressions"`
-		} `json:"FileReferences"`
-	}
-	if json.Unmarshal(data, &manifest) != nil || manifest.FileReferences == nil {
-		return result, ErrActions
+	var actions manifestActions
+	if kind == 2 {
+		if json.Unmarshal(data, &actions) != nil {
+			return result, ErrActions
+		}
+	} else {
+		var manifest struct{ FileReferences *manifestActions }
+		if json.Unmarshal(data, &manifest) != nil || manifest.FileReferences == nil {
+			return result, ErrActions
+		}
+		actions = *manifest.FileReferences
 	}
 	// 引用可以包含 ../（如 runtime/../motions），但不能越出该角色模型目录。
 	modelRoot := strings.SplitN(relative, "/", 2)[0] + "/"
@@ -109,13 +112,13 @@ func (s *Service) Actions(ctx context.Context, characterID string) (Actions, err
 		info, statErr := resource.Stat()
 		return statErr == nil && info.Mode().IsRegular()
 	}
-	groups := make([]string, 0, len(manifest.FileReferences.Motions))
-	for group := range manifest.FileReferences.Motions {
+	groups := make([]string, 0, len(actions.Motions))
+	for group := range actions.Motions {
 		groups = append(groups, group)
 	}
 	sort.Strings(groups)
 	for _, group := range groups {
-		for index, item := range manifest.FileReferences.Motions[group] {
+		for index, item := range actions.Motions[group] {
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
@@ -129,7 +132,7 @@ func (s *Service) Actions(ctx context.Context, characterID string) (Actions, err
 				label = "动作"
 			}
 			filename := path.Base(strings.ReplaceAll(item.File, "\\", "/"))
-			for _, suffix := range []string{".motion3.json", ".motion.json"} {
+			for _, suffix := range []string{".motion3.json", ".motion.json", ".mtn"} {
 				if strings.HasSuffix(strings.ToLower(filename), suffix) {
 					filename = filename[:len(filename)-len(suffix)]
 					break
@@ -139,7 +142,7 @@ func (s *Service) Actions(ctx context.Context, characterID string) (Actions, err
 			result.Motions = append(result.Motions, Motion{ID: string(id), Group: group, Index: index, Label: displayName(ch.ActionNames.Motions, string(id), defaultLabel), DefaultLabel: defaultLabel})
 		}
 	}
-	for _, item := range manifest.FileReferences.Expressions {
+	for _, item := range actions.Expressions {
 		if item.Name != "" && exists(item.File) {
 			result.Expressions = append(result.Expressions, NativeExpression{ID: item.Name, Label: displayName(ch.ActionNames.Expressions, item.Name, item.Name), DefaultLabel: item.Name})
 		} else {

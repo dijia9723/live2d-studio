@@ -7,14 +7,17 @@ import (
 	"server/internal/modules/settings"
 )
 
-// Run 执行自动迁移并补种内置角色。
+// Run 执行自动迁移，并仅在首次创建数据库时补种内置角色。
 //
-// AutoMigrate 只补齐缺失的表、列与索引，不会删除既有数据；内置角色通过
-// FirstOrCreate 按主键写入，重复启动不会覆盖用户已修改的角色设定。
-func Run(db *gorm.DB) error {
+// AutoMigrate 只补齐缺失的表、列与索引，不会删除既有数据；内置角色只在
+// 数据库首次创建时写入，用户删除后重启不会被恢复。
+func Run(db *gorm.DB, seedBuiltins bool) error {
 	// 迁移顺序按依赖排列：角色 → 会话 → 消息 → 设置 → 场景素材 → 角色记忆。
 	if err := db.AutoMigrate(&model.Character{}, &model.Conversation{}, &model.Message{}, &settings.Record{}, &model.SceneAsset{}, &model.CharacterMemory{}); err != nil {
 		return err
+	}
+	if !seedBuiltins {
+		return nil
 	}
 	// 内置角色保证首次启动即可对话，用户可在此基础上自行增删。
 	characters := []model.Character{
@@ -22,7 +25,7 @@ func Run(db *gorm.DB) error {
 		{ID: "shizuku", Name: "Shizuku", Description: "温柔细腻的陪伴，听你说，也陪你想。", ModelPath: "/live2d-models/shizuku/runtime/shizuku.model3.json", Color: "#8bb9c9", SystemPrompt: "你是 Shizuku，一位温柔、耐心的虚拟伙伴。用自然、简短的中文与用户交流。善于倾听，给予具体而真诚的回应。保持诚实。"},
 	}
 	for _, ch := range characters {
-		if err := db.Where("id = ?", ch.ID).FirstOrCreate(&ch).Error; err != nil {
+		if err := db.Create(&ch).Error; err != nil {
 			return err
 		}
 	}

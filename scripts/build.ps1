@@ -12,6 +12,12 @@ $taskBin = Join-Path $taskRoot 'bin'
 New-Item -ItemType Directory -Force -Path $taskBin | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $taskBin 'configs') | Out-Null
 Copy-Item -LiteralPath (Join-Path $taskRoot 'server/configs/config.example.yaml') -Destination (Join-Path $taskBin 'configs/config.example.yaml')
+# 初始模型随数据目录分发，不打包进二进制；存在时就随构建复制一份。
+$assets = Join-Path $taskRoot 'server/data/assets'
+if (Test-Path $assets) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $taskBin 'data/assets') | Out-Null
+  Copy-Item -Recurse -Force (Join-Path $assets '*') (Join-Path $taskBin 'data/assets')
+}
 Push-Location $taskRoot
 try {
   if ($Target -eq 'server') { go build -tags headless -trimpath -ldflags '-s -w' -o (Join-Path $taskBin 'studio-server.exe') . }

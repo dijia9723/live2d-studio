@@ -10,8 +10,11 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/google/uuid v1.6.0
+	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
+	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
 	github.com/meguminnnnnnnnn/go-openai v0.1.2
 	github.com/wailsapp/wails/v3 v3.1.0
+	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.31.1
 )
@@ -34,6 +37,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
+	github.com/gen2brain/shm v0.1.0 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -49,6 +53,7 @@ require (
 	github.com/gookit/gsr v0.1.1 // indirect
 	github.com/gookit/slog v0.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
+	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -86,7 +91,6 @@ require (
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect

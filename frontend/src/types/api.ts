@@ -2,7 +2,7 @@
  * 文件职责：后端 API 的数据结构类型定义（角色、会话、消息、设置、流式事件、场景素材）。
  */
 
-/** 角色（聊天伙伴），model_path 指向 Live2D 模型的 model3.json。 */
+/** 角色（聊天伙伴），model_path 指向 Live2D 模型清单。 */
 export interface Character {
   id: string
   name: string

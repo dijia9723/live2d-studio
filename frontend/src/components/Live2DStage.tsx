@@ -6,8 +6,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Application, Ticker } from 'pixi.js'
+import type { IRenderingContext } from 'pixi.js'
 import { AlertCircle, LoaderCircle, RotateCcw } from 'lucide-react'
-import type { Cubism4InternalModel, Live2DModel } from 'pixi-live2d-display/cubism4'
+import type { Cubism2InternalModel, Cubism4InternalModel, Live2DModel } from 'pixi-live2d-display'
 import { notify, useStudio } from '../store/studio'
 import {
   chooseMotion,
@@ -17,7 +18,9 @@ import {
   moodParameters,
 } from '../utils/live2d'
 import type { Live2DCapabilities } from '../utils/live2d'
+import { loadLive2DRuntime } from '../utils/live2dRuntime'
 import type { ActionNames } from '../types/api'
+import { clampModelPosition, clampModelZoom, defaultModelPosition, type ModelPosition } from '../types/stage'
 import { actionDisplayName, moodNames } from '../utils/actionNames'
 import {
   createCameraParameterDriver,
@@ -32,6 +35,10 @@ export interface Live2DStageHandle {
   setMood(mood: string): void
   setExpression(name: string | null): Promise<boolean>
   playMotion(id?: string): Promise<boolean>
+  moveModel(dx: number, dy: number): void
+  commitModelMove(): void
+  zoomModelBy(factor: number, clientX: number, clientY: number): void
+  resetModelView(): void
   reset(): void
 }
 
@@ -42,35 +49,15 @@ const emptyCapabilities = (): Live2DCapabilities => ({
   supportsMoods: false,
 })
 
-// Cubism Core 是全局脚本，多个舞台共享同一次加载（模块级 Promise 缓存）。
-let corePromise: Promise<void> | undefined
-function loadCore() {
-  if ((window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore)
-    return Promise.resolve()
-  if (!corePromise)
-    corePromise = new Promise<void>((resolve, reject) => {
-      const script = document.createElement('script')
-      script.src = '/lib/live2dcubismcore.min.js'
-      script.onload = () => resolve()
-      script.onerror = () => {
-        // 失败后清空缓存，允许点击“重新加载”再试。
-        corePromise = undefined
-        script.remove()
-        reject(new Error('Cubism Core 加载失败，请检查本地运行库'))
-      }
-      document.head.appendChild(script)
-    })
-  return corePromise
-}
-
 interface Props {
-  /** 模型 model3.json 路径 */
+  /** 模型清单路径 */
   modelPath: string
   actionNames?: ActionNames
   /** 是否为缩略图预览模式（不响应鼠标、不播口型） */
   miniature?: boolean
   /** 独立编辑预览：保持默认缩放，情绪与口型不跟随聊天状态。 */
   isolated?: boolean
+  stagePlacement?: boolean
   cameraSample?: RefObject<CameraSample | null>
   onCapabilitiesChange?: (capabilities: Live2DCapabilities) => void
   onInteraction?: (message: string) => void
@@ -82,6 +69,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
     actionNames,
     miniature = false,
     isolated = false,
+    stagePlacement = false,
     cameraSample,
     onCapabilitiesChange,
     onInteraction,
@@ -96,7 +84,8 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [revision, setRevision] = useState(0)
-  const zoom = useStudio((s) => s.zoom)
+  const zoom = useStudio((s) => (stagePlacement ? s.zoom : 1))
+  const position = useStudio((s) => stagePlacement ? s.modelPosition : defaultModelPosition)
   const expression = useStudio((s) => s.expression)
   const expressionRevision = useStudio((s) => s.expressionRevision)
   const speaking = useStudio((s) => s.speaking)
@@ -111,6 +100,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   const expressionVersion = useRef(0)
   const motionVersion = useRef(0)
   const layoutRef = useRef<() => void>(() => {})
+  const pendingPosition = useRef<ModelPosition | null>(null)
   const callbacks = useRef({ onCapabilitiesChange, onInteraction })
   callbacks.current = { onCapabilitiesChange, onInteraction }
   const report = (message: string) => (callbacks.current.onInteraction || notify)(message)
@@ -208,6 +198,50 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       }
     },
     playMotion,
+    moveModel: (dx, dy) => {
+      const live = model.current
+      const width = host.current?.clientWidth
+      const height = host.current?.clientHeight
+      if (!stagePlacement || !live || !width || !height) return
+      pendingPosition.current = clampModelPosition(
+        { x: (live.position.x + dx) / width, y: (live.position.y + dy) / height },
+        useStudio.getState().modelDragLimits,
+      )
+      layoutRef.current()
+    },
+    commitModelMove: () => {
+      if (!pendingPosition.current) return
+      useStudio.getState().patch({ modelPosition: pendingPosition.current })
+      pendingPosition.current = null
+    },
+    zoomModelBy: (factor, clientX, clientY) => {
+      const live = model.current
+      const target = host.current
+      if (!stagePlacement || !live || !target?.clientWidth || !target.clientHeight) return
+      const { zoom, modelZoomLimits, patch } = useStudio.getState()
+      const next = clampModelZoom(zoom * factor, modelZoomLimits)
+      if (next === zoom) return
+      const rect = target.getBoundingClientRect()
+      const anchorX = clientX - rect.left
+      const anchorY = clientY - rect.top
+      const shift = next / zoom - 1
+      const modelPosition = {
+        x: (live.position.x + (live.position.x - anchorX) * shift) / target.clientWidth,
+        y: (live.position.y + (live.position.y - anchorY) * shift) / target.clientHeight,
+      }
+      pendingPosition.current = null
+      zoomRef.current = next
+      patch({ zoom: next, modelPosition })
+      layoutRef.current()
+    },
+    resetModelView: () => {
+      if (!stagePlacement) return
+      pendingPosition.current = null
+      const { modelZoomLimits, patch } = useStudio.getState()
+      zoomRef.current = clampModelZoom(1, modelZoomLimits)
+      patch({ zoom: zoomRef.current, modelPosition: defaultModelPosition })
+      layoutRef.current()
+    },
     reset: () => {
       ++motionVersion.current
       model.current?.internalModel.motionManager.stopAllMotions()
@@ -234,12 +268,17 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
     nativeExpressionRef.current = false
     const start = async () => {
       try {
-        await loadCore()
-        // 动态导入 cubism4 入口，确保 Cubism Core 已就绪。
-        const { Live2DModel } = await import('pixi-live2d-display/cubism4')
+        const { legacy, Live2DModel } = await loadLive2DRuntime(path)
         if (cancelled) return
         Live2DModel.registerTicker(Ticker)
+        const view = document.createElement('canvas')
+        const context = legacy
+          ? (view.getContext('webgl', { alpha: true, stencil: true, antialias: true }) as IRenderingContext | null)
+          : undefined
+        if (context === null) throw new Error('旧版 Live2D 模型需要 WebGL 1 支持')
         pixi = new Application({
+          view,
+          context,
           backgroundAlpha: 0,
           antialias: true,
           autoDensity: true,
@@ -259,44 +298,51 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         pixi.stage.addChild(live)
         const bounds = live.getLocalBounds()
         live.anchor.set(0.5, 0.5)
-        // 按容器尺寸等比缩放并居中，缩略图模式忽略用户缩放。
+        // 绘制区域改变后，按相对坐标更新模型位置。
         const layout = () => {
           if (!pixi) return
           const w = target.clientWidth,
             h = target.clientHeight
           if (!w || !h) return
-          pixi.renderer.resize(w, h)
+          if (pixi.screen.width !== w || pixi.screen.height !== h) pixi.renderer.resize(w, h)
           live.scale.set(
             Math.min((w * 0.94) / bounds.width, (h * 0.97) / bounds.height) *
               (miniature ? 1 : zoomRef.current),
           )
-          live.position.set(w / 2, h / 2 + h * 0.015)
+          const { x, y } = stagePlacement
+            ? pendingPosition.current ?? useStudio.getState().modelPosition
+            : defaultModelPosition
+          live.position.set(w * x, h * y)
         }
         layoutRef.current = layout
         layout()
         observer = new ResizeObserver(layout)
         observer.observe(target)
 
-        const internal = live.internalModel as Cubism4InternalModel
-        const core = internal.coreModel
-        const parameters = core.getModel().parameters
-        const bindings = createParameterBindings(
-          parameters.ids,
-          parameters.minimumValues,
-          parameters.maximumValues,
-        )
+        const internal = live.internalModel
+        const modern = legacy ? undefined : (internal as Cubism4InternalModel)
+        const legacyCore = legacy ? (internal as Cubism2InternalModel).coreModel : undefined
+        const core = modern?.coreModel
+        const parameters = core?.getModel().parameters
+        const bindings = parameters
+          ? createParameterBindings(
+              parameters.ids,
+              parameters.minimumValues,
+              parameters.maximumValues,
+            )
+          : createParameterBindings([], [], [])
         capabilities.current = modelCapabilities(
           internal.motionManager.expressionManager?.definitions,
           internal.motionManager.definitions,
           bindings,
         )
         callbacks.current.onCapabilitiesChange?.(capabilities.current)
-        const lips = lipSyncParameters(bindings, internal.motionManager.lipSyncIds)
+        const lips = lipSyncParameters(bindings, modern?.motionManager.lipSyncIds)
         const driveCamera =
-          cameraSample && !isolated ? createCameraParameterDriver(bindings) : undefined
+          core && cameraSample && !isolated ? createCameraParameterDriver(bindings) : undefined
         let lastCameraFrame = performance.now()
         const applyCameraParameter = (index: number, value: number, weight: number) =>
-          core.setParameterValueByIndex(index, value, weight)
+          core?.setParameterValueByIndex(index, value, weight)
         // 转换模型对鼠标跟随也保留 PARAM_* 命名，这里做候选映射后回填真实参数名。
         const focusIDs = {
           idParamAngleX: ['ParamAngleX'],
@@ -309,13 +355,13 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         }
         for (const [property, candidates] of Object.entries(focusIDs)) {
           const entry = candidates.map((id) => bindings.get(id.toLowerCase())).find(Boolean)
-          if (entry)
+          if (entry && parameters)
             (internal as unknown as Record<string, unknown>)[property] = parameters.ids[entry.index]
         }
         // 每帧更新前写入情绪参数与口型振幅，覆盖库默认值。
         internal.on('beforeModelUpdate', () => {
           if (miniature) return
-          if (!nativeExpressionRef.current)
+          if (core && !nativeExpressionRef.current)
             for (const p of moodParameters(moodRef.current, bindings))
               core.setParameterValueByIndex(p.index, p.value)
           if (driveCamera && cameraSample) {
@@ -327,8 +373,10 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
           }
           if (speakingRef.current) {
             const value = 0.2 + Math.abs(Math.sin(performance.now() / 110)) * 0.65
-            for (const p of lips)
-              core.setParameterValueByIndex(p.index, p.minimum + (p.maximum - p.minimum) * value)
+            if (legacyCore) legacyCore.setParamFloat('PARAM_MOUTH_OPEN_Y', value)
+            if (core)
+              for (const p of lips)
+                core.setParameterValueByIndex(p.index, p.minimum + (p.maximum - p.minimum) * value)
           }
         })
         // 缩略图模式不绑定鼠标交互，避免多个预览争抢焦点。
@@ -342,8 +390,11 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
             (event) => {
               if (
                 !pixi ||
-                (driveCamera && cameraSample && currentCameraSample(cameraSample.current, performance.now()))
-              ) return
+                (driveCamera &&
+                  cameraSample &&
+                  currentCameraSample(cameraSample.current, performance.now()))
+              )
+                return
               // 将画布坐标换算到 pixi 屏幕坐标，驱动角色视线跟随。
               const rect = canvas.getBoundingClientRect()
               live.focus(
@@ -410,11 +461,11 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       layoutRef.current = () => {}
       pixi?.destroy(true, { children: true, texture: false, baseTexture: false })
     }
-  }, [path, miniature, isolated, revision, cameraSample])
-  // 缩放变化时只重排布局，不重建模型。
+  }, [path, miniature, isolated, revision, cameraSample, stagePlacement])
+  // 模型位置或缩放变化时只重排布局。
   useEffect(() => {
     layoutRef.current()
-  }, [zoom])
+  }, [zoom, position])
   // 表情或 revision 变化时重新应用情绪（加载完成后也会触发一次）。
   useEffect(() => {
     if (!isolated) applyMood(expression)

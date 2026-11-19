@@ -63,7 +63,7 @@ export default function StageTemplateManager() {
           {counters.length} 个计数
         </p>
         <p>
-          包含比例、按钮显示、背景、特效、叠加、角色缩放及组件布局。自动计数从保存时的数值继续。
+          包含比例、按钮显示、背景、特效、叠加、模型位置与缩放及组件布局。自动计数从保存时的数值继续。
         </p>
       </form>
       <div className="stage-template-list-heading">

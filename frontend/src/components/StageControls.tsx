@@ -99,7 +99,7 @@ export default function StageControls({
   const reset = () => {
     ++nativeRequest.current
     setExpression('')
-    s.patch({ zoom: 1 })
+    stageRef.current?.resetModelView()
     s.setMood('neutral')
     stageRef.current?.reset()
   }
@@ -220,7 +220,7 @@ export default function StageControls({
         className="character-reset-button"
         disabled={!ready}
         onClick={reset}
-        title="还原角色表情、动作和缩放"
+        title="还原模型位置、缩放、表情和动作"
       >
         <RotateCcw size={14} />
         重置角色视图

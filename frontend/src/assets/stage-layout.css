@@ -82,6 +82,11 @@
   flex: none;
   container: stage-frame / inline-size;
 }
+.stage-viewport.is-panning,
+.stage-viewport.is-panning .stage * {
+  cursor: grabbing;
+  user-select: none;
+}
 .studio-workbench .stage-viewport:fullscreen {
   width: 100vw;
   height: 100dvh;

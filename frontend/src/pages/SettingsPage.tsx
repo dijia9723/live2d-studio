@@ -1,6 +1,6 @@
 /**
  * 页面：设置页。
- * 分语言模型、语音交互、智能体三个分区，负责表单本地编辑、脏检查、
+ * 提供服务配置和本机工作台偏好，负责表单本地编辑、脏检查、
  * 保存设置与测试连接（含“密钥留空即保留”的语义）。
  */
 import { useEffect, useRef, useState } from 'react'
@@ -14,8 +14,10 @@ import {
   Cpu,
   ExternalLink,
   Info,
+  Keyboard,
   KeyRound,
   LoaderCircle,
+  PanelsTopLeft,
   Plug,
   Save,
   ShieldCheck,
@@ -29,7 +31,9 @@ import {
 } from 'lucide-react'
 import { api } from '../api/client'
 import CharacterMemories from '../components/CharacterMemories'
+import HotkeySettings from '../components/HotkeySettings'
 import OllamaModels from '../components/OllamaModels'
+import StagePlacementSettings from '../components/StagePlacementSettings'
 import {
   Select,
   SelectContent,
@@ -52,6 +56,8 @@ const sections = [
   { id: 'llm', name: '语言模型', icon: Cpu },
   { id: 'speech', name: '语音交互', icon: Volume2 },
   { id: 'agent', name: '智能体', icon: WandSparkles },
+  { id: 'stage', name: '舞台布置', icon: PanelsTopLeft },
+  { id: 'hotkeys', name: '热键管理', icon: Keyboard },
 ] as const
 type Activity = 'saving' | 'testing'
 // 连接测试结果；saved 表示测试失败前更改是否已保存。
@@ -85,6 +91,7 @@ export default function SettingsPage() {
   const [params] = useSearchParams()
   const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
+  const localSection = tab === 'stage' || tab === 'hotkeys'
   const page = useRef<HTMLDivElement>(null)
   const profiles = useLLMProfiles(s.settings!)
   const { form, setForm, clearLLM, setClearLLM } = profiles
@@ -193,7 +200,7 @@ export default function SettingsPage() {
           <h1>设置</h1>
           <p>配置模型连接、语音和智能体工具。</p>
         </div>
-        <div className="settings-save-actions">
+        <div className="settings-save-actions" hidden={localSection}>
           <span className="settings-save-state" role="status">
             {profiles.loading
               ? '正在读取服务配置…'
@@ -241,15 +248,15 @@ export default function SettingsPage() {
         </aside>
         <fieldset
           className="settings-form"
-          disabled={activity !== null}
+          disabled={!localSection && activity !== null}
           aria-label={currentSection.name}
         >
-          {saveError && (
+          {!localSection && saveError && (
             <p className="settings-alert" role="alert">
               保存失败。{saveError}
             </p>
           )}
-          {profiles.error && (
+          {!localSection && profiles.error && (
             <div className="settings-profile-error" role="alert">
               <span>读取服务配置失败。{profiles.error}</span>
               <button type="button" onClick={profiles.retry}>
@@ -257,12 +264,14 @@ export default function SettingsPage() {
               </button>
             </div>
           )}
-          {form.environment_overrides.length > 0 && (
+          {!localSection && form.environment_overrides.length > 0 && (
             <div className="settings-note">
               <Info size={18} />
               <p>这些环境变量优先于应用内设置。{form.environment_overrides.join('、')}</p>
             </div>
           )}
+          {tab === 'hotkeys' && <HotkeySettings />}
+          {tab === 'stage' && <StagePlacementSettings />}
           {tab === 'llm' && (
             <>
               <section className="settings-card">

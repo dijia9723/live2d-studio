@@ -38,6 +38,13 @@ paths:
         '200': { description: Updated character }
         '400': { description: Invalid input }
         '404': { description: Character not found }
+    delete:
+      summary: Delete one character
+      description: Removes the character with its conversations, messages, memories and the imported model directory under /models. Initial models shipped in the data assets directory are not deleted.
+      responses:
+        '200': { description: Character deleted }
+        '404': { description: Character not found }
+        '500': { description: Delete failed }
   /characters/{id}/actions:
     parameters:
       - $ref: '#/components/parameters/ID'
@@ -76,7 +83,7 @@ paths:
         '422': { description: Model manifest unavailable or invalid }
   /characters/import:
     post:
-      summary: Import one Cubism model from ZIP (100MB compressed, 200MB expanded)
+      summary: Import one Cubism model from ZIP (no compressed size limit, 200MB expanded)
       requestBody:
         required: true
         content:

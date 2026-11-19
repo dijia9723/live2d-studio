@@ -1,4 +1,4 @@
-# Live2D Studio 打包与验收
+﻿# Live2D Studio 打包与验收
 
 ## 运行时包
 
@@ -26,7 +26,7 @@ python -m zipfile -c hero.zip runtime
 python '<skill-dir>/scripts/check_studio_zip.py' hero.zip
 ```
 
-预检不解压落盘、不导入或修改文件。它检查归档大小、路径、清单、主要资源和 ZIP 完整性；不验证 `.moc3` 是否受目标 Cubism Core 支持，也不保证贴图、绑定、动作或表情能正确渲染。项目规则如有变动，以 `server/internal/modules/character/service.go`、`module.go`、`actions.go` 为准；可对照 `server/internal/modules/character/assets/mao_pro/runtime/mao_pro.model3.json` 与 Shizuku 样本。
+预检不解压落盘、不导入或修改文件。它检查归档大小、路径、清单、主要资源和 ZIP 完整性；不验证 `.moc3` 是否受目标 Cubism Core 支持，也不保证贴图、绑定、动作或表情能正确渲染。项目规则如有变动，以 `server/internal/modules/character/service.go`、`module.go`、`actions.go` 为准；可对照 `server/data/assets/mao_pro/runtime/mao_pro.model3.json` 与 Shizuku 样本。
 
 ## 舞台验收
 

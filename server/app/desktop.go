@@ -66,6 +66,7 @@ func runDesktop(backend *bootstrap.App, address string) error {
 		return err
 	}
 	app := application.New(application.Options{Name: "Live2D Studio", Description: "你的 AI 伙伴工作室", Assets: application.AssetOptions{Handler: proxy}, Mac: application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true}})
+	registerScreenCapture(app)
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "Live2D Studio", Width: 1440, Height: 940, MinWidth: 1024, MinHeight: 720, BackgroundColour: application.NewRGB(248, 247, 251), URL: "/"})
 	backend.Desktop.Set(&windows{app: app, main: window, url: address})
 	return app.Run()

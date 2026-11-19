@@ -1,7 +1,7 @@
 /** 文件职责：本机舞台模板、快照与应用撤销；计数按保存时的值重新开始。 */
 import { create } from 'zustand'
 import type { CanvasCounter, CanvasWidget } from '../types/canvas'
-import { stageAspectPresets, type StageAppearance } from '../types/stage'
+import { defaultModelPosition, stageAspectPresets, type StageAppearance } from '../types/stage'
 import { counterValue } from '../utils/canvas'
 import { notify, useStudio } from './studio'
 import { useCanvas } from './canvas'
@@ -73,6 +73,7 @@ function captureStage(): StageSnapshot {
       overlayOpacity: s.overlayOpacity,
       overlayBlendMode: s.overlayBlendMode,
       zoom: s.zoom,
+      modelPosition: s.modelPosition,
     },
     widgets: canvas.widgets,
     counters: canvas.counters.map((counter) => ({
@@ -97,7 +98,10 @@ function restoreStage(snapshot: StageSnapshot) {
       missing = true
     }
   }
-  useStudio.getState().patch(appearance)
+  useStudio.getState().patch({
+    ...appearance,
+    modelPosition: appearance.modelPosition ?? defaultModelPosition,
+  })
   const now = Date.now()
   useCanvas.setState({
     widgets,

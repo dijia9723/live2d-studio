@@ -1,6 +1,6 @@
 /**
  * 页面：AI 对话主工作台，组合 Live2D 舞台、消息列表与输入区。
- * 左侧显示角色舞台，右侧切换对话、舞台设置与摄像头预览。
+ * 左侧显示角色舞台，右侧切换对话、对话记录、舞台设置与摄像头预览。
  * 同时管理草稿、图片附件、自动滚动、语音输入与朗读、历史导出等交互。
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -17,6 +17,7 @@ import {
   CircleAlert,
   Copy,
   Cpu,
+  History,
   ImagePlus,
   Layers,
   Maximize2,
@@ -47,7 +48,8 @@ import StageOverlay from '../components/StageOverlay'
 import CanvasLayer from '../components/CanvasLayer'
 import CanvasToolbar from '../components/CanvasToolbar'
 import StageViewToolbar from '../components/StageViewToolbar'
-import CameraPanel from '../components/CameraPanel'
+import CameraPanel, { type CameraPreviewMode } from '../components/CameraPanel'
+import ConversationHistory from '../components/ConversationHistory'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +61,7 @@ import { draftKey, emptyDraft, updateDraft, useChatDrafts } from '../store/chatD
 import { useChat } from '../hooks/useChat'
 import { useCameraTracking } from '../hooks/useCameraTracking'
 import { useStageFrame } from '../hooks/useStageFrame'
+import { useStageHotkeys } from '../hooks/useStageHotkeys'
 import { useSpeech } from '../hooks/useSpeech'
 import { api } from '../api/client'
 import { download } from '../utils/format'
@@ -69,6 +72,7 @@ const timeFormat = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '
 const promptSuggestions = ['陪我聊聊今天', '给我一个放松的小建议', '你记得我哪些偏好？']
 const workspacePanels = [
   { id: 'chat', label: '对话', icon: MessageCircle },
+  { id: 'history', label: '对话记录', icon: History },
   { id: 'stage', label: '舞台设置', icon: Layers },
   { id: 'camera', label: '摄像头', icon: Video },
 ] as const
@@ -104,31 +108,11 @@ export default function StudioPage() {
   const [capabilities, setCapabilities] = useState<Live2DCapabilities | null>(null)
   const [interaction, setInteraction] = useState('')
   const [rightPanel, setRightPanel] = useState<WorkspacePanel>('chat')
+  const [cameraPreviewMode, setCameraPreviewMode] = useState<CameraPreviewMode>('skeleton')
   const [stageCategory, setStageCategory] = useState('character')
   const inspectCanvas = useCallback(() => {
     setRightPanel('stage')
     setStageCategory('widgets')
-  }, [])
-  useEffect(() => {
-    const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
-        return
-      const target = event.target as HTMLElement | null
-      if (
-        target?.closest(
-          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]',
-        )
-      )
-        return
-      if (document.querySelector('[role="dialog"]')) return
-      if (event.key.toLowerCase() === 'h') {
-        event.preventDefault()
-        const state = useStudio.getState()
-        state.patch({ controlsVisible: !state.controlsVisible })
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
   }, [])
   const background = s.sceneAssets.find((item) => item.id === s.backgroundAssetID)
   const activeEffects =
@@ -157,6 +141,20 @@ export default function StudioPage() {
   const chat = useChat(reply, stageRef)
   useEffect(() => setInteraction(''), [character?.model_path])
   stopRef.current = chat.stop
+  const showChatFromHistory = () => {
+    voice.stopSpeaking()
+    setRightPanel('chat')
+    document.getElementById('workspace-tab-chat')?.focus({ preventScroll: true })
+  }
+  const startNewChat = () => {
+    if (useStudio.getState().busy) return
+    s.selectCharacter(s.characterID)
+    if (rightPanel === 'history') showChatFromHistory()
+    else {
+      voice.stopSpeaking()
+      composer.current?.focus()
+    }
+  }
   // 切换会话时回到“跟随最新消息”的滚动模式。
   useEffect(() => {
     stickToLatest.current = true
@@ -245,12 +243,19 @@ export default function StudioPage() {
     else void container.current?.requestFullscreen().catch(() => notify('当前窗口不支持全屏'))
   }
   const toggleStageCamera = () => {
+    if (!character) return
     if (!camera.enabled) {
       setRightPanel('camera')
       dock.current?.scrollIntoView({ block: 'nearest' })
     }
     camera.toggle()
   }
+  useStageHotkeys(container, stageRef, !!character, {
+    toggleControls: () => s.patch({ controlsVisible: !useStudio.getState().controlsVisible }),
+    toggleFullscreen: fullscreen,
+    toggleCamera: toggleStageCamera,
+    newConversation: startNewChat,
+  })
   // 键盘切换右侧面板：左右方向键循环，Home/End 跳到首/末。
   const switchPanelWithKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -288,6 +293,7 @@ export default function StudioPage() {
             cameraAvailable={!!character}
             cameraEnabled={camera.enabled}
             onToggleCamera={toggleStageCamera}
+            onResetModelView={() => stageRef.current?.resetModelView()}
             onTemplates={() => {
               setRightPanel('stage')
               setStageCategory('templates')
@@ -381,6 +387,7 @@ export default function StudioPage() {
                   modelPath={character.model_path}
                   actionNames={character.action_names}
                   cameraSample={camera.sample}
+                  stagePlacement
                   onCapabilitiesChange={setCapabilities}
                   onInteraction={setInteraction}
                 />
@@ -400,19 +407,19 @@ export default function StudioPage() {
                       {activity}
                     </div>
                   )}
-                  <div className="zoom-controls" role="group" aria-label="画布缩放">
+                  <div className="zoom-controls" role="group" aria-label="角色缩放">
                     <button
                       aria-label="缩小"
-                      disabled={s.zoom <= 0.5}
-                      onClick={() => s.patch({ zoom: Math.max(0.5, s.zoom - 0.1) })}
+                      disabled={s.zoom <= s.modelZoomLimits.min / 100}
+                      onClick={() => s.patch({ zoom: (Math.round(s.zoom * 100) - 10) / 100 })}
                     >
                       <Minus size={14} />
                     </button>
                     <span>{Math.round(s.zoom * 100)}%</span>
                     <button
                       aria-label="放大"
-                      disabled={s.zoom >= 1.7}
-                      onClick={() => s.patch({ zoom: Math.min(1.7, s.zoom + 0.1) })}
+                      disabled={s.zoom >= s.modelZoomLimits.max / 100}
+                      onClick={() => s.patch({ zoom: (Math.round(s.zoom * 100) + 10) / 100 })}
                     >
                       <Plus size={14} />
                     </button>
@@ -420,7 +427,7 @@ export default function StudioPage() {
                     <button
                       aria-label="重置视图"
                       onClick={() => {
-                        s.patch({ zoom: 1 })
+                        stageRef.current?.resetModelView()
                         s.setMood('neutral')
                         stageRef.current?.reset()
                       }}
@@ -557,11 +564,7 @@ export default function StudioPage() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={s.busy}
-                      onSelect={() => {
-                        voice.stopSpeaking()
-                        s.selectCharacter(s.characterID)
-                        composer.current?.focus()
-                      }}
+                      onSelect={startNewChat}
                     >
                       <Plus size={15} />
                       开始新的对话
@@ -877,6 +880,21 @@ export default function StudioPage() {
               />
             </div>
           </section>
+          <section
+            id="workspace-history"
+            role="tabpanel"
+            aria-labelledby="workspace-tab-history"
+            className="history-panel"
+            hidden={rightPanel !== 'history'}
+          >
+            <ConversationHistory
+              key={character.id}
+              characterID={character.id}
+              characterName={character.name}
+              onStart={startNewChat}
+              onOpen={showChatFromHistory}
+            />
+          </section>
           <div
             id="workspace-stage"
             role="tabpanel"
@@ -902,6 +920,9 @@ export default function StudioPage() {
             {rightPanel === 'camera' && (
               <CameraPanel
                 stream={camera.previewStream}
+                landmarks={camera.landmarks}
+                mode={cameraPreviewMode}
+                onModeChange={setCameraPreviewMode}
                 enabled={camera.enabled}
                 message={camera.message}
                 error={camera.error}

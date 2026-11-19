@@ -52,7 +52,10 @@ func New(cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	// 使用纯 Go 的 SQLite 驱动，免 CGO 便于跨平台打包；日志静默以免刷屏。
-	db, err := gorm.Open(sqlite.Open(filepath.Join(cfg.DataDir, "studio.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	dbPath := filepath.Join(cfg.DataDir, "studio.db")
+	_, statErr := os.Stat(dbPath)
+	freshDatabase := os.IsNotExist(statErr)
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		return nil, err
 	}
@@ -70,13 +73,19 @@ func New(cfg config.Config) (*App, error) {
 			return nil, err
 		}
 	}
-	if err = migrate.Run(db); err != nil {
+	if err = migrate.Run(db, freshDatabase); err != nil {
 		sqlDB.Close()
 		return nil, err
 	}
 	// 用户导入的 Live2D 模型集中存放，由 /models 只读路由提供。
 	modelsDir := filepath.Join(cfg.DataDir, "models")
 	if err = os.MkdirAll(modelsDir, 0700); err != nil {
+		sqlDB.Close()
+		return nil, err
+	}
+	// 初始模型随数据目录分发，缺失时跳过导入，不参与二进制打包。
+	assetsDir := filepath.Join(cfg.DataDir, "assets")
+	if err = os.MkdirAll(assetsDir, 0700); err != nil {
 		sqlDB.Close()
 		return nil, err
 	}
@@ -89,7 +98,7 @@ func New(cfg config.Config) (*App, error) {
 	// 业务服务按依赖方向自底向上构造：设置与记忆不依赖其他模块，
 	// 对话服务再组合角色、设置与 agentcore ADK 智能体。
 	ss := settings.New(db, cfg)
-	cs := &character.Service{DB: db, ModelsDir: modelsDir}
+	cs := &character.Service{DB: db, ModelsDir: modelsDir, AssetsDir: assetsDir}
 	if err = cs.EnsureInitialModels(); err != nil {
 		sqlDB.Close()
 		return nil, err
@@ -119,6 +128,22 @@ func New(cfg config.Config) (*App, error) {
 	// 业务模块统一挂载到 /api/v1；场景媒体路由不经过 API 分组，单独注册。
 	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Settings: ss}, ds, assets, &memory.Module{Service: memories})
 	assets.RegisterMedia(r)
+	cubism2Runtime := filepath.Join(cfg.DataDir, "cubism2", "live2d.min.js")
+	r.GET("/api/v1/characters/cubism2-runtime", func(c *gin.Context) {
+		file, err := os.Open(cubism2Runtime)
+		if err != nil {
+			c.Status(404)
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			c.Status(404)
+			return
+		}
+		c.Header("Content-Type", "text/javascript; charset=utf-8")
+		http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), file)
+	})
 	// 模型文件只读映射到数据目录：逐级清理路径并拒绝绝对路径与 ..，防止路径穿越。
 	r.GET("/models/*path", func(c *gin.Context) {
 		rel := filepath.Clean(filepath.FromSlash(strings.TrimPrefix(c.Param("path"), "/")))

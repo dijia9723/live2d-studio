@@ -68,6 +68,135 @@
   flex: 1;
   display: flex;
 }
+.history-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.conversation-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+}
+.history-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.history-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 650;
+}
+.history-heading > button {
+  flex: none;
+}
+.history-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding-inline: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fbf9fe;
+}
+.history-search:focus-within {
+  border-color: #a17ce9;
+}
+.history-search > svg {
+  flex: none;
+}
+.history-search input {
+  min-width: 0;
+  width: 100%;
+  padding-block: 6px;
+  color: var(--ink);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.history-list {
+  min-height: 0;
+  margin: 0 -4px;
+  padding: 2px 4px;
+  overflow: auto;
+  list-style: none;
+}
+.history-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 34px;
+  align-items: center;
+  padding-right: 4px;
+  border-radius: 8px;
+}
+.history-entry:hover {
+  background: #f8f5fc;
+}
+.history-entry:has([aria-current='true']) {
+  background: #f0e8fa;
+}
+.history-select {
+  display: flex;
+  align-items: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px;
+  text-align: left;
+  border-radius: inherit;
+}
+.history-select > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--purple);
+}
+.history-select > span {
+  min-width: 0;
+}
+.history-select strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.history-select small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.history-action {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.history-action:hover:not(:disabled) {
+  color: var(--purple);
+  background: #ede5f8;
+}
+.history-select:focus-visible,
+.history-action:focus-visible {
+  outline-offset: -2px;
+}
+.history-placeholder,
+.history-error {
+  padding: 8px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.history-error {
+  color: #9e2d49;
+}
 .camera-panel {
   min-height: 0;
   flex: 1;
@@ -103,6 +232,30 @@
 .camera-panel-heading > button {
   white-space: nowrap;
 }
+.camera-preview-modes {
+  display: flex;
+  justify-self: start;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #eee9f5;
+  border-radius: 9px;
+  background: #f5f2f9;
+}
+.camera-preview-modes > button {
+  padding: 5px 12px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.camera-preview-modes > button:hover,
+.camera-preview-modes > button[aria-pressed='true'] {
+  color: #8057ba;
+  background: #fff;
+}
+.camera-preview-modes > button[aria-pressed='true'] {
+  box-shadow: 0 2px 8px #4e366712;
+}
 .camera-preview {
   position: relative;
   display: grid;
@@ -115,22 +268,14 @@
   background: #201a2b;
   color: #ede4f8;
 }
-.camera-preview video {
+.camera-preview > video,
+.camera-preview > canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
   transform: scaleX(-1);
-}
-.camera-preview-label {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 4px 7px;
-  border-radius: 6px;
-  background: #23192ec9;
-  font-size: 11px;
 }
 .camera-preview-empty {
   display: grid;
@@ -206,12 +351,19 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: 11px;
   color: var(--muted);
   padding: 13px;
   border-top: 1px solid #f3eff6;
   flex-shrink: 0;
+}
+.stage-settings-footer > a {
+  margin-left: 4px;
+  color: var(--purple);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .panel-section-heading {
   display: flex;

@@ -3,6 +3,7 @@
  * 包含完整的方向键/Home/End 键盘导航与 ARIA tab 语义。
  */
 import type { RefObject } from 'react'
+import { Link } from 'react-router-dom'
 import { Image, LayoutTemplate, PanelsTopLeft, Smile, Sparkles } from 'lucide-react'
 import StageControls from './StageControls'
 import BackgroundManager from './BackgroundManager'
@@ -213,6 +214,7 @@ export default function StageSettingsPanel({
       <div className="stage-settings-footer">
         <span className="status-dot" />
         更改即时预览并自动保存
+        <Link to="/settings?section=stage">设置模型操作范围</Link>
       </div>
     </section>
   )

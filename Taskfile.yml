@@ -7,6 +7,16 @@ vars:
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
 
 tasks:
+  build:
+    summary: 构建生产版本（前端 + 桌面端）
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
+
+  build:server:
+    summary: 构建生产版本（前端 + 无界面服务端）
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -Target server
+
   dev:build:
     summary: 编译开发版本（保留调试信息，由 wails3 dev 调用）
     cmds:

@@ -5,6 +5,7 @@ import {
   bodyTrackingValues,
   createCameraSampleBuffer,
   faceTrackingValues,
+  type CameraLandmarks,
   type CameraSample,
 } from '../utils/cameraTracking'
 
@@ -42,6 +43,7 @@ export function useCameraTracking(available: boolean) {
   const [error, setError] = useState('')
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
   const sample = useRef<CameraSample | null>(null)
+  const landmarks = useRef<CameraLandmarks | null>(null)
 
   useEffect(() => {
     if (!enabled) return
@@ -60,6 +62,7 @@ export function useCameraTracking(available: boolean) {
       controller.abort()
       cancelAnimationFrame(frame)
       sample.current = null
+      landmarks.current = null
       if (stream) stopStream(stream)
       setPreviewStream(null)
       if (video) {
@@ -129,6 +132,8 @@ export function useCameraTracking(available: boolean) {
         }
         tracker = ready
         const source = video
+        const preview: CameraLandmarks = { width: source.videoWidth, height: source.videoHeight }
+        landmarks.current = preview
         const retainSample = createCameraSampleBuffer()
         let lastVideoTime = -1
         let lastFace = -Infinity
@@ -145,13 +150,19 @@ export function useCameraTracking(available: boolean) {
           ) {
             try {
               lastVideoTime = source.currentTime
+              preview.width = source.videoWidth
+              preview.height = source.videoHeight
               if (now - lastPose >= 125) {
                 lastPose = now
                 const pose = ready.pose.detectForVideo(source, now)
+                const points = pose.landmarks[0]
+                preview.pose = points?.length ? { time: now, points } : undefined
                 updates = bodyTrackingValues(pose, now - lastFace < 200 ? face : undefined)
               } else if (now - lastFace >= 45) {
                 lastFace = now
                 face = ready.face.detectForVideo(source, now)
+                const points = face.faceLandmarks[0]
+                preview.face = points?.length ? { time: now, points } : undefined
                 updates = faceTrackingValues(face)
               }
             } catch {
@@ -186,6 +197,7 @@ export function useCameraTracking(available: boolean) {
     error,
     message: error || (enabled ? cameraMessages[status] : ''),
     previewStream: enabled ? previewStream : null,
+    landmarks,
     sample,
     toggle,
   }
