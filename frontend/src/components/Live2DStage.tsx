@@ -58,6 +58,7 @@ interface Props {
   /** 独立编辑预览：保持默认缩放，情绪与口型不跟随聊天状态。 */
   isolated?: boolean
   stagePlacement?: boolean
+  tapActions?: boolean
   cameraSample?: RefObject<CameraSample | null>
   onCapabilitiesChange?: (capabilities: Live2DCapabilities) => void
   onInteraction?: (message: string) => void
@@ -70,6 +71,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
     miniature = false,
     isolated = false,
     stagePlacement = false,
+    tapActions = true,
     cameraSample,
     onCapabilitiesChange,
     onInteraction,
@@ -381,7 +383,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         })
         // 缩略图模式不绑定鼠标交互，避免多个预览争抢焦点。
         if (!miniature) {
-          canvas.style.cursor = 'pointer'
+          canvas.style.cursor = tapActions ? 'pointer' : 'inherit'
           canvas.setAttribute('aria-label', 'Live2D 角色，点击播放动作，移动指针让角色看向你')
           let down: { x: number; y: number; id: number } | undefined
           const options = { signal: listeners.signal }
@@ -425,6 +427,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
             (event) => {
               // 位移小于 8px 才视为点击，避免拖拽误触发动作。
               if (
+                tapActions &&
                 down &&
                 down.id === event.pointerId &&
                 Math.hypot(event.clientX - down.x, event.clientY - down.y) < 8
@@ -461,7 +464,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       layoutRef.current = () => {}
       pixi?.destroy(true, { children: true, texture: false, baseTexture: false })
     }
-  }, [path, miniature, isolated, revision, cameraSample, stagePlacement])
+  }, [path, miniature, isolated, revision, cameraSample, stagePlacement, tapActions])
   // 模型位置或缩放变化时只重排布局。
   useEffect(() => {
     layoutRef.current()

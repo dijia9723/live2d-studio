@@ -17,6 +17,7 @@ import {
   CircleAlert,
   Copy,
   Cpu,
+  Eye,
   History,
   ImagePlus,
   Layers,
@@ -24,10 +25,13 @@ import {
   Mic,
   MessageCircle,
   Minus,
+  Pause,
+  Play,
   MoreHorizontal,
   Pin,
   Plus,
   RefreshCw,
+  ScanLine,
   Send,
   Settings2,
   Sparkles,
@@ -57,8 +61,12 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu'
 import { useStudio, notify } from '../store/studio'
+import { useHotkeys } from '../store/hotkeys'
+import { ariaHotkey, formatHotkey } from '../utils/hotkeys'
 import { draftKey, emptyDraft, updateDraft, useChatDrafts } from '../store/chatDrafts'
 import { useChat } from '../hooks/useChat'
+import { useDesktopSnip } from '../hooks/useDesktopSnip'
+import { useScreenWatch } from '../hooks/useScreenWatch'
 import { useCameraTracking } from '../hooks/useCameraTracking'
 import { useStageFrame } from '../hooks/useStageFrame'
 import { useStageHotkeys } from '../hooks/useStageHotkeys'
@@ -110,6 +118,24 @@ export default function StudioPage() {
   const [rightPanel, setRightPanel] = useState<WorkspacePanel>('chat')
   const [cameraPreviewMode, setCameraPreviewMode] = useState<CameraPreviewMode>('skeleton')
   const [stageCategory, setStageCategory] = useState('character')
+  const [screenSnipRequest, setScreenSnipRequest] = useState<{ id: string; reason: string } | null>(null)
+  const desktopSnip = useDesktopSnip(s.desktop)
+  const watch = useScreenWatch(s.characterID, s.conversationID)
+  const [visionAvailable, setVisionAvailable] = useState(false)
+  const [watchImage, setWatchImage] = useState(false)
+  useEffect(() => {
+    if (!desktopSnip.available) return
+    const request = new AbortController()
+    void api.screenWatchSettings(request.signal).then((settings) => {
+      if (!request.signal.aborted) setVisionAvailable(!!settings.vision)
+    }).catch(() => {})
+    return () => request.abort()
+  }, [desktopSnip.available])
+  useEffect(() => {
+    if (!watch.stats) setWatchImage(false)
+  }, [watch.stats])
+  const captureHotkey = useHotkeys((state) => state.bindings.captureScreen)
+  const visibleScreenRequest = screenSnipRequest?.id === s.conversationID ? screenSnipRequest : null
   const inspectCanvas = useCallback(() => {
     setRightPanel('stage')
     setStageCategory('widgets')
@@ -138,7 +164,10 @@ export default function StudioPage() {
     },
     [voice.speak],
   )
-  const chat = useChat(reply, stageRef)
+  const requestScreenSnip = useCallback((id: string, reason: string) => {
+    setScreenSnipRequest({ id, reason })
+  }, [])
+  const chat = useChat(reply, stageRef, desktopSnip.available ? requestScreenSnip : undefined)
   useEffect(() => setInteraction(''), [character?.model_path])
   stopRef.current = chat.stop
   const showChatFromHistory = () => {
@@ -178,16 +207,48 @@ export default function StudioPage() {
     if (!text.trim() || draftTooLong || s.busy) return
     voice.stopSpeaking()
     scrollToLatest()
-    await chat.send(text, image, (conversationID) => {
-      updateDraft(conversationID, (draft) => ({
-        text: draft.text === text ? '' : draft.text,
-        image: draft.image === image ? '' : draft.image,
-      }))
-    })
+    const screenContext = watch.contextFor(text, visionAvailable && !image, watchImage && !image)
+    try {
+      await chat.send(text, image, (conversationID) => {
+        updateDraft(conversationID, (draft) => ({
+          text: draft.text === text ? '' : draft.text,
+          image: draft.image === image ? '' : draft.image,
+        }))
+        if (screenContext?.image) setWatchImage(false)
+      }, screenContext)
+    } finally {
+      const owner = useStudio.getState()
+      watch.finishQuestion({ character: owner.characterID, conversation: owner.conversationID })
+    }
   }
   const stop = () => {
     chat.stop()
     voice.stopSpeaking()
+  }
+  const captureScreen = async () => {
+    if (!desktopSnip.available || desktopSnip.capturing || useStudio.getState().busy) return
+    setRightPanel('chat')
+    const owner = useStudio.getState()
+    try {
+      const snip = await desktopSnip.capture()
+      if (!snip) return
+      if (snip.watch_id) {
+        watch.region(snip.watch_id, { character: owner.characterID, conversation: owner.conversationID })
+        setScreenSnipRequest(null)
+        return
+      }
+      const capture = snip.image
+      if (!capture) return
+      imageReader.current?.abort()
+      updateDraft(draftID, (draft) => ({
+        image: capture,
+        text: draft.text || (visibleScreenRequest ? '这是你请求的截图。' : ''),
+      }))
+      setScreenSnipRequest((current) => current === visibleScreenRequest ? null : current)
+      composer.current?.focus({ preventScroll: true })
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Windows 截图失败')
+    }
   }
   // 选择图片：限制类型与 4MB 大小，转 data URL 存入草稿；重复选择时取消上一次读取。
   const uploadImage = async (file?: File) => {
@@ -255,6 +316,7 @@ export default function StudioPage() {
     toggleFullscreen: fullscreen,
     toggleCamera: toggleStageCamera,
     newConversation: startNewChat,
+    captureScreen: desktopSnip.available ? () => void captureScreen() : undefined,
   })
   // 键盘切换右侧面板：左右方向键循环，Home/End 跳到首/末。
   const switchPanelWithKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -754,6 +816,68 @@ export default function StudioPage() {
                   {s.chatError}
                 </p>
               )}
+              {visibleScreenRequest && (
+                <div className="chat-screen-request">
+                  <div>
+                    <strong>智能体请求截图</strong>
+                    <p>{visibleScreenRequest.reason}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="button soft"
+                    disabled={s.busy || desktopSnip.capturing}
+                    onClick={() => void captureScreen()}
+                  >
+                    框选屏幕
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="忽略截图请求"
+                    onClick={() => setScreenSnipRequest(null)}
+                  >
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+              {watch.stats && (
+                <div className="screen-watch-bar">
+                  <Eye size={16} aria-hidden="true" />
+                  <span className="screen-watch-status" role="status">
+                    {watch.stats.phase === 'paused' ? '观看已暂停' : watch.stats.phase === 'starting' ? '正在准备观看…' : '正在一起看'}
+                    {watch.stats.phase === 'watching' && watch.stats.elapsed !== undefined && (
+                      <small>本地识别 {watch.stats.elapsed} ms</small>
+                    )}
+                  </span>
+                  {visionAvailable && watch.stats.phase === 'watching' && (
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label="下一问附上画面"
+                      aria-pressed={watchImage}
+                      title="下一问附上画面"
+                      onClick={() => setWatchImage(!watchImage)}
+                    >
+                      <ImagePlus size={15} />
+                    </button>
+                  )}
+                  {watch.stats.phase !== 'starting' && (
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={watch.stats.phase === 'paused' ? '继续观看' : '暂停观看'}
+                      title={watch.stats.phase === 'paused' ? '继续观看' : '暂停观看'}
+                      onClick={watch.togglePause}
+                    >
+                      {watch.stats.phase === 'paused' ? <Play size={15} /> : <Pause size={15} />}
+                    </button>
+                  )}
+                  <button type="button" className="icon-button" aria-label="结束观看" title="结束观看" onClick={watch.stop}>
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+              {watch.error && <p className="screen-watch-error" role="alert">{watch.error}</p>}
               {image && (
                 <div className="image-preview">
                   <img src={image} alt="待发送图片" />
@@ -807,6 +931,42 @@ export default function StudioPage() {
                     >
                       <ImagePlus size={18} />
                     </button>
+                    {desktopSnip.available && (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="截取 Windows 屏幕"
+                        aria-keyshortcuts={ariaHotkey(captureHotkey)}
+                        title={captureHotkey ? `截取屏幕（${formatHotkey('captureScreen', captureHotkey)}）` : '截取屏幕'}
+                        disabled={s.busy || desktopSnip.capturing}
+                        onClick={() => void captureScreen()}
+                      >
+                        <ScanLine size={18} aria-hidden="true" />
+                      </button>
+                    )}
+                    {desktopSnip.available && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="icon-button screen-watch-trigger"
+                            aria-label="一起看"
+                            title="一起看"
+                            data-watching={!!watch.stats}
+                            disabled={s.busy || desktopSnip.capturing}
+                          >
+                            <Eye size={18} aria-hidden="true" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" side="top">
+                          {typeof navigator.mediaDevices?.getDisplayMedia === 'function' && (
+                            <DropdownMenuItem onSelect={() => void watch.windowSource()}>选择观看窗口</DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onSelect={() => void captureScreen()}>框选区域，在截图工具栏点「一起看」</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => navigate('/settings?section=screen-watch')}>配置观看模型</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                     <button
                       type="button"
                       className={`icon-button ${voice.listening ? 'recording' : ''}`}

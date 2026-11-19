@@ -707,6 +707,30 @@
   color: var(--purple);
 }
 
+.studio-workbench .chat-screen-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8f4fc;
+  font-size: 12px;
+}
+
+.studio-workbench .chat-screen-request > div {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.studio-workbench .chat-screen-request p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .studio-workbench .image-preview {
   width: max-content;
   max-width: 100%;
@@ -854,4 +878,44 @@
   .studio-workbench .composer-tools .recording {
     animation: none;
   }
+}
+.screen-watch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-block: 0 7px;
+  padding: 4px 7px 4px 10px;
+  border: 1px solid #ddd0f1;
+  border-radius: 10px;
+  background: #f5effd;
+  color: #553491;
+}
+.screen-watch-bar > svg { flex: none; }
+.screen-watch-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.screen-watch-status small {
+  display: inline-block;
+  margin-inline-start: 8px;
+  color: #685d79;
+  font-size: 11px;
+  font-weight: 400;
+}
+.screen-watch-bar .icon-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+.screen-watch-bar [aria-pressed='true'],
+.screen-watch-trigger[data-watching='true'] {
+  background: #e6daf8;
+  color: #5733a0;
+}
+.screen-watch-error {
+  margin-block: 4px 8px;
+  color: #a23950;
 }

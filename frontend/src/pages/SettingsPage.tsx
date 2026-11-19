@@ -12,7 +12,9 @@ import {
   ChevronRight,
   Clock3,
   Cpu,
+  ScanLine,
   ExternalLink,
+  Eye,
   Info,
   Keyboard,
   KeyRound,
@@ -34,6 +36,7 @@ import CharacterMemories from '../components/CharacterMemories'
 import HotkeySettings from '../components/HotkeySettings'
 import OllamaModels from '../components/OllamaModels'
 import StagePlacementSettings from '../components/StagePlacementSettings'
+import ScreenWatchSettings from '../components/ScreenWatchSettings'
 import {
   Select,
   SelectContent,
@@ -54,6 +57,7 @@ const presets = [
 ] as const
 const sections = [
   { id: 'llm', name: '语言模型', icon: Cpu },
+  { id: 'screen-watch', name: '观看模型', icon: Eye },
   { id: 'speech', name: '语音交互', icon: Volume2 },
   { id: 'agent', name: '智能体', icon: WandSparkles },
   { id: 'stage', name: '舞台布置', icon: PanelsTopLeft },
@@ -68,6 +72,11 @@ const tools = [
   { name: '检索记忆', icon: Brain, description: '按关键词查找当前角色的已保存记忆。' },
   { name: '保存记忆', icon: Brain, description: '按你的明确要求，将事实或偏好保存到当前角色。' },
   { name: '切换表情', icon: Smile, description: '切换自然、开心、难过或惊讶表情。' },
+  {
+    name: '请求屏幕截图',
+    icon: ScanLine,
+    description: '在 Windows 桌面客户端提示你框选并发送屏幕区域。',
+  },
   {
     name: '查询模型动作',
     icon: ListChecks,
@@ -91,7 +100,7 @@ export default function SettingsPage() {
   const [params] = useSearchParams()
   const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
-  const localSection = tab === 'stage' || tab === 'hotkeys'
+  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch'
   const page = useRef<HTMLDivElement>(null)
   const profiles = useLLMProfiles(s.settings!)
   const { form, setForm, clearLLM, setClearLLM } = profiles
@@ -271,6 +280,7 @@ export default function SettingsPage() {
             </div>
           )}
           {tab === 'hotkeys' && <HotkeySettings />}
+          {tab === 'screen-watch' && <ScreenWatchSettings />}
           {tab === 'stage' && <StagePlacementSettings />}
           {tab === 'llm' && (
             <>

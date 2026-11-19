@@ -93,6 +93,18 @@ export interface Settings {
 }
 
 export type LLMProvider = Settings['llm']['provider']
+export interface ScreenModel {
+  provider: LLMProvider
+  model: string
+}
+export interface ScreenWatchSettings {
+  fast?: ScreenModel
+  vision?: ScreenModel
+}
+export interface ScreenContext {
+  text: string
+  image?: string
+}
 export interface LLMProfile {
   llm: Settings['llm']
   has_llm_key: boolean
@@ -116,7 +128,7 @@ export interface OllamaModel {
  * stage_action 模型动作/原生表情请求、character 已保存的角色设定、tool 工具状态、done 最终消息、error 失败。
  */
 export interface StreamEvent {
-  type: 'user' | 'delta' | 'expression' | 'character' | 'stage_action' | 'done' | 'error' | 'tool'
+  type: 'user' | 'delta' | 'expression' | 'character' | 'stage_action' | 'done' | 'error' | 'tool' | 'screen_snip_request'
   text?: string
   expression?: string
   message?: Message

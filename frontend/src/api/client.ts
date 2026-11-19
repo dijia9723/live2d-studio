@@ -5,6 +5,8 @@
  */
 import axios from 'axios'
 import type {
+  ScreenContext,
+  ScreenWatchSettings,
   Character,
   CharacterActions,
   ActionNames,
@@ -104,6 +106,9 @@ export const api = {
   renameConversation: (id: string, title: string) => http.put(`/conversations/${id}`, { title }),
   messages: (id: string) => get<Message[]>(`/conversations/${id}/messages`),
   settings: (signal?: AbortSignal) => get<Settings>('/settings', signal),
+  screenWatchSettings: (signal?: AbortSignal) => get<ScreenWatchSettings>('/settings/screen-watch', signal),
+  saveScreenWatchSettings: async (settings: ScreenWatchSettings): Promise<ScreenWatchSettings> =>
+    (await http.put('/settings/screen-watch', settings)).data.data,
   llmProfile: (provider: LLMProvider, signal: AbortSignal) =>
     get<LLMProfile>(`/settings/llm/${provider}`, signal),
   // clear_*_key 为 true 时表示用户主动要求清除已保存的密钥。
@@ -143,6 +148,8 @@ export async function streamMessage(
   image: string | undefined,
   signal: AbortSignal,
   onEvent: (e: StreamEvent) => void,
+  screenSnipRequests = false,
+  screenContext?: ScreenContext,
 ) {
   // 内部控制器同时受外部 signal 和超时定时器约束，任一触发都会中断请求。
   const timeout = new AbortController()
@@ -158,7 +165,9 @@ export async function streamMessage(
     const response = await fetch(`${baseURL}/conversations/${id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Studio-Client': '1' },
-      body: JSON.stringify({ text, image }),
+      body: JSON.stringify({
+        text, image, screen_snip_requests: screenSnipRequests || undefined, screen_context: screenContext,
+      }),
       signal: timeout.signal,
     })
     if (!response.ok) {

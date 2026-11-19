@@ -12,5 +12,6 @@ frontend/bindings/
 .DS_Store
 example/
 example/**
-
+models/**
+models/
 *.exe

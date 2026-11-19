@@ -14,6 +14,7 @@ const names = new Map([
   ['update_character', '修改角色设定'],
   ['get_character_actions', '查询模型动作'],
   ['play_motion', '发送动作播放请求'],
+  ['request_screen_snip', '请求用户截图'],
   ['set_model_expression', '发送模型表情请求'],
   ['unknown_tool', '未知工具'],
 ])

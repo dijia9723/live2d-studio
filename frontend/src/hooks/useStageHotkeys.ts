@@ -3,17 +3,17 @@ import type { Live2DStageHandle } from '../components/Live2DStage'
 import { useHotkeys } from '../store/hotkeys'
 import { hotkeyKey, matchesModifiers, type HotkeyAction, type HotkeyChord } from '../utils/hotkeys'
 
-type Commands = Record<
-  Exclude<HotkeyAction, 'panCanvas' | 'zoomCanvas' | 'resetCanvas'>,
-  () => void
+type Commands = Partial<
+  Record<Exclude<HotkeyAction, 'panCanvas' | 'zoomCanvas' | 'resetCanvas'>, () => void>
 >
 
-const typingTargets = 'input, textarea, select, [role="textbox"], [role="menu"], [role="listbox"]'
+const typingTargets = 'input, textarea, select, [role="textbox"]'
+const commandSurfaces = '[role="dialog"], dialog[open], [role="menu"], [role="listbox"]'
 const clickTargets = 'button, a[href], [role="button"], [role="menuitem"]'
 const blockedTarget = (target: EventTarget | null) =>
   (target instanceof HTMLElement && target.isContentEditable) ||
   (target instanceof Element && target.closest(typingTargets)) ||
-  document.querySelector('[role="dialog"], dialog[open]')
+  document.querySelector(commandSurfaces)
 
 export function useStageHotkeys(
   viewport: RefObject<HTMLDivElement | null>,
@@ -48,10 +48,25 @@ export function useStageHotkeys(
       finish()
     }
     const keyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || blockedTarget(event.target)) return
+      if (event.defaultPrevented || event.isComposing || document.querySelector(commandSurfaces))
+        return
       const key = hotkeyKey(event.key)
       if (!key) return
       const bindings = useHotkeys.getState().bindings
+      if (blockedTarget(event.target)) {
+        const capture = bindings.captureScreen
+        const run = latestCommands.current.captureScreen
+        if (
+          run &&
+          capture?.key === key &&
+          (capture.ctrl || capture.alt || capture.meta) &&
+          matchesModifiers(capture, event)
+        ) {
+          event.preventDefault()
+          if (!event.repeat) run()
+        }
+        return
+      }
       const target = event.target instanceof Element ? event.target : null
       const activatesControl = (key === 'Space' || key === 'Enter') && target?.closest(clickTargets)
       const preparingPan =
@@ -68,7 +83,7 @@ export function useStageHotkeys(
       }
       for (const [action, run] of Object.entries(handlers)) {
         const chord = bindings[action as keyof typeof handlers]
-        if (chord?.key === key && matchesModifiers(chord, event)) {
+        if (run && chord?.key === key && matchesModifiers(chord, event)) {
           event.preventDefault()
           if (!event.repeat) run()
           break

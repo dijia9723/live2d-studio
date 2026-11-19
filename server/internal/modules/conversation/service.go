@@ -139,11 +139,12 @@ func (s *Service) Stream(ctx context.Context, id, text, image string, emit func(
 		return err
 	}
 	emit(Event{Type: "user", Message: &user})
-	history = append(history, user)
+	modelInput, llm := s.withScreenObservation(ctx, user, cfg.LLM)
+	history = append(history, modelInput)
 	assistant := model.Message{ID: uuid.NewString(), ConversationID: id, Role: "assistant", Status: "complete"}
 	var content strings.Builder
 	toolIndexes := make(map[string]int)
-	err = s.Agent.Stream(ctx, cfg.LLM, char, history, func(e agent.Event) {
+	err = s.Agent.Stream(ctx, llm, char, history, func(e agent.Event) {
 		if e.Type == "delta" {
 			content.WriteString(e.Text)
 		}

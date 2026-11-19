@@ -8,7 +8,7 @@ import type { RefObject } from 'react'
 import type { Live2DStageHandle } from '../components/Live2DStage'
 import { streamMessage } from '../api/client'
 import { notify, useStudio } from '../store/studio'
-import type { Message } from '../types/api'
+import type { Message, ScreenContext, StreamEvent } from '../types/api'
 
 /**
  * @param onReply 流结束后收到完整助手回复（用于自动朗读）
@@ -18,6 +18,7 @@ import type { Message } from '../types/api'
 export function useChat(
   onReply: (text: string) => void,
   stageRef?: RefObject<Live2DStageHandle | null>,
+  onScreenSnipRequest?: (conversationID: string, reason: string) => void,
 ) {
   const controller = useRef<AbortController | null>(null)
   const stop = useCallback(() => {
@@ -27,7 +28,7 @@ export function useChat(
   useEffect(() => stop, [stop])
 
   const send = useCallback(
-    async (text: string, image = '', onAccepted?: (conversationID: string) => void) => {
+    async (text: string, image = '', onAccepted?: (conversationID: string) => void, screenContext?: ScreenContext) => {
       const state = useStudio.getState()
       if (!text.trim() || state.busy) return
       useStudio.setState({ busy: true, chatError: '' })
@@ -51,7 +52,7 @@ export function useChat(
         const id = state.conversationID ?? (await state.newConversation()).id
         if (abort.signal.aborted) return
         pending = crypto.randomUUID()
-        await streamMessage(id, text, image, abort.signal, (event) => {
+        const onEvent = (event: StreamEvent) => {
           // done 之后到达的事件一律忽略，保证幂等。
           if (finished) return
           const message = event.message
@@ -72,6 +73,9 @@ export function useChat(
           }
           if (!accepted) return
           switch (event.type) {
+            case 'screen_snip_request':
+              if (!abort.signal.aborted && event.text) onScreenSnipRequest?.(id, event.text)
+              break
             case 'stage_action': {
               const action = event.stage_action
               if (!action || abort.signal.aborted) break
@@ -151,7 +155,8 @@ export function useChat(
               }
               break
           }
-        })
+        }
+        await streamMessage(id, text, image, abort.signal, onEvent, !!onScreenSnipRequest && !screenContext, screenContext)
       } catch (cause) {
         if (finished) return
         const interrupted = abort.signal.aborted
@@ -174,7 +179,7 @@ export function useChat(
           .catch(() => {})
       }
     },
-    [onReply, stageRef],
+    [onReply, stageRef, onScreenSnipRequest],
   )
   return { send, stop }
 }

@@ -24,7 +24,8 @@ type Values = config.Settings
 // 保留旧单行记录的 llm/speech 字段，同时按服务保存地址、模型、参数和各自的密钥。
 type storedValues struct {
 	Values
-	Profiles map[string]config.LLM `json:"llm_profiles"`
+	Profiles    map[string]config.LLM `json:"llm_profiles"`
+	ScreenWatch ScreenWatchModels     `json:"screen_watch,omitempty"`
 }
 
 // Service 负责设置的读取与保存，并用互斥锁串行化写入，避免并发保存互相覆盖密钥。

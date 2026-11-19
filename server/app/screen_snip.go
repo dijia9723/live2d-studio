@@ -10,9 +10,10 @@ import (
 )
 
 type screenSnip struct {
-	Image  string `json:"image"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	Image   string `json:"image,omitempty"`
+	WatchID string `json:"watch_id,omitempty"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
 }
 
 const maxSnipImageBytes = 4 << 20 // Same limit as the chat image attachment.

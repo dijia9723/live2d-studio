@@ -14,6 +14,7 @@ export const hotkeyActions = {
   toggleFullscreen: { label: '切换舞台全屏', trigger: 'key' },
   toggleCamera: { label: '开启或关闭摄像头跟随', trigger: 'key' },
   newConversation: { label: '开始新对话', trigger: 'key' },
+  captureScreen: { label: '截取屏幕', trigger: 'key' },
 } as const
 
 export type HotkeyAction = keyof typeof hotkeyActions
@@ -29,6 +30,7 @@ export const defaultHotkeys: HotkeyBindings = {
   toggleFullscreen: null,
   toggleCamera: null,
   newConversation: null,
+  captureScreen: { ...noModifiers, ctrl: true, shift: true, key: 'S' },
 }
 
 export function hotkeyKey(value: string) {

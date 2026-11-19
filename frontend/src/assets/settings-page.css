@@ -602,3 +602,41 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.screen-watch-settings {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.screen-watch-settings fieldset {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(130px, 2fr);
+  gap: 8px 12px;
+  padding: 10px 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.screen-watch-settings legend {
+  padding-inline: 5px;
+  font-weight: 650;
+}
+.screen-watch-settings fieldset p {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.screen-watch-settings label {
+  display: grid;
+  gap: 5px;
+}
+.screen-watch-settings input,
+.screen-watch-settings select {
+  width: 100%;
+  min-width: 0;
+  height: 33px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+}
+.screen-watch-settings button + span {
+  margin-inline-start: 9px;
+}

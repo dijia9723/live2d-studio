@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
   defaultHotkeys,
+  hotkeyConflict,
   type HotkeyAction,
   type HotkeyBindings,
   type HotkeyChord,
@@ -24,10 +25,19 @@ export const useHotkeys = create<State>()(
     {
       name: 'live2d-studio-hotkeys',
       partialize: (state) => ({ bindings: state.bindings }),
-      merge: (stored, state) => ({
-        ...state,
-        bindings: { ...defaultHotkeys, ...(stored as Partial<State> | undefined)?.bindings },
-      }),
+      merge: (stored, state) => {
+        const saved = (stored as Partial<State> | undefined)?.bindings
+        const bindings = { ...defaultHotkeys, ...saved }
+        const capture = bindings.captureScreen
+        if (
+          saved?.captureScreen === undefined &&
+          capture &&
+          hotkeyConflict(bindings, 'captureScreen', capture)
+        ) {
+          bindings.captureScreen = null
+        }
+        return { ...state, bindings }
+      },
     },
   ),
 )

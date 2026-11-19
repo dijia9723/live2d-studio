@@ -1,6 +1,8 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { Keyboard, Pencil, RotateCcw, X } from 'lucide-react'
 import { useHotkeys } from '../store/hotkeys'
+import { useStudio } from '../store/studio'
+import { supportsDesktopSnip } from '../hooks/useDesktopSnip'
 import {
   formatHotkey,
   hotkeyActionIDs,
@@ -15,11 +17,23 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dial
 
 export default function HotkeySettings() {
   const { bindings, bind, reset } = useHotkeys()
+  const desktop = useStudio((state) => state.desktop)
+  const screenSnipAvailable = supportsDesktopSnip(desktop)
+  const actions = screenSnipAvailable
+    ? hotkeyActionIDs
+    : hotkeyActionIDs.filter((action) => action !== 'captureScreen')
   const [editing, setEditing] = useState<HotkeyAction | null>(null)
   const [candidate, setCandidate] = useState<HotkeyChord | null>(null)
   const recorder = useRef<HTMLInputElement>(null)
   const editButton = useRef<HTMLButtonElement | null>(null)
-  const conflict = editing && candidate ? hotkeyConflict(bindings, editing, candidate) : undefined
+  const conflict =
+    editing && candidate
+      ? hotkeyConflict(
+          screenSnipAvailable ? bindings : { ...bindings, captureScreen: null },
+          editing,
+          candidate,
+        )
+      : undefined
 
   const capture = (event: KeyboardEvent<HTMLInputElement>) => {
     if (!editing || event.key === 'Escape' || event.key === 'Tab' || event.nativeEvent.isComposing)
@@ -48,7 +62,7 @@ export default function HotkeySettings() {
         </div>
       </div>
       <ul className="hotkey-list">
-        {hotkeyActionIDs.map((action) => {
+        {actions.map((action) => {
           const { label } = hotkeyActions[action]
           const chord = bindings[action]
           return (

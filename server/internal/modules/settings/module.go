@@ -20,4 +20,6 @@ func (m *Module) Register(r *gin.RouterGroup) {
 	r.PUT("/settings", m.save)
 	r.POST("/settings/test", m.test)
 	r.POST("/settings/ollama/models", m.ollamaModels)
+	r.GET("/settings/screen-watch", m.getScreenWatch)
+	r.PUT("/settings/screen-watch", m.saveScreenWatch)
 }

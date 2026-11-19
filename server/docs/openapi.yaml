@@ -223,9 +223,19 @@ paths:
               properties:
                 text: { type: string, minLength: 1, maxLength: 32000 }
                 image: { type: string, description: Optional PNG/JPEG/WebP base64 data URL, maximum 4MB decoded }
+                screen_snip_requests:
+                  type: boolean
+                  default: false
+                  description: Indicates that the client can display a manual screenshot request when agent tools are enabled.
+                screen_context:
+                  type: object
+                  description: The current turn may use local OCR evidence and one crop. Neither field is persisted in message history.
+                  properties:
+                    text: { type: string, description: Up to 6400 UTF-8 bytes }
+                    image: { type: string, description: Optional base64 image data URL up to 768 KB decoded. Requires a configured vision model and no other image attachment. }
       responses:
         '200':
-          description: SSE data lines containing JSON events (user, delta, expression, stage_action, character, tool, done, error)
+          description: SSE data lines containing JSON events (user, delta, expression, stage_action, character, tool, screen_snip_request, done, error). A screen_snip_request carries a reason in text and prompts the user to select an area and send a separate message.
           content:
             text/event-stream:
               schema: { type: string }
@@ -285,6 +295,25 @@ paths:
                       saved: { type: boolean }
         '400': { description: Unsupported service }
         '500': { description: Database read failed }
+  /settings/screen-watch:
+    get:
+      summary: Get the optional models for fast screen interpretation and vision
+      responses:
+        '200': { description: Configured fast and vision roles in data. Each role contains provider and model. }
+    put:
+      summary: Replace the optional screen model roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fast: { $ref: '#/components/schemas/ScreenModel' }
+                vision: { $ref: '#/components/schemas/ScreenModel' }
+      responses:
+        '200': { description: Saved screen model roles }
+        '400': { description: Invalid model or provider }
   /settings/test:
     post:
       summary: Test saved effective settings through the actual Eino streaming and tools path
@@ -455,6 +484,12 @@ components:
               message: { type: string, example: ok }
               data: { $ref: '#/components/schemas/CharacterMemory' }
   schemas:
+    ScreenModel:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: { type: string, enum: [openai, deepseek, ollama, lmstudio] }
+        model: { type: string, minLength: 1, maxLength: 200 }
     CharacterMemory:
       type: object
       required: [id, character_id, content, created_at, updated_at]

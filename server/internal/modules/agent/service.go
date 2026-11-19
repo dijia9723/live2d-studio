@@ -21,7 +21,7 @@ import (
 )
 
 // Event 是流式过程中推送给调用方的事件。
-// Type 包括 delta、expression、stage_action、character 和 tool；
+// Type 包括 delta、expression、stage_action、character、tool 和 screen_snip_request；
 // 回调可能在其它 goroutine 上执行，接收方需要自行保证写出安全。
 type Event struct {
 	Type        string           `json:"type"`
@@ -90,6 +90,13 @@ func (s *Service) Stream(ctx context.Context, cfg config.LLM, character model.Ch
 		tools, toolErr := builtInTools(emit)
 		if toolErr != nil {
 			return toolErr
+		}
+		if screenSnipRequestsEnabled(ctx) {
+			snip, err := requestScreenSnipTool(emit)
+			if err != nil {
+				return err
+			}
+			tools = append(tools, snip)
 		}
 		if s.Characters != nil && character.ID != "" {
 			actions, actionErr := s.actionTools(character.ID, emit)
