@@ -8,10 +8,12 @@ import {
   describeScreen,
   describeScreenChange,
   focusArea,
+  fullScreen,
   mergeScreenLines,
-  screenQuestion,
+  pointedQuestion,
+  screenQuestionIntent,
   screenSampler,
-  visualQuestion,
+  needsScreenImage,
 } from '../utils/screenObservation'
 import type { ScreenLine, ScreenPoint, ScreenRect } from '../utils/screenObservation'
 
@@ -27,7 +29,13 @@ interface WatchSource {
 }
 
 type Scope = { character: string; conversation: string | null }
-type Stats = { phase: 'starting' | 'watching' | 'paused'; scans: number; elapsed?: number }
+type Stats = {
+  phase: 'starting' | 'watching' | 'paused'
+  scans: number
+  elapsed?: number
+  changes?: string[]
+  preview?: string[]
+}
 
 interface WatchSession {
   scope: Scope
@@ -39,10 +47,15 @@ interface WatchSession {
   bindDraft: boolean
   paused: boolean
   hasFrame: boolean
-  updatedAt?: number
   lastChange?: ScreenRect
+  pendingArea?: ScreenRect
   recognized?: Uint8ClampedArray
+  lastTurn?: { question: string; evidence: string; acceptedAt: number }
+  refresh(readText: boolean, signal: AbortSignal): Promise<void>
 }
+
+const questionRefreshMs = 520
+const screenFollowUpMs = 120_000
 
 async function startLocalOCR() {
   const { PaddleOCR } = await import('@paddleocr/paddleocr-js')
@@ -133,7 +146,13 @@ export function useScreenWatch(character: string, conversation: string | null) {
     setError('')
   }, [dispose])
 
-  useEffect(() => dispose, [dispose])
+  useEffect(() => {
+    window.addEventListener('pagehide', dispose)
+    return () => {
+      window.removeEventListener('pagehide', dispose)
+      dispose()
+    }
+  }, [dispose])
   useEffect(() => {
     const active = session.current
     if (!active) {
@@ -170,12 +189,20 @@ export function useScreenWatch(character: string, conversation: string | null) {
       bindDraft: false,
       paused: false,
       hasFrame: false,
+      async refresh(readText, request) {
+        await readLatest()
+        if (!readText || request.aborted) return
+        await scanLatest()
+        if (!request.aborted && active.pendingArea) await scanLatest()
+      },
     }
     session.current = active
     let latest: Uint8ClampedArray | undefined
     let lastMotion = 0
     let lastScan = 0
-    let working = false
+    let capture: Promise<void> | undefined
+    let recognition: Promise<void> | undefined
+    let revision = 0
     let timer: ReturnType<typeof setTimeout>
     const engine = startLocalOCR()
     const fail = (cause: unknown) => {
@@ -194,84 +221,101 @@ export function useScreenWatch(character: string, conversation: string | null) {
       { once: true },
     )
 
-    async function tick() {
+    async function readFrame() {
       try {
         if (active.paused) return
         const picture = await source.next(signal)
         if (signal.aborted || active.paused) return
         const now = performance.now()
-        if (picture) {
-          const width =
-            picture instanceof HTMLVideoElement
-              ? picture.videoWidth
-              : (picture as HTMLImageElement).width
-          const height =
-            picture instanceof HTMLVideoElement
-              ? picture.videoHeight
-              : (picture as HTMLImageElement).height
-          const scale = Math.min(1, 1600 / Math.max(width, height))
-          const w = Math.max(1, Math.round(width * scale))
-          const h = Math.max(1, Math.round(height * scale))
-          if (frame.width !== w || frame.height !== h) {
-            frame.width = w
-            frame.height = h
-            active.recognized = undefined
-          }
-          painter.drawImage(picture, 0, 0, w, h)
-          active.hasFrame = true
-          const signature = sample(frame)
-          if (changedScreenArea(latest, signature)) {
-            latest = signature
-            lastMotion = now
-          }
+        if (!picture) return
+        const width =
+          picture instanceof HTMLVideoElement
+            ? picture.videoWidth
+            : (picture as HTMLImageElement).width
+        const height =
+          picture instanceof HTMLVideoElement
+            ? picture.videoHeight
+            : (picture as HTMLImageElement).height
+        const scale = Math.min(1, 1600 / Math.max(width, height))
+        const w = Math.max(1, Math.round(width * scale))
+        const h = Math.max(1, Math.round(height * scale))
+        if (frame.width !== w || frame.height !== h) {
+          frame.width = w
+          frame.height = h
+          active.recognized = undefined
+          latest = undefined
+          revision += 1
         }
-        if (
-          !latest ||
-          working ||
-          (active.recognized && now - lastMotion < 240 && now - lastScan < 1400)
-        )
-          return
-        const area = changedScreenArea(active.recognized, latest)
-        if (!area) return
-        const input = latest
-        const crop = cropScreen(frame, area, 1536)
-        working = true
-        lastScan = now
-        void engine
-          .then(async (ocr) => {
-            if (signal.aborted || active.paused) return
-            const started = performance.now()
-            const lines = await readScreen(ocr, crop, area)
-            if (signal.aborted || active.paused) return
-            const next = mergeScreenLines(active.lines, lines, area)
-            const change = active.recognized && describeScreenChange(active.lines, next)
-            if (change)
-              active.changes = [change, ...active.changes.filter((item) => item !== change)].slice(
-                0,
-                8,
-              )
-            active.lines = next
-            active.recognized = input
-            active.updatedAt = Date.now()
-            active.lastChange = area
-            setStats(
-              (previous) =>
-                previous && {
-                  phase: 'watching',
-                  scans: previous.scans + 1,
-                  elapsed: Math.round(performance.now() - started),
-                },
-            )
-          })
-          .catch(fail)
-          .finally(() => {
-            working = false
-          })
+        painter.drawImage(picture, 0, 0, w, h)
+        active.hasFrame = true
+        const signature = sample(frame)
+        if (changedScreenArea(latest, signature)) {
+          latest = signature
+          lastMotion = now
+          active.pendingArea = changedScreenArea(active.recognized, signature) ?? undefined
+        }
       } catch (cause) {
         fail(cause)
-      } finally {
-        if (!signal.aborted) timer = setTimeout(() => void tick(), active.paused ? 450 : 160)
       }
+    }
+
+    function readLatest() {
+      return (capture ??= readFrame().finally(() => {
+        capture = undefined
+      }))
+    }
+
+    function scanLatest() {
+      if (recognition) return recognition
+      const input = latest
+      const area = active.pendingArea
+      if (!input || !area || signal.aborted || active.paused) return
+      const frameRevision = revision
+      const crop = cropScreen(frame, area, 1536)
+      lastScan = performance.now()
+      recognition = engine
+        .then(async (ocr) => {
+          if (signal.aborted || active.paused || revision !== frameRevision) return
+          const started = performance.now()
+          const lines = await readScreen(ocr, crop, area)
+          if (signal.aborted || active.paused || revision !== frameRevision) return
+          const next = mergeScreenLines(active.lines, lines, area)
+          const change = active.recognized && describeScreenChange(active.lines, next)
+          if (change)
+            active.changes = [change, ...active.changes.filter((item) => item !== change)].slice(
+              0,
+              8,
+            )
+          active.lines = next
+          active.recognized = input
+          active.lastChange = area
+          active.pendingArea = latest ? (changedScreenArea(input, latest) ?? undefined) : undefined
+          setStats(
+            (previous) =>
+              previous && {
+                phase: 'watching',
+                scans: previous.scans + 1,
+                elapsed: Math.round(performance.now() - started),
+                changes: active.changes,
+                preview: next.slice(0, 4).map(({ text }) => text),
+              },
+          )
+        })
+        .catch(fail)
+        .finally(() => {
+          recognition = undefined
+        })
+      return recognition
+    }
+
+    async function tick() {
+      await readLatest()
+      if (signal.aborted) return
+      const now = performance.now()
+      if (!active.recognized || now - lastMotion >= 240 || now - lastScan >= 1400) {
+        void scanLatest()
+      }
+      timer = setTimeout(() => void tick(), active.paused ? 450 : 160)
     }
     void tick()
   }
@@ -344,28 +388,91 @@ export function useScreenWatch(character: string, conversation: string | null) {
     )
   }
 
-  function contextFor(question: string, visionAvailable: boolean, forceImage: boolean) {
+  async function prepareQuestion(
+    question: string,
+    visionAvailable: boolean,
+    forceImage: boolean,
+    signal: AbortSignal,
+  ) {
     const active = session.current
-    if (!active) return undefined
+    const inScope = () =>
+      active?.scope.character === scope.current.character &&
+      active.scope.conversation === scope.current.conversation
+    if (!active || !inScope()) return undefined
     active.bindDraft = active.scope.conversation === null
-    if (active.paused || (!screenQuestion.test(question) && !forceImage)) return undefined
+    const lastTurn = active.lastTurn
+    const prior =
+      lastTurn && Date.now() - lastTurn.acceptedAt <= screenFollowUpMs ? lastTurn : undefined
+    const intent = screenQuestionIntent(question, !!prior)
+    if (active.paused || (!intent && !forceImage)) {
+      return {
+        observation: undefined,
+        accept: () => {
+          if (session.current === active) active.lastTurn = undefined
+        },
+      }
+    }
+    const visual =
+      visionAvailable && (forceImage || (intent !== 'recent' && needsScreenImage(question)))
+    const request = AbortSignal.any([
+      signal,
+      active.controller.signal,
+      AbortSignal.timeout(questionRefreshMs),
+    ])
+    let sampled = false
+    const untilAborted = new Promise<void>((resolve) => {
+      if (request.aborted) resolve()
+      else request.addEventListener('abort', () => resolve(), { once: true })
+    })
+    await Promise.race([
+      active.refresh(!visual, request).then(() => {
+        sampled = true
+      }),
+      untilAborted,
+    ])
+    if (signal.aborted || session.current !== active || !inScope() || active.paused)
+      return undefined
+    const point = pointedQuestion.test(question) ? active.source.pointer : undefined
+    const evidence = describeScreen(active.lines, active.changes, question, point)
     const observation: ScreenContext = {
       text: active.recognized
-        ? `OCR 结果距今 ${Math.max(0, Math.round((Date.now() - (active.updatedAt ?? Date.now())) / 1000))} 秒。\n${describeScreen(active.lines, active.changes, question, active.source.pointer)}`
+        ? active.pendingArea || !sampled
+          ? `正在核对画面，下方为最近一次完成的识别。\n${evidence}`
+          : evidence
         : '屏幕正在识别，当前没有可用的文字结果。',
+    }
+    if (intent === 'follow-up' && prior) {
+      observation.text += `\n上次屏幕问题（历史线索）：${prior.question}`
+      if (prior.evidence) observation.text += `\n上次屏幕识别：${prior.evidence}`
     }
     if (
       active.hasFrame &&
       visionAvailable &&
-      (forceImage || visualQuestion.test(question) || !active.lines.length)
+      (visual || (intent === 'current' && !active.lines.length))
     ) {
       observation.image = cropScreen(
         active.frame,
-        focusArea(active.source.pointer, active.lastChange),
+        forceImage ? fullScreen : focusArea(point, active.pendingArea ?? active.lastChange),
         960,
       ).toDataURL('image/jpeg', 0.82)
     }
-    return observation
+    return {
+      observation,
+      accept: () => {
+        if (session.current !== active || active.paused) return
+        active.lastTurn = {
+          question:
+            intent === 'follow-up' && prior ? prior.question : question.trim().slice(0, 120),
+          evidence:
+            intent === 'follow-up' && prior
+              ? prior.evidence
+              : active.recognized
+                ? evidence.slice(0, 240)
+                : '',
+          acceptedAt: Date.now(),
+        }
+      },
+    }
   }
 
   function finishQuestion(owner: Scope) {
@@ -377,5 +484,5 @@ export function useScreenWatch(character: string, conversation: string | null) {
     }
   }
 
-  return { stats, error, region, windowSource, togglePause, stop, contextFor, finishQuestion }
+  return { stats, error, region, windowSource, togglePause, stop, prepareQuestion, finishQuestion }
 }

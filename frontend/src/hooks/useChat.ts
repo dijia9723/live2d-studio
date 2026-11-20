@@ -28,7 +28,12 @@ export function useChat(
   useEffect(() => stop, [stop])
 
   const send = useCallback(
-    async (text: string, image = '', onAccepted?: (conversationID: string) => void, screenContext?: ScreenContext) => {
+    async (
+      text: string,
+      image = '',
+      onAccepted?: (conversationID: string) => void,
+      prepareScreenContext?: (signal: AbortSignal) => Promise<ScreenContext | undefined>,
+    ) => {
       const state = useStudio.getState()
       if (!text.trim() || state.busy) return
       useStudio.setState({ busy: true, chatError: '' })
@@ -49,6 +54,8 @@ export function useChat(
       }
 
       try {
+        const screenContext = await prepareScreenContext?.(abort.signal)
+        if (abort.signal.aborted) return
         const id = state.conversationID ?? (await state.newConversation()).id
         if (abort.signal.aborted) return
         pending = crypto.randomUUID()

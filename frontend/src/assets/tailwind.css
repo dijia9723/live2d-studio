@@ -17,6 +17,7 @@
 @import './workspace.css' layer(legacy);
 @import './shell.css' layer(legacy);
 @import './studio.css' layer(legacy);
+@import './live-mode.css' layer(legacy);
 @import './settings-page.css' layer(legacy);
 @import './characters.css' layer(legacy);
 @import './character-controls.css' layer(legacy);

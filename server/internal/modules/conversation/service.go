@@ -140,6 +140,9 @@ func (s *Service) Stream(ctx context.Context, id, text, image string, emit func(
 	}
 	emit(Event{Type: "user", Message: &user})
 	modelInput, llm := s.withScreenObservation(ctx, user, cfg.LLM)
+	if modelInput.Content != user.Content || modelInput.Image != user.Image {
+		ctx = agent.WithScreenEvidence(ctx)
+	}
 	history = append(history, modelInput)
 	assistant := model.Message{ID: uuid.NewString(), ConversationID: id, Role: "assistant", Status: "complete"}
 	var content strings.Builder

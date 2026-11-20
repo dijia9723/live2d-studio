@@ -10,8 +10,15 @@ import (
 
 // Controller 由桌面壳层实现；在 headless 构建中不会被注入。
 type Controller interface {
-	Pet(bool)
+	Pet(bool, *PetHandoff)
 	Pin(bool)
+}
+
+type PetHandoff struct {
+	CharacterID    string `json:"character_id"`
+	ConversationID string `json:"conversation_id"`
+	ChooseWindow   bool   `json:"choose_window"`
+	WatchID        string `json:"-"`
 }
 
 // Module 用读写锁保护可选的 Controller，使 HTTP 请求与启动期注入不产生数据竞争。
@@ -40,7 +47,8 @@ func (m *Module) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/desktop/:action", func(c *gin.Context) {
 		var req struct {
-			Enabled bool `json:"enabled"`
+			Enabled bool        `json:"enabled"`
+			Handoff *PetHandoff `json:"handoff"`
 		}
 		if c.ShouldBindJSON(&req) != nil {
 			pkg.Fail(c, 400, "参数无效")
@@ -54,7 +62,7 @@ func (m *Module) Register(r *gin.RouterGroup) {
 		}
 		switch c.Param("action") {
 		case "pet":
-			m.controller.Pet(req.Enabled)
+			m.controller.Pet(req.Enabled, req.Handoff)
 		case "pin":
 			m.controller.Pin(req.Enabled)
 		default:

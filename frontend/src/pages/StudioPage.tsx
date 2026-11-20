@@ -1,11 +1,11 @@
 /**
  * 页面：AI 对话主工作台，组合 Live2D 舞台、消息列表与输入区。
- * 左侧显示角色舞台，右侧切换对话、对话记录、舞台设置与摄像头预览。
+ * 左侧显示角色舞台，右侧切换对话、历史、舞台设置、摄像头和直播。
  * 同时管理草稿、图片附件、自动滚动、语音输入与朗读、历史导出等交互。
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import {
   ArrowDownToLine,
@@ -25,11 +25,10 @@ import {
   Mic,
   MessageCircle,
   Minus,
-  Pause,
-  Play,
   MoreHorizontal,
   Pin,
   Plus,
+  Radio,
   RefreshCw,
   ScanLine,
   Send,
@@ -54,6 +53,7 @@ import CanvasToolbar from '../components/CanvasToolbar'
 import StageViewToolbar from '../components/StageViewToolbar'
 import CameraPanel, { type CameraPreviewMode } from '../components/CameraPanel'
 import ConversationHistory from '../components/ConversationHistory'
+import LiveModePanel from '../components/LiveModePanel'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,8 +66,8 @@ import { ariaHotkey, formatHotkey } from '../utils/hotkeys'
 import { draftKey, emptyDraft, updateDraft, useChatDrafts } from '../store/chatDrafts'
 import { useChat } from '../hooks/useChat'
 import { useDesktopSnip } from '../hooks/useDesktopSnip'
-import { useScreenWatch } from '../hooks/useScreenWatch'
 import { useCameraTracking } from '../hooks/useCameraTracking'
+import { useLiveMode } from '../hooks/useLiveMode'
 import { useStageFrame } from '../hooks/useStageFrame'
 import { useStageHotkeys } from '../hooks/useStageHotkeys'
 import { useSpeech } from '../hooks/useSpeech'
@@ -83,12 +83,14 @@ const workspacePanels = [
   { id: 'history', label: '对话记录', icon: History },
   { id: 'stage', label: '舞台设置', icon: Layers },
   { id: 'camera', label: '摄像头', icon: Video },
+  { id: 'live', label: '直播模式', icon: Radio },
 ] as const
 type WorkspacePanel = (typeof workspacePanels)[number]['id']
 
 export default function StudioPage() {
   const s = useStudio()
   const navigate = useNavigate()
+  const [search] = useSearchParams()
   const character = s.characters.find((c) => c.id === s.characterID) || s.characters[0]
   const camera = useCameraTracking(!!character)
   const draftID = draftKey(s.conversationID, s.characterID)
@@ -115,25 +117,14 @@ export default function StudioPage() {
   const stageRef = useRef<Live2DStageHandle>(null)
   const [capabilities, setCapabilities] = useState<Live2DCapabilities | null>(null)
   const [interaction, setInteraction] = useState('')
-  const [rightPanel, setRightPanel] = useState<WorkspacePanel>('chat')
+  const [rightPanel, setRightPanel] = useState<WorkspacePanel>(
+    () => (search.get('panel') === 'live' ? 'live' : 'chat'),
+  )
   const [cameraPreviewMode, setCameraPreviewMode] = useState<CameraPreviewMode>('skeleton')
   const [stageCategory, setStageCategory] = useState('character')
   const [screenSnipRequest, setScreenSnipRequest] = useState<{ id: string; reason: string } | null>(null)
   const desktopSnip = useDesktopSnip(s.desktop)
-  const watch = useScreenWatch(s.characterID, s.conversationID)
-  const [visionAvailable, setVisionAvailable] = useState(false)
-  const [watchImage, setWatchImage] = useState(false)
-  useEffect(() => {
-    if (!desktopSnip.available) return
-    const request = new AbortController()
-    void api.screenWatchSettings(request.signal).then((settings) => {
-      if (!request.signal.aborted) setVisionAvailable(!!settings.vision)
-    }).catch(() => {})
-    return () => request.abort()
-  }, [desktopSnip.available])
-  useEffect(() => {
-    if (!watch.stats) setWatchImage(false)
-  }, [watch.stats])
+  const petPending = useRef(false)
   const captureHotkey = useHotkeys((state) => state.bindings.captureScreen)
   const visibleScreenRequest = screenSnipRequest?.id === s.conversationID ? screenSnipRequest : null
   const inspectCanvas = useCallback(() => {
@@ -157,10 +148,42 @@ export default function StudioPage() {
   )
   const interrupt = useCallback(() => stopRef.current(), [])
   const voice = useSpeech(transcript, interrupt)
-  const activity = voice.listening ? '正在录音' : s.busy ? '正在生成' : s.speaking ? '正在朗读' : ''
+  const speechOwner = useRef<'chat' | 'live' | undefined>(undefined)
+  const speakLive = useCallback(
+    (text: string) => {
+      speechOwner.current = 'live'
+      return voice.speak(text)
+    },
+    [voice.speak],
+  )
+  const stopLiveSpeech = useCallback(() => {
+    if (speechOwner.current !== 'live') return
+    speechOwner.current = undefined
+    voice.stopSpeaking()
+  }, [voice.stopSpeaking])
+  const live = useLiveMode({
+    selected: rightPanel === 'live',
+    character,
+    stage: stageRef,
+    chatBusy: s.busy || voice.listening,
+    speaking: s.speaking,
+    speak: speakLive,
+    stopSpeaking: stopLiveSpeech,
+  })
+  const activity = voice.listening
+    ? '正在录音'
+    : s.busy
+      ? '正在生成'
+      : s.speaking
+        ? '正在朗读'
+        : live.state?.busy && live.state.config.character_id === character?.id
+          ? '直播 AI 正在回应'
+          : ''
   const reply = useCallback(
     (t: string) => {
-      if (useStudio.getState().speechEnabled) void voice.speak(t)
+      if (!useStudio.getState().speechEnabled) return
+      speechOwner.current = 'chat'
+      void voice.speak(t)
     },
     [voice.speak],
   )
@@ -207,19 +230,12 @@ export default function StudioPage() {
     if (!text.trim() || draftTooLong || s.busy) return
     voice.stopSpeaking()
     scrollToLatest()
-    const screenContext = watch.contextFor(text, visionAvailable && !image, watchImage && !image)
-    try {
-      await chat.send(text, image, (conversationID) => {
-        updateDraft(conversationID, (draft) => ({
-          text: draft.text === text ? '' : draft.text,
-          image: draft.image === image ? '' : draft.image,
-        }))
-        if (screenContext?.image) setWatchImage(false)
-      }, screenContext)
-    } finally {
-      const owner = useStudio.getState()
-      watch.finishQuestion({ character: owner.characterID, conversation: owner.conversationID })
-    }
+    await chat.send(text, image, (conversationID) => {
+      updateDraft(conversationID, (draft) => ({
+        text: draft.text === text ? '' : draft.text,
+        image: draft.image === image ? '' : draft.image,
+      }))
+    })
   }
   const stop = () => {
     chat.stop()
@@ -230,10 +246,12 @@ export default function StudioPage() {
     setRightPanel('chat')
     const owner = useStudio.getState()
     try {
-      const snip = await desktopSnip.capture()
+      const snip = await desktopSnip.capture({
+        character_id: owner.characterID, conversation_id: owner.conversationID,
+      })
       if (!snip) return
       if (snip.watch_id) {
-        watch.region(snip.watch_id, { character: owner.characterID, conversation: owner.conversationID })
+        voice.stopSpeaking()
         setScreenSnipRequest(null)
         return
       }
@@ -292,11 +310,19 @@ export default function StudioPage() {
       notify('窗口置顶需要在桌面客户端使用')
     }
   }
-  const pet = async () => {
+  const pet = async (chooseWindow = false) => {
+    const owner = useStudio.getState()
+    if (owner.busy || desktopSnip.capturing || petPending.current) return
+    petPending.current = true
+    voice.stopSpeaking()
     try {
-      await api.window('pet', true)
+      await api.window('pet', true, {
+        character_id: owner.characterID, conversation_id: owner.conversationID, choose_window: chooseWindow,
+      })
     } catch {
       notify('请使用桌面客户端打开透明桌宠')
+    } finally {
+      petPending.current = false
     }
   }
   const fullscreen = () => {
@@ -340,7 +366,7 @@ export default function StudioPage() {
       <header className="page-header studio-page-header">
         <h1>工作台</h1>
         {s.desktop && (
-          <button className="button ghost studio-pet-button" onClick={pet}>
+          <button className="button ghost studio-pet-button" disabled={s.busy || desktopSnip.capturing} onClick={() => void pet()}>
             <Maximize2 size={16} />
             桌宠模式
           </button>
@@ -461,6 +487,11 @@ export default function StudioPage() {
                 controlsVisible={s.controlsVisible}
                 scale={stageFrame.contentScale}
               />
+              {live.caption && (
+                <div className={`live-caption ${s.controlsVisible ? '' : 'is-clean'}`}>
+                  <p>{live.caption}</p>
+                </div>
+              )}
               {s.controlsVisible && (
                 <div className="stage-bottom">
                   {activity && (
@@ -544,7 +575,9 @@ export default function StudioPage() {
               >
                 <Icon size={16} aria-hidden="true" />
                 {label}
-                {((id === 'chat' && s.busy) || (id === 'camera' && camera.previewStream)) && (
+                {((id === 'chat' && s.busy) ||
+                  (id === 'camera' && camera.previewStream) ||
+                  (id === 'live' && live.state?.running)) && (
                   <span className="panel-busy-dot" aria-hidden="true" />
                 )}
               </button>
@@ -840,44 +873,6 @@ export default function StudioPage() {
                   </button>
                 </div>
               )}
-              {watch.stats && (
-                <div className="screen-watch-bar">
-                  <Eye size={16} aria-hidden="true" />
-                  <span className="screen-watch-status" role="status">
-                    {watch.stats.phase === 'paused' ? '观看已暂停' : watch.stats.phase === 'starting' ? '正在准备观看…' : '正在一起看'}
-                    {watch.stats.phase === 'watching' && watch.stats.elapsed !== undefined && (
-                      <small>本地识别 {watch.stats.elapsed} ms</small>
-                    )}
-                  </span>
-                  {visionAvailable && watch.stats.phase === 'watching' && (
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label="下一问附上画面"
-                      aria-pressed={watchImage}
-                      title="下一问附上画面"
-                      onClick={() => setWatchImage(!watchImage)}
-                    >
-                      <ImagePlus size={15} />
-                    </button>
-                  )}
-                  {watch.stats.phase !== 'starting' && (
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={watch.stats.phase === 'paused' ? '继续观看' : '暂停观看'}
-                      title={watch.stats.phase === 'paused' ? '继续观看' : '暂停观看'}
-                      onClick={watch.togglePause}
-                    >
-                      {watch.stats.phase === 'paused' ? <Play size={15} /> : <Pause size={15} />}
-                    </button>
-                  )}
-                  <button type="button" className="icon-button" aria-label="结束观看" title="结束观看" onClick={watch.stop}>
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-              {watch.error && <p className="screen-watch-error" role="alert">{watch.error}</p>}
               {image && (
                 <div className="image-preview">
                   <img src={image} alt="待发送图片" />
@@ -952,7 +947,6 @@ export default function StudioPage() {
                             className="icon-button screen-watch-trigger"
                             aria-label="一起看"
                             title="一起看"
-                            data-watching={!!watch.stats}
                             disabled={s.busy || desktopSnip.capturing}
                           >
                             <Eye size={18} aria-hidden="true" />
@@ -960,7 +954,7 @@ export default function StudioPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" side="top">
                           {typeof navigator.mediaDevices?.getDisplayMedia === 'function' && (
-                            <DropdownMenuItem onSelect={() => void watch.windowSource()}>选择观看窗口</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => void pet(true)}>选择观看窗口</DropdownMenuItem>
                           )}
                           <DropdownMenuItem onSelect={() => void captureScreen()}>框选区域，在截图工具栏点「一起看」</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => navigate('/settings?section=screen-watch')}>配置观看模型</DropdownMenuItem>
@@ -1089,6 +1083,26 @@ export default function StudioPage() {
                 onToggle={camera.toggle}
               />
             )}
+          </section>
+          <section
+            id="workspace-live"
+            role="tabpanel"
+            aria-labelledby="workspace-tab-live"
+            className="live-panel-container"
+            hidden={rightPanel !== 'live'}
+          >
+            <LiveModePanel
+              live={live}
+              characterID={character.id}
+              chatBusy={s.busy || voice.listening}
+              speaking={s.speaking && speechOwner.current === 'live'}
+              stageFeedback={interaction}
+              stopSpeaking={stopLiveSpeech}
+              selectHost={(id) => {
+                voice.stopSpeaking()
+                s.selectCharacter(id)
+              }}
+            />
           </section>
         </aside>
       </div>

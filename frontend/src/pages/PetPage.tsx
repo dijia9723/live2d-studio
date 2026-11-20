@@ -12,9 +12,14 @@ import {
   ChevronRight,
   CirclePlus,
   Ellipsis,
+  Eye,
   GripHorizontal,
   MessageSquare,
+  ImagePlus,
+  PanelsTopLeft,
+  Pause,
   Pin,
+  Play,
   RotateCcw,
   Smile,
   Sparkles,
@@ -28,6 +33,7 @@ import type { Live2DCapabilities, Live2DStageHandle } from '../components/Live2D
 import { useStudio } from '../store/studio'
 import { api } from '../api/client'
 import { useChat } from '../hooks/useChat'
+import { useScreenWatch } from '../hooks/useScreenWatch'
 import { petRuntime, usePetWindow } from '../hooks/usePetWindow'
 import { useSpeech } from '../hooks/useSpeech'
 import { actionDisplayName, moodNames } from '../utils/actionNames'
@@ -35,7 +41,14 @@ import { actionDisplayName, moodNames } from '../utils/actionNames'
 export default function PetPage() {
   const s = useStudio()
   const [text, setText] = useState('')
-  const [showChat, setShowChat] = useState(false)
+  const [chooseWindow, setChooseWindow] = useState(() =>
+    new URLSearchParams(location.search).has('choose_window'),
+  )
+  const [showChat, setShowChat] = useState(
+    () =>
+      location.hash.startsWith('#watch=') ||
+      new URLSearchParams(location.search).has('choose_window'),
+  )
   const [menuOpen, setMenuOpen] = useState(false)
   const [bubbleHidden, setBubbleHidden] = useState(false)
   const [capabilities, setCapabilities] = useState<Live2DCapabilities>()
@@ -68,6 +81,31 @@ export default function PetPage() {
     [voice.speak],
   )
   const { send, stop } = useChat(reply, stageRef)
+  const watch = useScreenWatch(s.characterID, s.conversationID)
+  const [visionAvailable, setVisionAvailable] = useState(false)
+  const [watchImage, setWatchImage] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  useEffect(() => {
+    if (!s.desktop) return
+    const request = new AbortController()
+    void api
+      .screenWatchSettings(request.signal)
+      .then(({ vision }) => {
+        if (!request.signal.aborted) setVisionAvailable(!!vision)
+      })
+      .catch(() => {})
+    return () => request.abort()
+  }, [s.desktop])
+  useEffect(() => {
+    const id = new URLSearchParams(location.hash.slice(1)).get('watch')
+    if (!id || !s.desktop) return
+    const start = setTimeout(() => {
+      const state = useStudio.getState()
+      history.replaceState(history.state, '', location.pathname + location.search)
+      watch.region(id, { character: state.characterID, conversation: state.conversationID })
+    }, 0)
+    return () => clearTimeout(start)
+  }, [s.desktop, watch.region])
   const reportAction = useCallback((message: string) => setActionFeedback({ text: message }), [])
   useEffect(() => {
     if (!actionFeedback) return
@@ -117,6 +155,7 @@ export default function PetPage() {
   const tool = activeReply?.tool_runs?.at(-1)
   const error =
     windowError ||
+    watch.error ||
     s.chatError ||
     (!bubbleHidden && !s.busy && lastReply?.status === 'failed'
       ? lastReply.error || '生成失败'
@@ -147,6 +186,62 @@ export default function PetPage() {
     setBubbleHidden(true)
     setWindowError('')
     useStudio.setState({ chatError: '' })
+    if (watch.error) watch.stop()
+  }
+
+  async function openWorkbench() {
+    if (switching) return
+    setSwitching(true)
+    const state = useStudio.getState()
+    stop()
+    voice.stopSpeaking()
+    watch.stop()
+    try {
+      await api.window('pet', false, {
+        character_id: state.characterID,
+        conversation_id: state.conversationID,
+      })
+    } catch (cause) {
+      setWindowError(cause instanceof Error ? cause.message : '无法打开工作台')
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  function endWatch() {
+    watch.stop()
+    setChooseWindow(false)
+    setWatchImage(false)
+    const address = new URL(location.href)
+    if (address.searchParams.has('choose_window')) {
+      address.searchParams.delete('choose_window')
+      history.replaceState(history.state, '', address)
+    }
+  }
+
+  async function sendMessage(message: string) {
+    let attachedWatchImage = false
+    let acceptWatchQuestion: (() => void) | undefined
+    try {
+      await send(
+        message,
+        '',
+        () => {
+          acceptWatchQuestion?.()
+          setText((draft) => (draft === message ? '' : draft))
+          if (attachedWatchImage) setWatchImage(false)
+        },
+        async (signal) => {
+          const prepared = await watch.prepareQuestion(message, visionAvailable, watchImage, signal)
+          acceptWatchQuestion = prepared?.accept
+          attachedWatchImage = !!prepared?.observation?.image
+          return prepared?.observation
+        },
+      )
+    } finally {
+      const state = useStudio.getState()
+      watch.finishQuestion({ character: state.characterID, conversation: state.conversationID })
+    }
   }
 
   async function togglePinned() {
@@ -250,6 +345,100 @@ export default function PetPage() {
                 <Sparkles size={15} aria-hidden="true" />
               </div>
             )}
+            {(watch.stats || chooseWindow) && (
+              <div className="pet-watch-panel">
+                {watch.stats ? (
+                  <>
+                    <div className="screen-watch-bar">
+                      <Eye size={15} aria-hidden="true" />
+                      <span
+                        className="screen-watch-status"
+                        role="status"
+                        title={
+                          watch.stats.elapsed === undefined
+                            ? undefined
+                            : `本地识别 ${watch.stats.elapsed} ms`
+                        }
+                      >
+                        {watch.stats.phase === 'paused'
+                          ? '观看已暂停'
+                          : watch.stats.phase === 'starting'
+                            ? '正在准备观看…'
+                            : '正在一起看'}
+                      </span>
+                      {visionAvailable && watch.stats.phase === 'watching' && (
+                        <button
+                          type="button"
+                          className="pet-icon"
+                          aria-label="下一问附上画面"
+                          title="下一问附上画面"
+                          aria-pressed={watchImage}
+                          onClick={() => setWatchImage(!watchImage)}
+                        >
+                          <ImagePlus size={14} />
+                        </button>
+                      )}
+                      {watch.stats.phase !== 'starting' && (
+                        <button
+                          type="button"
+                          className="pet-icon"
+                          aria-label={watch.stats.phase === 'paused' ? '继续观看' : '暂停观看'}
+                          title={watch.stats.phase === 'paused' ? '继续观看' : '暂停观看'}
+                          onClick={watch.togglePause}
+                        >
+                          {watch.stats.phase === 'paused' ? (
+                            <Play size={14} />
+                          ) : (
+                            <Pause size={14} />
+                          )}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="pet-icon"
+                        aria-label="结束观看"
+                        title="结束观看"
+                        onClick={endWatch}
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                    {!!watch.stats.scans && (
+                      <details className="screen-watch-details">
+                        <summary>最近识别</summary>
+                        <ul>
+                          {(watch.stats.changes?.length
+                            ? watch.stats.changes
+                            : watch.stats.preview
+                          )?.map((line, index) => (
+                            <li key={index}>{line}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </>
+                ) : (
+                  <div className="screen-watch-bar">
+                    <button
+                      type="button"
+                      className="pet-watch-picker"
+                      onClick={() => void watch.windowSource()}
+                    >
+                      <Eye size={15} /> 选择观看窗口
+                    </button>
+                    <button
+                      type="button"
+                      className="pet-icon"
+                      aria-label="取消观看"
+                      title="取消观看"
+                      onClick={endWatch}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {showChat && (
               <form
                 className="pet-composer"
@@ -266,7 +455,7 @@ export default function PetPage() {
                   setBubbleHidden(false)
                   setWindowError('')
                   voice.stopSpeaking()
-                  void send(text, '', () => setText((draft) => (draft === text ? '' : draft)))
+                  void sendMessage(text)
                 }}
               >
                 <input
@@ -494,14 +683,11 @@ export default function PetPage() {
             </ContextMenu.CheckboxItem>
           )}
           <ContextMenu.Item
-            className="pet-menu-item pet-menu-close"
-            onSelect={() => {
-              stop()
-              voice.stopSpeaking()
-              void api.window('pet', false).catch((cause: Error) => setWindowError(cause.message))
-            }}
+            className="pet-menu-item"
+            disabled={switching}
+            onSelect={() => void openWorkbench()}
           >
-            <X size={16} /> 关闭桌宠
+            <PanelsTopLeft size={16} /> 打开工作台
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>

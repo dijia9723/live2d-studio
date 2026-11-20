@@ -6,32 +6,38 @@
 package app
 
 import (
+	"net/url"
 	"os"
+	"strconv"
 	"sync"
 
 	"server/internal/bootstrap"
+	"server/internal/modules/desktop"
 	"server/internal/webui"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // windows 保存 Wails 应用与窗口句柄，供前端通过绑定的方法控制置顶与桌宠显示。
 type windows struct {
-	mu   sync.Mutex
-	app  *application.App
-	main *application.WebviewWindow
-	pet  *application.WebviewWindow
-	url  string
+	mu       sync.Mutex
+	app      *application.App
+	main     *application.WebviewWindow
+	pet      *application.WebviewWindow
+	switchID uint64
 }
 
 // Pin 控制主窗口是否始终置顶。
 func (w *windows) Pin(enabled bool) { w.main.SetAlwaysOnTop(enabled) }
 
 // Pet 按需创建、显示或隐藏透明无边框的桌宠窗口，窗口实例会被复用。
-func (w *windows) Pet(enabled bool) {
+func (w *windows) Pet(enabled bool, handoff *desktop.PetHandoff) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if enabled {
+		w.main.Hide()
+		target := w.switchURL(true, handoff)
 		if w.pet == nil {
 			w.pet = w.app.Window.NewWithOptions(application.WebviewWindowOptions{
 				Name:             "pet",
@@ -44,18 +50,53 @@ func (w *windows) Pet(enabled bool) {
 				Frameless:        true,
 				BackgroundType:   application.BackgroundTypeTransparent,
 				BackgroundColour: application.NewRGBA(0, 0, 0, 0),
-				URL:              "/?pet=1",
+				URL:              target,
 				Windows: application.WindowsWindow{
 					DisableFramelessWindowDecorations: true,
 					WebView2CompositionHosting:        true,
 				},
 			})
+			w.pet.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+				event.Cancel()
+				go w.Pet(false, nil)
+			})
+			excludePetFromCapture(w.pet)
 		} else {
+			w.pet.SetURL(target)
 			w.pet.Show()
 		}
-	} else if w.pet != nil {
-		w.pet.Hide()
+		return
 	}
+	if w.pet != nil {
+		w.pet.Hide()
+		// 切回工作台时卸载桌宠页面，释放它持有的采集流和识别线程。
+		w.pet.SetURL("about:blank")
+	}
+	if handoff != nil {
+		w.main.SetURL(w.switchURL(false, handoff))
+	}
+	w.main.Show()
+	w.main.Focus()
+}
+
+func (w *windows) switchURL(pet bool, handoff *desktop.PetHandoff) string {
+	w.switchID++
+	params := url.Values{"switch": {strconv.FormatUint(w.switchID, 10)}}
+	if pet {
+		params.Set("pet", "1")
+	}
+	if handoff != nil {
+		params.Set("character", handoff.CharacterID)
+		params.Set("conversation", handoff.ConversationID)
+		if pet && handoff.WatchID != "" {
+			// 片段只交给桌宠前端，不进入 HTTP 请求地址。
+			return "/?" + params.Encode() + "#watch=" + url.QueryEscape(handoff.WatchID)
+		}
+		if pet && handoff.ChooseWindow {
+			params.Set("choose_window", "1")
+		}
+	}
+	return "/?" + params.Encode()
 }
 
 // runDesktop 启动 Wails 应用：页面资源经 DesktopHandler 代理本地 HTTP 服务，
@@ -66,8 +107,9 @@ func runDesktop(backend *bootstrap.App, address string) error {
 		return err
 	}
 	app := application.New(application.Options{Name: "Live2D Studio", Description: "你的 AI 伙伴工作室", Assets: application.AssetOptions{Handler: proxy}, Mac: application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true}})
-	registerScreenCapture(app)
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "Live2D Studio", Width: 1440, Height: 940, MinWidth: 1024, MinHeight: 720, BackgroundColour: application.NewRGB(248, 247, 251), URL: "/"})
-	backend.Desktop.Set(&windows{app: app, main: window, url: address})
+	shell := &windows{app: app, main: window}
+	registerScreenCapture(app, shell)
+	backend.Desktop.Set(shell)
 	return app.Run()
 }

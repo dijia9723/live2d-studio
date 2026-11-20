@@ -105,6 +105,11 @@ export interface ScreenContext {
   text: string
   image?: string
 }
+export interface DesktopHandoff {
+  character_id: string
+  conversation_id: string | null
+  choose_window?: boolean
+}
 export interface LLMProfile {
   llm: Settings['llm']
   has_llm_key: boolean

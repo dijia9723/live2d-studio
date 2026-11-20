@@ -210,6 +210,7 @@
   min-width: 0;
   border-radius: 20px;
   overflow: clip;
+  container-type: inline-size;
 }
 
 .studio-workbench .workspace-tabs {
@@ -218,6 +219,7 @@
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
+  flex-wrap: wrap;
   gap: 0;
   background: white;
 }
@@ -859,7 +861,7 @@
   }
 }
 
-@media (max-width: 390px) {
+@container (max-width: 380px) {
   .studio-workbench .workspace-tabs > button > svg {
     display: none;
   }
@@ -918,4 +920,28 @@
 .screen-watch-error {
   margin-block: 4px 8px;
   color: #a23950;
+}
+.screen-watch-details {
+  margin: -2px 0 7px;
+  padding: 0 10px;
+  color: #685d79;
+  font-size: 12px;
+}
+.screen-watch-details summary {
+  width: fit-content;
+  padding-block: 3px;
+  cursor: pointer;
+}
+.screen-watch-details ul {
+  display: grid;
+  gap: 5px;
+  max-height: 98px;
+  padding: 6px 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.screen-watch-details li {
+  padding-inline-start: 8px;
+  border-inline-start: 2px solid #ddd0f1;
+  overflow-wrap: anywhere;
 }

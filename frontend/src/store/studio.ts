@@ -77,10 +77,13 @@ function rememberConversation(id: string | null) {
 }
 
 // 启动时恢复上次打开的会话及其消息；失败时静默回退到新会话。
-async function restoreConversation(conversations: Conversation[]) {
+async function restoreConversation(conversations: Conversation[], handoff: URLSearchParams) {
   try {
-    const id = workbenchSession()?.getItem(activeConversationKey)
-    const conversation = conversations.find((item) => item.id === id)
+    const fromWindow = handoff.has('character')
+    const id = fromWindow ? handoff.get('conversation') : workbenchSession()?.getItem(activeConversationKey)
+    const conversation = conversations.find((item) =>
+      item.id === id && (!fromWindow || item.character_id === handoff.get('character')),
+    )
     if (conversation) return { conversation, messages: await api.messages(conversation.id) }
   } catch {
     // 读取历史失败不应阻止工作台启动。
@@ -159,9 +162,11 @@ export const useStudio = create<State>()(
             api.sceneAssets().catch(() => [] as SceneAsset[]),
           ])
           if (version !== initializeVersion) return
-          const restored = await restoreConversation(conversations)
+          const address = new URL(window.location.href)
+          const fromWindow = address.searchParams.has('character')
+          const restored = await restoreConversation(conversations, address.searchParams)
           if (version !== initializeVersion) return
-          const preferredCharacter = get().characterID
+          const preferredCharacter = address.searchParams.get('character') || get().characterID
           set({
             characters,
             conversations,
@@ -179,6 +184,12 @@ export const useStudio = create<State>()(
                 ? preferredCharacter
                 : characters[0]?.id),
           })
+          if (fromWindow) {
+            rememberConversation(restored.conversation?.id ?? null)
+            // 交接完成后由本窗口管理会话，普通页面刷新继续使用已保存的选择。
+            for (const key of ['switch', 'character', 'conversation']) address.searchParams.delete(key)
+            window.history.replaceState(window.history.state, '', address)
+          }
         } catch (e) {
           if (version === initializeVersion) set({ loadError: (e as Error).message })
         }

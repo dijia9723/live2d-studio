@@ -19,10 +19,16 @@ Live2D Cubism Core（`frontend/public/lib/live2dcubismcore.min.js`）版权所�
 
 [Open-LLM-VTuber](https://github.com/Open-LLM-VTuber/Open-LLM-VTuber) 使用 MIT 许可证，版权为 Copyright (c) 2025 Yi-Ting Chiu。其 Live2D 样本模型适用各自的条款。
 
+## 抖音直播消息
+
+[douyinLive](https://github.com/jwwsjlm/douyinLive/blob/v2.0.25/LICENSE) 和 [douyinlive-proto](https://github.com/jwwsjlm/douyinlive-proto/blob/v0.1.2/LICENSE) 使用 MIT 许可证。以下文本适用于这两个库和 Open-LLM-VTuber。
+
 ```text
 MIT License
 
 Copyright (c) 2025 Yi-Ting Chiu
+Copyright (c) 2025 今晚打打
+Copyright (c) 2026 jwwsjlm
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { DesktopHandoff } from '../types/api'
 
 export interface DesktopSnip {
   image?: string
@@ -35,14 +36,14 @@ export function useDesktopSnip(desktop: boolean) {
   const inFlight = useRef<AbortController | null>(null)
   useEffect(() => () => inFlight.current?.abort(), [])
 
-  const capture = async () => {
+  const capture = async (handoff: DesktopHandoff) => {
     if (!available || inFlight.current) return null
     const controller = new AbortController()
     const { signal } = controller
     inFlight.current = controller
     setCapturing(true)
     try {
-      const result = await callScreenCapture<DesktopSnip | null>('Snip', [], signal)
+      const result = await callScreenCapture<DesktopSnip | null>('Snip', [handoff], signal)
       return signal.aborted ? null : result
     } catch (error) {
       if (signal.aborted) return null

@@ -15,7 +15,9 @@ import (
 	"github.com/kbinani/screenshot"
 	"github.com/lxn/win"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 	windowsAPI "golang.org/x/sys/windows"
+	"server/internal/modules/desktop"
 )
 
 // ScreenCapture is a Wails-only service. The HTTP server cannot start a capture or read its result.
@@ -23,17 +25,30 @@ type ScreenCapture struct {
 	busy    atomic.Bool
 	watchMu sync.Mutex
 	watch   *screenWatch
+	windows *windows
 }
 
-func registerScreenCapture(app *application.App) {
-	app.RegisterService(application.NewService(&ScreenCapture{}))
+func registerScreenCapture(app *application.App, windows *windows) {
+	app.RegisterService(application.NewService(&ScreenCapture{windows: windows}))
 }
 
-func (s *ScreenCapture) Snip(ctx context.Context) (*screenSnip, error) {
+func (s *ScreenCapture) Snip(ctx context.Context, handoff desktop.PetHandoff) (*screenSnip, error) {
 	if !s.busy.CompareAndSwap(false, true) {
 		return nil, errors.New("已有截图正在进行")
 	}
 	defer s.busy.Store(false)
+	owner, _ := ctx.Value(application.WindowKey).(application.Window)
+	restore := owner != nil && owner.IsVisible()
+	if restore {
+		owner.Hide()
+		dwmFlush.Call()
+	}
+	defer func() {
+		if restore {
+			owner.Show()
+			owner.Focus()
+		}
+	}()
 	selection, err := selectDesktopRegion(ctx)
 	if err != nil || selection == nil {
 		return nil, err
@@ -42,21 +57,39 @@ func (s *ScreenCapture) Snip(ctx context.Context) (*screenSnip, error) {
 		return encodeScreenSnip(selection.image)
 	}
 	s.watchMu.Lock()
-	defer s.watchMu.Unlock()
 	id := uuid.NewString()
 	s.watch = &screenWatch{id: id, bounds: selection.watch}
+	s.watchMu.Unlock()
+	if s.windows != nil {
+		handoff.WatchID = id
+		s.windows.Pet(true, &handoff)
+		restore = false
+	}
 	return &screenSnip{WatchID: id, Width: selection.watch.Dx(), Height: selection.watch.Dy()}, nil
 }
 
 var (
-	setThreadDPI      = windowsAPI.NewLazySystemDLL("user32.dll").NewProc("SetThreadDpiAwarenessContext")
-	snipClass         = windowsAPI.StringToUTF16Ptr("Live2DStudio.ScreenCapture")
-	snipTitle         = windowsAPI.StringToUTF16Ptr("Live2D Studio · 屏幕截图")
-	snipHint          = windowsAPI.StringToUTF16("拖动鼠标框选 · Esc 或右键取消")
-	registerSnipClass sync.Once
-	snipClassAtom     win.ATOM
-	snipSelections    sync.Map // Windows thread ID -> *desktopSelection
+	dwmFlush           = windowsAPI.NewLazySystemDLL("dwmapi.dll").NewProc("DwmFlush")
+	setCaptureAffinity = windowsAPI.NewLazySystemDLL("user32.dll").NewProc("SetWindowDisplayAffinity")
+	setThreadDPI       = windowsAPI.NewLazySystemDLL("user32.dll").NewProc("SetThreadDpiAwarenessContext")
+	snipClass          = windowsAPI.StringToUTF16Ptr("Live2DStudio.ScreenCapture")
+	snipTitle          = windowsAPI.StringToUTF16Ptr("Live2D Studio · 屏幕截图")
+	snipHint           = windowsAPI.StringToUTF16("拖动鼠标框选 · Esc 或右键取消")
+	registerSnipClass  sync.Once
+	snipClassAtom      win.ATOM
+	snipSelections     sync.Map // Windows thread ID -> *desktopSelection
 )
+
+func excludePetFromCapture(window *application.WebviewWindow) {
+	// WDA_EXCLUDEFROMCAPTURE keeps the visible companion out of eligible Windows captures.
+	apply := func() {
+		if hwnd := window.NativeWindow(); hwnd != nil {
+			setCaptureAffinity.Call(uintptr(hwnd), 0x11)
+		}
+	}
+	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) { apply() })
+	apply()
+}
 
 type desktopSelection struct {
 	snipSelection

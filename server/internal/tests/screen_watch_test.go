@@ -85,8 +85,10 @@ func TestScreenWatchRoutesModelsWithoutPersistingCapture(t *testing.T) {
 	expect("test-model", observation, "无关文字")
 	send("看下这个图标", observation, frame)
 	expect("vision-model", frame, "无关文字")
+	send("那怎么处理？", "上次屏幕识别（历史线索）："+observation, "")
+	expect("test-model", "区分当前可见文字、画面近期变化和上一问的历史线索", frame)
 	send("先聊点别的", "", "")
-	expect("test-model", "先聊点别的", observation)
+	expect("test-model", "先聊点别的", "本轮正在陪用户看屏")
 
 	for _, saved := range decode[[]model.Message](t, request(t, app, "GET", path, nil)) {
 		if strings.Contains(saved.Content, observation) || saved.Image != "" {
