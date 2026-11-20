@@ -1,7 +1,12 @@
 package livemode
 
 import (
+	"errors"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"server/internal/modules/agent"
 	"server/internal/pkg"
 )
 
@@ -10,6 +15,44 @@ type Module struct{ Service *Service }
 func (m *Module) Register(r *gin.RouterGroup) {
 	live := r.Group("/live")
 	live.GET("/state", func(c *gin.Context) { pkg.OK(c, m.Service.Snapshot()) })
+	live.GET("/sessions", func(c *gin.Context) {
+		page, err := strconv.Atoi(c.DefaultQuery("page", "0"))
+		if err != nil || page < 0 || page > 1000000 {
+			pkg.Fail(c, 400, "直播记录页码无效")
+			return
+		}
+		result, err := m.Service.archives(c.Request.Context(), page)
+		if err != nil {
+			pkg.Fail(c, 500, "读取直播记录失败")
+			return
+		}
+		pkg.OK(c, result)
+	})
+	live.GET("/sessions/:id", func(c *gin.Context) {
+		detail, err := m.Service.archiveDetails(c.Request.Context(), c.Param("id"))
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			pkg.Fail(c, 404, "这场直播记录不存在")
+			return
+		}
+		if err != nil {
+			pkg.Fail(c, 500, "读取本场汇总失败")
+			return
+		}
+		pkg.OK(c, detail)
+	})
+	live.POST("/sessions/:id/summary", func(c *gin.Context) {
+		detail, err := m.Service.summarizeArchive(c.Request.Context(), c.Param("id"))
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			pkg.Fail(c, 404, "这场直播记录不存在")
+		case errors.Is(err, errRecording), errors.Is(err, errNoArchiveData):
+			pkg.Fail(c, 409, err.Error())
+		case err != nil:
+			pkg.Fail(c, 502, "生成直播总结失败。"+agent.ErrorMessage(err))
+		default:
+			pkg.OK(c, detail)
+		}
+	})
 	live.PUT("/config", func(c *gin.Context) {
 		var config Config
 		if c.ShouldBindJSON(&config) != nil {
@@ -23,21 +66,17 @@ func (m *Module) Register(r *gin.RouterGroup) {
 		pkg.OK(c, m.Service.Snapshot())
 	})
 	live.POST("/start", func(c *gin.Context) {
-		var request struct {
-			Demo bool `json:"demo"`
-		}
-		if c.ShouldBindJSON(&request) != nil {
-			pkg.Fail(c, 400, "直播请求格式无效")
-			return
-		}
-		if err := m.Service.Start(request.Demo); err != nil {
+		if err := m.Service.Start(); err != nil {
 			pkg.Fail(c, 400, err.Error())
 			return
 		}
 		pkg.OK(c, m.Service.Snapshot())
 	})
 	live.POST("/stop", func(c *gin.Context) {
-		m.Service.Stop()
+		if err := m.Service.Stop(); err != nil {
+			pkg.Fail(c, 500, err.Error())
+			return
+		}
 		pkg.OK(c, m.Service.Snapshot())
 	})
 	live.POST("/reply", func(c *gin.Context) {
@@ -55,19 +94,5 @@ func (m *Module) Register(r *gin.RouterGroup) {
 			return
 		}
 		pkg.OK(c, gin.H{"accepted": accepted, "state": m.Service.Snapshot()})
-	})
-	live.POST("/demo-event", func(c *gin.Context) {
-		var request struct {
-			Kind Kind `json:"kind"`
-		}
-		if c.ShouldBindJSON(&request) != nil {
-			pkg.Fail(c, 400, "演练事件格式无效")
-			return
-		}
-		if err := m.Service.AddDemoEvent(request.Kind); err != nil {
-			pkg.Fail(c, 400, err.Error())
-			return
-		}
-		pkg.OK(c, m.Service.Snapshot())
 	})
 }

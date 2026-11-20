@@ -1,15 +1,64 @@
 .live-panel-container {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   container-type: inline-size;
 }
 
 .live-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   gap: 10px;
   padding: 12px;
+}
+
+.live-view-tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f7f3fb;
+}
+
+.live-view-tabs > button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.live-view-tabs > button[aria-selected='true'] {
+  background: #fff;
+  box-shadow: 0 1px 4px #5737841f;
+  color: var(--purple);
+  font-weight: 650;
+}
+
+.live-unsaved-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a56b32;
+}
+
+.live-view {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .live-header,
@@ -45,8 +94,7 @@
 .live-header-actions,
 .live-toolbar,
 .live-mode-switch,
-.live-filters,
-.live-demo {
+.live-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -94,8 +142,7 @@
   background: #fff;
 }
 .live-mode-switch button,
-.live-filters button,
-.live-demo button {
+.live-filters button {
   min-height: 26px;
   padding: 3px 8px;
   border: 0;
@@ -104,8 +151,7 @@
   font-size: 12px;
 }
 .live-mode-switch button[aria-pressed='true'],
-.live-filters button[aria-pressed='true'],
-.live-demo button:hover {
+.live-filters button[aria-pressed='true'] {
   background: #ece1fb;
   color: #59359c;
   font-weight: 650;
@@ -115,6 +161,75 @@
   border: 1px solid #e7deef;
   border-radius: 12px;
   background: #fff;
+}
+.live-session-list {
+  display: grid;
+  gap: 3px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0 10px 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+.live-session-list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.live-session-list button[aria-pressed='true'] {
+  color: var(--purple);
+  background: #f3eafa;
+}
+.live-session-list small,
+.live-history-meta,
+.live-history-stats dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.live-history-controls,
+.live-history-detail {
+  padding: 0 14px 12px;
+}
+.live-history-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.live-history-detail {
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.live-history-detail p,
+.live-history-detail h3 {
+  margin: 0;
+}
+.live-history-detail .button {
+  justify-self: start;
+}
+.live-history-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+.live-history-stats > div {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f7f3fb;
+}
+.live-history-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.live-summary-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
 .live-caption {
   position: absolute;
@@ -159,20 +274,11 @@
   min-height: 118px;
   overflow: hidden;
 }
-.live-filters,
-.live-demo {
+.live-filters {
   padding: 0 13px 8px;
 }
 .live-filters small {
   opacity: 0.78;
-}
-.live-demo {
-  border-bottom: 1px solid #eee7f5;
-  color: var(--muted);
-  font-size: 12px;
-}
-.live-demo button {
-  border: 1px solid #e4d8f1;
 }
 .live-events,
 .live-replies ul {
@@ -278,31 +384,12 @@
   padding: 15px;
   color: var(--muted);
 }
-.live-settings summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  cursor: pointer;
-  font-weight: 650;
-  list-style: none;
-}
-.live-settings summary::-webkit-details-marker {
-  display: none;
-}
-.live-settings summary svg {
-  margin-left: auto;
-}
-.live-settings summary small {
-  color: #8a5d3c;
-  font-weight: 400;
-}
-.live-settings form {
-  padding: 0 14px 14px;
+.live-settings {
+  padding: 13px 14px;
   display: grid;
   gap: 12px;
 }
-.live-settings form > .button {
+.live-settings > .button {
   justify-self: start;
 }
 .live-fields {
@@ -374,6 +461,9 @@
   font-size: 12px;
 }
 @container (max-width: 305px) {
+  .live-view-tabs > button > svg {
+    display: none;
+  }
   .live-events time {
     display: none;
   }

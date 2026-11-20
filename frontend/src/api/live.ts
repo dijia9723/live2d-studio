@@ -44,10 +44,9 @@ export interface LiveState {
   config: LiveConfig
   session_id: string
   running: boolean
-  demo: boolean
   busy: boolean
   title?: string
-  phase: 'stopped' | 'checking' | 'waiting' | 'connecting' | 'live' | 'retrying' | 'demo'
+  phase: 'stopped' | 'checking' | 'waiting' | 'connecting' | 'live' | 'retrying'
   error?: string
   counts: Partial<Record<LiveKind, number>> | null
   events: LiveEvent[] | null
@@ -55,6 +54,27 @@ export interface LiveState {
   pending: number
   auto_ready: boolean
   draft?: string
+  recording_id?: string
+  archive_error?: string
+}
+
+export interface LiveSession {
+  id: string
+  room: string
+  title: string
+  character_name: string
+  started_at: string
+  ended_at?: string
+  status: 'recording' | 'ended' | 'interrupted'
+  incomplete: boolean
+}
+
+export interface LiveSessionDetails extends LiveSession {
+  counts: Partial<Record<LiveKind, number>>
+  reply_count: number
+  failed_replies: number
+  gifts: { name: string; count: number }[]
+  summary?: string
 }
 
 export const liveAPI = {
@@ -64,16 +84,22 @@ export const liveAPI = {
   async save(config: LiveConfig): Promise<LiveState> {
     return (await http.put('/live/config', config)).data.data
   },
-  async start(demo: boolean): Promise<LiveState> {
-    return (await http.post('/live/start', { demo })).data.data
+  async start(): Promise<LiveState> {
+    return (await http.post('/live/start')).data.data
   },
   async stop(): Promise<LiveState> {
     return (await http.post('/live/stop')).data.data
   },
+  async sessions(page: number, signal: AbortSignal): Promise<{ sessions: LiveSession[]; has_more: boolean }> {
+    return (await http.get('/live/sessions', { params: { page }, signal })).data.data
+  },
+  async session(id: string, signal: AbortSignal): Promise<LiveSessionDetails> {
+    return (await http.get(`/live/sessions/${id}`, { signal })).data.data
+  },
+  async summarize(id: string, signal: AbortSignal): Promise<LiveSessionDetails> {
+    return (await http.post(`/live/sessions/${id}/summary`, undefined, { signal })).data.data
+  },
   async reply(session: string, event?: number): Promise<{ accepted: boolean; state: LiveState }> {
     return (await http.post('/live/reply', { session_id: session, event_id: event || 0 })).data.data
-  },
-  async demoEvent(kind: LiveKind): Promise<LiveState> {
-    return (await http.post('/live/demo-event', { kind })).data.data
   },
 }

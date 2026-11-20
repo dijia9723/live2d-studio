@@ -43,19 +43,17 @@ func (s *Service) Get(id string) (model.Character, error) {
 	return v, err
 }
 
-// Update 只更新名称、描述与提示词，保留导入时生成的模型路径等字段。
+// Update 更新基本资料和请求中指定的朗读配置。
 func (s *Service) Update(id string, v model.Character) (model.Character, error) {
-	old, err := s.Get(id)
-	if err != nil {
-		return old, err
+	fields := []string{"name", "description", "system_prompt"}
+	if v.Speech != nil {
+		fields = append(fields, "speech")
+		if v.Speech.Mode == "inherit" {
+			v.Speech = nil
+		}
 	}
-	old.Name = v.Name
-	old.Description = v.Description
-	old.SystemPrompt = v.SystemPrompt
-	// 按列更新，避免并发保存人设时覆盖动作命名。
-	err = s.DB.Model(&model.Character{}).Where("id = ?", id).Updates(map[string]any{"name": old.Name, "description": old.Description, "system_prompt": old.SystemPrompt}).Error
-	if err != nil {
-		return old, err
+	if err := s.DB.Model(&model.Character{}).Where("id = ?", id).Select(fields).Updates(v).Error; err != nil {
+		return model.Character{}, err
 	}
 	return s.Get(id)
 }

@@ -256,6 +256,17 @@
 .character-editor-form .form-field textarea {
   min-height: 154px;
 }
+.character-speech-fields {
+  min-width: 0;
+  padding: 12px 14px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.character-speech-fields legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 650;
+}
 .character-editor-form .modal-actions {
   margin-top: 21px;
 }

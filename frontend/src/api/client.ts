@@ -16,10 +16,12 @@ import type {
   Message,
   LLMProfile,
   LLMProvider,
+  LocalTTSOptions,
   OllamaModel,
   SceneAsset,
   Settings,
   StreamEvent,
+  TTSCatalog,
 } from '../types/api'
 import { SSEDecoder } from '../utils/sse'
 
@@ -38,8 +40,17 @@ export const mediaURL = (url: string) => new URL(url, new URL(baseURL, window.lo
 // 统一把后端返回的 message 提取为 Error.message，避免上层各处重复判断。
 http.interceptors.response.use(
   (r) => r,
-  (error) =>
-    Promise.reject(new Error(error.response?.data?.message || error.message || '连接服务失败')),
+  async (error) => {
+    let data = error.response?.data
+    if (data instanceof Blob && data.type.includes('application/json')) {
+      try {
+        data = JSON.parse(await data.text())
+      } catch {
+        data = undefined
+      }
+    }
+    throw new Error(data?.message || error.message || '连接服务失败')
+  },
 )
 /** 通用 GET 包裹：只取响应体中的 data 字段，并透传 AbortSignal 以便取消。 */
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -131,8 +142,11 @@ export const api = {
     return (await http.post('/speech/transcribe', f)).data.data.text
   },
   // 文本转语音，返回音频 Blob；支持 AbortSignal 以便打断播放。
-  synthesize: async (text: string, signal: AbortSignal): Promise<Blob> =>
-    (await http.post('/speech/synthesize', { text }, { responseType: 'blob', signal })).data,
+  synthesize: async (text: string, character_id: string, signal: AbortSignal): Promise<Blob> =>
+    (await http.post('/speech/synthesize', { text, character_id }, { responseType: 'blob', signal })).data,
+  ttsModels: (signal?: AbortSignal) => get<TTSCatalog>('/speech/tts/models', signal),
+  synthesizeLocal: async (text: string, options: LocalTTSOptions, signal: AbortSignal) =>
+    (await http.post<Blob>('/speech/tts/synthesize', { text, ...options }, { responseType: 'blob', signal })).data,
 }
 
 /**

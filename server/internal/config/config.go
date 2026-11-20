@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"server/internal/tts"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,16 +30,16 @@ type LLM struct {
 	ToolsEnabled bool `json:"tools_enabled" yaml:"tools_enabled"`
 }
 
-// Speech 描述语音识别与合成的接入方式：mode 为 browser 时由前端直连，
-// 为 api 时经后端代理，为 off 时关闭语音功能。
+// Speech 的 Mode 控制语音识别及默认朗读方式；LocalTTS 可单独覆盖朗读方式。
 type Speech struct {
-	Mode     string `json:"mode" yaml:"mode"`
-	BaseURL  string `json:"base_url" yaml:"base_url"`
-	APIKey   string `json:"api_key" yaml:"api_key"`
-	ASRModel string `json:"asr_model" yaml:"asr_model"`
-	TTSModel string `json:"tts_model" yaml:"tts_model"`
-	Voice    string `json:"voice" yaml:"voice"`
-	Language string `json:"language" yaml:"language"`
+	Mode     string       `json:"mode" yaml:"mode"`
+	BaseURL  string       `json:"base_url" yaml:"base_url"`
+	APIKey   string       `json:"api_key" yaml:"api_key"`
+	ASRModel string       `json:"asr_model" yaml:"asr_model"`
+	TTSModel string       `json:"tts_model" yaml:"tts_model"`
+	Voice    string       `json:"voice" yaml:"voice"`
+	Language string       `json:"language" yaml:"language"`
+	LocalTTS *tts.Options `json:"local_tts" yaml:"local_tts,omitempty"`
 }
 
 // Settings 是持久化到数据库、并可通过接口热更新的那部分配置。
@@ -51,12 +53,13 @@ type Config struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	DataDir  string `yaml:"data_dir"`
+	TTSDir   string `yaml:"tts_dir"`
 	Settings `yaml:",inline"`
 }
 
 // Defaults 返回可离线启动的默认配置：只监听回环地址，语音默认交给浏览器。
 func Defaults() Config {
-	return Config{Host: "127.0.0.1", Port: 12393, DataDir: "data", Settings: Settings{
+	return Config{Host: "127.0.0.1", Port: 12393, DataDir: "data", TTSDir: "tts-models", Settings: Settings{
 		LLM:    LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", Temperature: 0.7, MaxTokens: 2048, ContextMessages: 40},
 		Speech: Speech{Mode: "browser", BaseURL: "https://api.openai.com/v1", ASRModel: "whisper-1", TTSModel: "tts-1", Voice: "alloy", Language: "zh-CN"},
 	}}
@@ -83,6 +86,12 @@ func Load(path string) (Config, error) {
 	if !filepath.IsAbs(cfg.DataDir) {
 		// path 位于 <根>/configs/config.yaml，取两级父目录即安装根，数据目录随之稳定。
 		cfg.DataDir = filepath.Join(filepath.Dir(filepath.Dir(path)), cfg.DataDir)
+	}
+	if dir := os.Getenv("STUDIO_TTS_DIR"); dir != "" {
+		cfg.TTSDir = dir
+	}
+	if !filepath.IsAbs(cfg.TTSDir) {
+		cfg.TTSDir = filepath.Join(filepath.Dir(filepath.Dir(path)), cfg.TTSDir)
 	}
 	if host := os.Getenv("STUDIO_HOST"); host != "" {
 		cfg.Host = host
@@ -156,6 +165,9 @@ func Validate(s Settings) error {
 	}
 	if s.Speech.ASRModel == "" || s.Speech.TTSModel == "" || s.Speech.Voice == "" {
 		return fmt.Errorf("语音模型和音色不能为空")
+	}
+	if s.Speech.LocalTTS != nil {
+		return s.Speech.LocalTTS.Validate()
 	}
 	return nil
 }

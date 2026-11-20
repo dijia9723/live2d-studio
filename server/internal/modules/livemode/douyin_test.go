@@ -10,7 +10,7 @@ import (
 )
 
 func TestDecodeMessage(t *testing.T) {
-	viewer := &proto.Webcast_Data_User{Nickname: "观众"}
+	viewer := &proto.Webcast_Data_User{Nickname: "观众", Id: 123, IdStr: "456"}
 	gift := &proto.Webcast_Data_GiftStruct{Name: "小心心", Combo: true}
 	at := time.Now()
 	testCases := []struct {
@@ -46,7 +46,7 @@ func TestDecodeMessage(t *testing.T) {
 				return
 			}
 			if !ok || event.Kind != tc.kind || event.Text != tc.text || event.Count != tc.count ||
-				event.Viewer != viewer.Nickname || event.key != "42" || !event.At.Equal(at) {
+				event.Viewer != viewer.Nickname || event.viewerID != viewer.Id || event.key != "42" || !event.At.Equal(at) {
 				t.Fatalf("unexpected event %+v, accepted %t", event, ok)
 			}
 		})

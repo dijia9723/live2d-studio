@@ -23,6 +23,7 @@ import {
 import CharacterPreview from '../components/CharacterPreview'
 import CharacterMemories from '../components/CharacterMemories'
 import CharacterActionNames from '../components/CharacterActionNames'
+import CharacterSpeechFields from '../components/CharacterSpeechFields'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { notify, useStudio } from '../store/studio'
 import { api } from '../api/client'
@@ -206,7 +207,7 @@ export default function CharactersPage() {
                     <div className="character-card-actions">
                       <button className="button ghost" onClick={() => setEditing(character)}>
                         <Pencil size={15} />
-                        编辑人设
+                        角色配置
                       </button>
                       <button
                         className="button ghost"
@@ -411,7 +412,7 @@ function CharacterDeleteDialog({
   )
 }
 
-/** 角色人设编辑弹窗：按字节校验名称与提示词长度，保存后写回全局角色列表。 */
+/** 角色编辑弹窗：保存基本资料和朗读配置。 */
 function CharacterEditor({ character, onClose }: { character: Character; onClose: () => void }) {
   const [editing, setEditing] = useState(character)
   const [saving, setSaving] = useState(false)
@@ -420,7 +421,8 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
   const encoder = new TextEncoder()
   const nameBytes = encoder.encode(name).length
   const promptBytes = encoder.encode(editing.system_prompt).length
-  const valid = nameBytes > 0 && nameBytes <= 100 && promptBytes <= 24000
+  const valid = nameBytes > 0 && nameBytes <= 100 && promptBytes <= 24000 &&
+    (editing.speech?.mode !== 'local' || !!editing.speech.local_tts)
 
   const close = () => {
     if (saving) return
@@ -432,15 +434,16 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
     setSaving(true)
     setError('')
     try {
-      const saved = await api.saveCharacter({ ...editing, name })
+      const speech = editing.speech === character.speech ? undefined : editing.speech
+      const saved = await api.saveCharacter({ ...editing, name, speech })
       const state = useStudio.getState()
       state.patch({
         characters: state.characters.map((item) => (item.id === saved.id ? saved : item)),
       })
       onClose()
-      notify('角色人设已保存')
+      notify('角色配置已保存')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存人设失败')
+      setError(cause instanceof Error ? cause.message : '保存角色配置失败')
     } finally {
       setSaving(false)
     }
@@ -468,14 +471,14 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
           </span>
           <div>
             <DialogTitle asChild>
-              <h2 id="character-editor-title">编辑 {character.name} 的人设</h2>
+              <h2 id="character-editor-title">{character.name} 的角色配置</h2>
             </DialogTitle>
-            <p>人设更新后，将应用于这位角色的下一次回复。</p>
+            <p>设置角色人设以及聊天、桌宠和直播使用的朗读音色。</p>
           </div>
           <button
             type="button"
             className="icon-button"
-            aria-label="关闭人设编辑"
+            aria-label="关闭角色配置"
             disabled={saving}
             onClick={close}
           >
@@ -535,6 +538,8 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
                 : '描述角色的身份、性格和说话方式。'}
             </small>
           </label>
+          <CharacterSpeechFields value={editing.speech} disabled={saving}
+            onChange={(speech) => setEditing((current) => ({ ...current, speech }))} />
           {error && (
             <p className="character-form-error" role="alert">
               {error}
@@ -546,7 +551,7 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
             </button>
             <button type="submit" className="button primary" disabled={saving || !valid}>
               {saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
-              保存人设
+              保存角色配置
             </button>
           </footer>
         </form>

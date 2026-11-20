@@ -20,15 +20,17 @@ import (
 
 const eventLimit = 80
 const replyLimit = 16
+const recentChatLimit = 64
 
 type Event struct {
-	ID     int       `json:"id"`
-	Kind   Kind      `json:"kind"`
-	Viewer string    `json:"viewer"`
-	Text   string    `json:"text,omitempty"`
-	Count  uint64    `json:"count"`
-	At     time.Time `json:"at"`
-	key    string
+	ID       int       `json:"id"`
+	Kind     Kind      `json:"kind"`
+	Viewer   string    `json:"viewer"`
+	Text     string    `json:"text,omitempty"`
+	Count    uint64    `json:"count"`
+	At       time.Time `json:"at"`
+	key      string
+	viewerID uint64
 }
 
 type Reply struct {
@@ -43,38 +45,42 @@ type Reply struct {
 
 type Snapshot struct {
 	connection
-	Config    Config          `json:"config"`
-	SessionID string          `json:"session_id"`
-	Running   bool            `json:"running"`
-	Demo      bool            `json:"demo"`
-	Busy      bool            `json:"busy"`
-	Counts    map[Kind]uint64 `json:"counts"`
-	Events    []Event         `json:"events"`
-	Replies   []Reply         `json:"replies"`
-	Pending   int             `json:"pending"`
-	AutoReady bool            `json:"auto_ready"`
-	Draft     string          `json:"draft,omitempty"`
+	Config       Config          `json:"config"`
+	SessionID    string          `json:"session_id"`
+	Running      bool            `json:"running"`
+	Busy         bool            `json:"busy"`
+	Counts       map[Kind]uint64 `json:"counts"`
+	Events       []Event         `json:"events"`
+	Replies      []Reply         `json:"replies"`
+	Pending      int             `json:"pending"`
+	AutoReady    bool            `json:"auto_ready"`
+	Draft        string          `json:"draft,omitempty"`
+	RecordingID  string          `json:"recording_id,omitempty"`
+	ArchiveError string          `json:"archive_error,omitempty"`
 }
 
 type session struct {
-	id          string
-	ctx         context.Context
-	stop        context.CancelFunc
-	stopReply   context.CancelFunc
-	character   model.Character
-	demo        bool
-	status      connection
-	events      []Event
-	counts      map[Kind]uint64
-	replies     []Reply
-	recentKeys  map[string]struct{}
-	keyOrder    []string
-	replied     map[int]bool
-	cursor      int
-	nextEvent   int
-	nextReply   int
-	lastReplyAt time.Time
-	draft       string
+	id           string
+	ctx          context.Context
+	stop         context.CancelFunc
+	stopReply    context.CancelFunc
+	character    model.Character
+	status       connection
+	events       []Event
+	recentChats  []Event
+	counts       map[Kind]uint64
+	replies      []Reply
+	recentKeys   map[string]struct{}
+	keyOrder     []string
+	replied      map[int]bool
+	cursor       int
+	nextEvent    int
+	nextReply    int
+	lastReplyAt  time.Time
+	draft        string
+	archive      *model.LiveSession
+	archiveError string
+	missedEvents bool
 }
 
 type Service struct {
@@ -83,6 +89,7 @@ type Service struct {
 	models  *settings.Service
 	roles   *character.Service
 	agent   agent.Streamer
+	connect func(context.Context, Config, func(Event), func(connection))
 	config  Config
 	session *session
 }
@@ -92,7 +99,10 @@ func New(db *gorm.DB, models *settings.Service, roles *character.Service, stream
 	if err != nil {
 		return nil, err
 	}
-	return &Service{db: db, models: models, roles: roles, agent: streamer, config: config}, nil
+	if err := db.Model(&model.LiveSession{}).Where("status = ?", "recording").Update("status", "interrupted").Error; err != nil {
+		return nil, err
+	}
+	return &Service{db: db, models: models, roles: roles, agent: streamer, connect: douyinSource, config: config}, nil
 }
 
 func (s *Service) Configure(config Config) error {
@@ -126,14 +136,19 @@ func (s *Service) Configure(config Config) error {
 	return nil
 }
 
-func (s *Service) Start(demo bool) error {
+func (s *Service) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.session != nil && s.session.ctx.Err() == nil {
 		return errors.New("当前直播连接仍在运行")
 	}
+	if s.session != nil {
+		if err := s.finishArchive(s.session); err != nil {
+			return err
+		}
+	}
 	config := s.config
-	if !demo && config.Room == "" {
+	if config.Room == "" {
 		return errors.New("请先配置抖音直播间")
 	}
 	role, err := s.roles.Get(config.CharacterID)
@@ -142,18 +157,11 @@ func (s *Service) Start(demo bool) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	run := &session{
-		id: uuid.NewString(), ctx: ctx, stop: cancel, character: role, demo: demo,
+		id: uuid.NewString(), ctx: ctx, stop: cancel, character: role,
 		status: connection{Phase: "checking"}, counts: map[Kind]uint64{}, recentKeys: map[string]struct{}{}, replied: map[int]bool{},
 	}
 	s.session = run
-	if demo {
-		run.status = connection{Phase: "demo", Title: "直播演练"}
-		for _, kind := range kinds {
-			s.appendEvent(run, demoEvent(kind))
-		}
-		return nil
-	}
-	go douyinSource(ctx, config, func(event Event) {
+	go s.connect(ctx, config, func(event Event) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if s.session == run && ctx.Err() == nil {
@@ -163,19 +171,21 @@ func (s *Service) Start(demo bool) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if s.session == run && ctx.Err() == nil {
-			run.status = status
+			s.updateConnection(run, config.Room, status)
 		}
 	})
 	return nil
 }
 
-func (s *Service) Stop() {
+func (s *Service) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if run := s.session; run != nil {
 		run.stop()
 		run.status = connection{Phase: "stopped", Title: run.status.Title}
+		return s.finishArchive(run)
 	}
+	return nil
 }
 
 func (s *Service) Snapshot() Snapshot {
@@ -183,13 +193,19 @@ func (s *Service) Snapshot() Snapshot {
 	defer s.mu.Unlock()
 	state := Snapshot{Config: s.config, connection: connection{Phase: "stopped"}}
 	if run := s.session; run != nil {
-		state.SessionID, state.Running, state.Demo, state.Busy = run.id, run.ctx.Err() == nil, run.demo, run.ctx.Err() == nil && run.stopReply != nil
+		state.SessionID = run.id
+		state.Running = run.ctx.Err() == nil
+		state.Busy = state.Running && run.stopReply != nil
 		state.connection = run.status
+		state.ArchiveError = run.archiveError
+		if run.archive != nil && run.archive.EndedAt == nil {
+			state.RecordingID = run.archive.ID
+		}
 		if state.Busy {
 			state.Draft = run.draft
 		}
 		state.Events, state.Replies, state.Counts = slices.Clone(run.events), slices.Clone(run.replies), maps.Clone(run.counts)
-		if state.Running && s.config.Mode == "auto" {
+		if state.Running && state.RecordingID != "" && !run.status.offline && s.config.Mode == "auto" {
 			now := time.Now()
 			for _, event := range run.events {
 				if s.eligible(run, event, now) {
@@ -225,43 +241,30 @@ func (s *Service) appendEvent(run *session, event Event) {
 	if event.At.IsZero() {
 		event.At = time.Now()
 	}
+	if run.archive != nil && run.archive.EndedAt == nil {
+		row := model.LiveEvent{SessionID: run.archive.ID, ID: event.ID, Kind: string(event.Kind), Viewer: event.Viewer, Text: event.Text, Count: event.Count, At: event.At}
+		if err := s.db.Create(&row).Error; err != nil {
+			s.archiveWriteFailed(run)
+		}
+	} else {
+		run.missedEvents = true
+	}
 	run.counts[event.Kind] += event.Count
 	if len(run.events) == eventLimit {
 		delete(run.replied, run.events[0].ID)
 		run.events = run.events[1:]
 	}
 	run.events = append(run.events, event)
+	if event.Kind == Chat && event.viewerID != 0 && event.Text != "" {
+		if len(run.recentChats) == recentChatLimit {
+			copy(run.recentChats, run.recentChats[1:])
+			run.recentChats = run.recentChats[:recentChatLimit-1]
+		}
+		run.recentChats = append(run.recentChats, event)
+	}
 }
 
 func limitText(value string, limit int) string {
 	text := []rune(strings.TrimSpace(value))
 	return string(text[:min(len(text), limit)])
-}
-
-func demoEvent(kind Kind) Event {
-	switch kind {
-	case Chat:
-		return Event{Kind: kind, Viewer: "云朵", Text: "今天直播有什么安排？"}
-	case Gift:
-		return Event{Kind: kind, Viewer: "小橘", Text: "小心心", Count: 3}
-	case Like:
-		return Event{Kind: kind, Viewer: "阿星", Count: 16}
-	case Enter:
-		return Event{Kind: kind, Viewer: "夜风"}
-	default:
-		return Event{Kind: kind, Viewer: "青禾"}
-	}
-}
-
-func (s *Service) AddDemoEvent(kind Kind) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.session == nil || !s.session.demo || s.session.ctx.Err() != nil {
-		return errors.New("请先开启直播演练")
-	}
-	if !slices.Contains(s.config.Events, kind) {
-		return errors.New("该类型的事件接收已关闭")
-	}
-	s.appendEvent(s.session, demoEvent(kind))
-	return nil
 }

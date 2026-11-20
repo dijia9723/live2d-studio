@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { liveAPI } from '../api/live'
-import type { LiveConfig, LiveKind, LiveMode, LiveState } from '../api/live'
+import type { LiveConfig, LiveMode, LiveState } from '../api/live'
 import type { Live2DStageHandle } from '../components/Live2DStage'
 import type { Character } from '../types/api'
 
@@ -38,7 +38,7 @@ export function useLiveMode({
   const last = state?.replies?.at(-1)
   const sameCharacter = state?.config.character_id === character?.id
   const polling = selected || !!state?.running
-  const ready = state?.running && sameCharacter && state.config.mode !== 'paused'
+  const ready = state?.running && !!state.recording_id && sameCharacter && state.config.mode !== 'paused'
 
   useEffect(() => {
     mounted.current = true
@@ -129,14 +129,14 @@ export function useLiveMode({
     void run(async () => (await liveAPI.reply(state.session_id)).state)
   }, [canReply, run, state])
 
-  function save(start?: 'demo' | 'real') {
+  function save(start = false) {
     if (!form || !character) return
     const characterID = state?.running ? state.config.character_id : character.id
     void run(async () => {
       const saved = await liveAPI.save({ ...form, character_id: characterID })
       if (mounted.current) setForm(saved.config)
       if (!saved.config.speak) stopSpeaking()
-      return start ? liveAPI.start(start === 'demo') : saved
+      return start ? liveAPI.start() : saved
     })
   }
 
@@ -159,7 +159,8 @@ export function useLiveMode({
     dirty: !!form && !!state && JSON.stringify(form) !== JSON.stringify(state.config),
     caption: ready && !chatBusy ? state?.draft || (last?.error ? '' : last?.text) : '',
     canReply,
-    save,
+    save: () => save(),
+    start: () => save(true),
     setMode,
     stop: () => {
       stopSpeaking()
@@ -169,6 +170,5 @@ export function useLiveMode({
       if (!state || !canReply || preparingSpeech.current) return
       void run(async () => (await liveAPI.reply(state.session_id, id)).state)
     },
-    demoEvent: (kind: LiveKind) => void run(() => liveAPI.demoEvent(kind)),
   }
 }

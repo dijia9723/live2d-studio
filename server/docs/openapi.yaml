@@ -22,7 +22,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/ID'
     put:
-      summary: Update character name, description and system prompt
+      summary: Update character name, description, system prompt and optional speech configuration
       requestBody:
         required: true
         content:
@@ -34,6 +34,21 @@ paths:
                 name: { type: string, maxLength: 100 }
                 description: { type: string }
                 system_prompt: { type: string, maxLength: 24000 }
+                speech:
+                  type: object
+                  description: Omit to preserve the saved voice, or set mode to inherit to reset it
+                  required: [mode]
+                  properties:
+                    mode: { type: string, enum: [inherit, browser, api, local] }
+                    voice: { type: string, description: System voice URI or API voice name }
+                    local_tts:
+                      type: object
+                      description: Required when mode is local
+                      required: [model, speaker, speed]
+                      properties:
+                        model: { type: string, enum: [aishell3, fanchen, kokoro] }
+                        speaker: { type: integer }
+                        speed: { type: number, minimum: 0.5, maximum: 2 }
       responses:
         '200': { description: Updated character }
         '400': { description: Invalid input }
@@ -264,7 +279,25 @@ paths:
               required: [llm, speech]
               properties:
                 llm: { type: object, description: 'provider (openai/deepseek/ollama/lmstudio; legacy configurations infer their provider from the URL), base_url, api_key, model, temperature, max_tokens, context_messages, tools_enabled. Each provider keeps an independent profile and secret. Ollama accepts its root URL, /api or /v1 and never receives the saved cloud API key.' }
-                speech: { type: object, description: mode (browser/api/off), base_url, api_key, asr_model, tts_model, voice, language }
+                speech:
+                  type: object
+                  description: Speech input and output settings
+                  properties:
+                    mode: { type: string, enum: [browser, api, off] }
+                    base_url: { type: string }
+                    api_key: { type: string }
+                    asr_model: { type: string }
+                    tts_model: { type: string }
+                    voice: { type: string }
+                    language: { type: string }
+                    local_tts:
+                      type: object
+                      nullable: true
+                      description: Legacy global local TTS options inherited by characters without a voice configuration
+                      properties:
+                        model: { type: string, enum: [aishell3, fanchen, kokoro] }
+                        speaker: { type: integer }
+                        speed: { type: number, minimum: 0.5, maximum: 2 }
                 clear_llm_key: { type: boolean, default: false }
                 clear_speech_key: { type: boolean, default: false }
       responses:
@@ -419,7 +452,8 @@ paths:
         '502': { description: Speech provider failed }
   /speech/synthesize:
     post:
-      summary: Synthesize text with configured TTS API
+      summary: Synthesize text using a character's saved voice configuration
+      description: When character_id is omitted, use global settings for compatibility with existing clients.
       requestBody:
         required: true
         content:
@@ -428,14 +462,80 @@ paths:
               type: object
               required: [text]
               properties:
-                text: { type: string, maxLength: 20000 }
+                text: { type: string, maxLength: 20000, description: Local models support up to 1000 Unicode characters }
+                character_id: { type: string }
       responses:
         '200':
-          description: MP3 audio
+          description: Synthesized audio
           content:
             audio/mpeg:
               schema: { type: string, format: binary }
+            audio/wav:
+              schema: { type: string, format: binary }
+        '400': { description: Invalid text, speech disabled, or system speech uses the client }
+        '404': { description: Character not found }
+        '429': { description: Local TTS busy }
         '502': { description: Speech provider failed }
+        '503': { description: Local model or runtime missing }
+        '504': { description: Local TTS timed out }
+  /speech/tts/models:
+    get:
+      summary: List built-in TTS models and local installation status
+      responses:
+        '200':
+          description: Model catalog in data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      runtime_installed: { type: boolean }
+                      max_text_length: { type: integer }
+                      models:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            name: { type: string }
+                            tier: { type: string, enum: [low, medium, high] }
+                            language: { type: string }
+                            speaker_min: { type: integer }
+                            speaker_max: { type: integer }
+                            default_speaker: { type: integer }
+                            speaker_names:
+                              type: object
+                              additionalProperties: { type: string }
+                            installed: { type: boolean }
+  /speech/tts/synthesize:
+    post:
+      summary: Synthesize WAV with an explicit built-in TTS model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, model, speaker, speed]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 1000 }
+                model: { type: string, enum: [aishell3, fanchen, kokoro] }
+                speaker: { type: integer, description: Speaker ID from the selected model's catalog entry }
+                speed: { type: number, minimum: 0.5, maximum: 2 }
+      responses:
+        '200':
+          description: Mono PCM WAV audio
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+        '400': { description: Invalid input or model options }
+        '429': { description: Local TTS busy }
+        '502': { description: Local inference failed }
+        '503': { description: Model or runtime missing }
+        '504': { description: Local TTS timed out }
   /desktop:
     get:
       summary: Check if native desktop controls are available

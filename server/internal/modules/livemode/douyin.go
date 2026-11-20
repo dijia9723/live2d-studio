@@ -14,12 +14,15 @@ import (
 )
 
 type connection struct {
-	Phase string `json:"phase"`
-	Title string `json:"title,omitempty"`
-	Error string `json:"error,omitempty"`
+	Phase   string `json:"phase"`
+	Title   string `json:"title,omitempty"`
+	Error   string `json:"error,omitempty"`
+	offline bool
 }
 
 var listenerLog = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+const liveEndedAction = 3
 
 func douyinSource(ctx context.Context, config Config, emit func(Event), update func(connection)) {
 	for ctx.Err() == nil {
@@ -29,7 +32,7 @@ func douyinSource(ctx context.Context, config Config, emit func(Event), update f
 			return
 		}
 		if err == nil || errors.Is(err, douyin.ErrLiveNotStarted) {
-			update(connection{Phase: "waiting"})
+			update(connection{Phase: "waiting", offline: errors.Is(err, douyin.ErrLiveNotStarted)})
 		} else {
 			update(connection{Phase: "retrying", Error: "暂时无法连接抖音直播间，将按轮询设置重试"})
 		}
@@ -71,6 +74,10 @@ func listenDouyin(ctx context.Context, room string, emit func(Event), update fun
 		if messageTitle == "" {
 			messageTitle = title
 		}
+		if control, ok := message.Parsed.(*proto.Webcast_Im_ControlMessage); ok && control.GetAction() == liveEndedAction {
+			update(connection{Phase: "waiting", Title: messageTitle, offline: true})
+			return
+		}
 		update(connection{Phase: "live", Title: messageTitle})
 		if event, ok := decodeMessage(message); ok {
 			emit(event)
@@ -91,31 +98,39 @@ func decodeMessage(message *douyin.LiveMessage) (Event, bool) {
 	if id := message.Raw.GetMsgId(); id != 0 {
 		event.key = strconv.FormatUint(id, 10)
 	}
+	var viewer *proto.Webcast_Data_User
 	switch item := decodePayload(message).(type) {
 	case *proto.Webcast_Im_ChatMessage:
-		event.Kind, event.Viewer, event.Text = Chat, item.GetUser().GetNickname(), item.GetContent()
-		return event, event.Text != ""
+		if item.GetContent() == "" {
+			return Event{}, false
+		}
+		event.Kind, event.Text, viewer = Chat, item.GetContent(), item.GetUser()
 	case *proto.Webcast_Im_GiftMessage:
 		gift := item.GetGift()
 		if gift.GetCombo() && item.GetRepeatEnd() == 0 {
 			return Event{}, false
 		}
-		event.Kind, event.Viewer, event.Text = Gift, item.GetUser().GetNickname(), gift.GetName()
+		event.Kind, event.Text, viewer = Gift, gift.GetName(), item.GetUser()
 		if event.Text == "" {
 			event.Text = "礼物"
 		}
 		event.Count = max(1, item.GetCount(), item.GetRepeatCount())
 	case *proto.Webcast_Im_LikeMessage:
-		event.Kind, event.Viewer, event.Count = Like, item.GetUser().GetNickname(), max(1, item.GetCount())
+		event.Kind, event.Count, viewer = Like, max(1, item.GetCount()), item.GetUser()
 	case *proto.Webcast_Im_MemberMessage:
-		event.Kind, event.Viewer = Enter, item.GetUser().GetNickname()
+		event.Kind, viewer = Enter, item.GetUser()
 	case *proto.Webcast_Im_SocialMessage:
 		if item.GetAction() != 1 {
 			return Event{}, false
 		}
-		event.Kind, event.Viewer = Follow, item.GetUser().GetNickname()
+		event.Kind, viewer = Follow, item.GetUser()
 	default:
 		return Event{}, false
+	}
+	event.Viewer = viewer.GetNickname()
+	event.viewerID = viewer.GetId()
+	if event.viewerID == 0 {
+		event.viewerID, _ = strconv.ParseUint(viewer.GetIdStr(), 10, 64)
 	}
 	return event, true
 }

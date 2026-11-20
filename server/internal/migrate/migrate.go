@@ -12,8 +12,7 @@ import (
 // AutoMigrate 只补齐缺失的表、列与索引，不会删除既有数据；内置角色只在
 // 数据库首次创建时写入，用户删除后重启不会被恢复。
 func Run(db *gorm.DB, seedBuiltins bool) error {
-	// 迁移顺序按依赖排列：角色 → 会话 → 消息 → 设置 → 场景素材 → 角色记忆。
-	if err := db.AutoMigrate(&model.Character{}, &model.Conversation{}, &model.Message{}, &settings.Record{}, &model.SceneAsset{}, &model.CharacterMemory{}); err != nil {
+	if err := db.AutoMigrate(&model.Character{}, &model.Conversation{}, &model.Message{}, &settings.Record{}, &model.SceneAsset{}, &model.CharacterMemory{}, &model.LiveSession{}, &model.LiveEvent{}, &model.LiveReply{}); err != nil {
 		return err
 	}
 	if !seedBuiltins {

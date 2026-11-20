@@ -10,6 +10,7 @@ export interface Character {
   model_path: string
   system_prompt: string
   action_names?: ActionNames
+  speech?: CharacterSpeech
   color: string
   created_at: string
 }
@@ -65,6 +66,35 @@ export interface ToolRun {
   name: string
   status: 'running' | 'completed' | 'failed'
 }
+export interface LocalTTSOptions {
+  model: string
+  speaker: number
+  speed: number
+}
+
+export type CharacterSpeech =
+  | { mode: 'inherit' }
+  | { mode: 'browser' | 'api'; voice?: string }
+  | { mode: 'local'; local_tts?: LocalTTSOptions }
+
+export interface TTSModel {
+  id: string
+  name: string
+  tier: 'low' | 'medium' | 'high'
+  language: string
+  speaker_min: number
+  speaker_max: number
+  default_speaker: number
+  speaker_names?: Record<number, string>
+  installed: boolean
+}
+
+export interface TTSCatalog {
+  models: TTSModel[]
+  runtime_installed: boolean
+  max_text_length: number
+}
+
 /** 应用设置；has_*_key 只表示后端是否存有密钥，密钥本身不会下发。 */
 export interface Settings {
   llm: {
@@ -85,6 +115,7 @@ export interface Settings {
     tts_model: string
     voice: string
     language: string
+    local_tts?: LocalTTSOptions | null
   }
   has_llm_key: boolean
   llm_profile_saved?: boolean

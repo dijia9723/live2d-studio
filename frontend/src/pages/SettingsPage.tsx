@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  AudioLines,
   Brain,
   Calculator,
   Check,
@@ -37,6 +38,7 @@ import HotkeySettings from '../components/HotkeySettings'
 import OllamaModels from '../components/OllamaModels'
 import StagePlacementSettings from '../components/StagePlacementSettings'
 import ScreenWatchSettings from '../components/ScreenWatchSettings'
+import TTSWorkbench from '../components/TTSWorkbench'
 import {
   Select,
   SelectContent,
@@ -59,6 +61,7 @@ const sections = [
   { id: 'llm', name: '语言模型', icon: Cpu },
   { id: 'screen-watch', name: '观看模型', icon: Eye },
   { id: 'speech', name: '语音交互', icon: Volume2 },
+  { id: 'tts', name: 'TTS 调试工作台', icon: AudioLines },
   { id: 'agent', name: '智能体', icon: WandSparkles },
   { id: 'stage', name: '舞台布置', icon: PanelsTopLeft },
   { id: 'hotkeys', name: '热键管理', icon: Keyboard },
@@ -100,7 +103,7 @@ export default function SettingsPage() {
   const [params] = useSearchParams()
   const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
-  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch'
+  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch' || tab === 'tts'
   const page = useRef<HTMLDivElement>(null)
   const profiles = useLLMProfiles(s.settings!)
   const { form, setForm, clearLLM, setClearLLM } = profiles
@@ -282,6 +285,7 @@ export default function SettingsPage() {
           {tab === 'hotkeys' && <HotkeySettings />}
           {tab === 'screen-watch' && <ScreenWatchSettings />}
           {tab === 'stage' && <StagePlacementSettings />}
+          {tab === 'tts' && <TTSWorkbench />}
           {tab === 'llm' && (
             <>
               <section className="settings-card">
@@ -469,12 +473,12 @@ export default function SettingsPage() {
                   <Volume2 size={21} />
                 </span>
                 <div>
-                  <h2>语音输入与朗读</h2>
-                  <p>选择识别和朗读对话的方式。</p>
+                  <h2>全局语音交互</h2>
+                  <p>设置语音识别与默认朗读方式。各角色可在角色配置中选择自己的音色。</p>
                 </div>
               </div>
               <label className="form-field">
-                语音方式
+                默认语音方式
                 <Select
                   value={form.speech.mode}
                   onValueChange={(value) => speech({ mode: value as Settings['speech']['mode'] })}
@@ -498,7 +502,7 @@ export default function SettingsPage() {
                   </p>
                 </div>
               )}
-              {form.speech.mode === 'api' && (
+              {form.speech.mode !== 'off' && (
                 <>
                   <label className="form-field">
                     语音服务地址
@@ -548,7 +552,7 @@ export default function SettingsPage() {
                     </label>
                   </div>
                   <label className="form-field">
-                    音色 / Voice
+                    默认 API 音色
                     <input
                       value={form.speech.voice}
                       onChange={(e) => speech({ voice: e.target.value })}
@@ -568,6 +572,9 @@ export default function SettingsPage() {
                 <Volume2 size={18} />
                 <p>
                   在聊天区点击麦克风开始录音，再次点击结束。录音识别后会填入输入框，确认内容后发送。点击停止可打断回复与朗读。
+                  <Link className="settings-text-link" to="?section=tts">
+                    打开 TTS 调试工作台 <ChevronRight size={14} />
+                  </Link>
                 </p>
               </div>
             </section>

@@ -67,6 +67,10 @@ func (m *Module) Register(r *gin.RouterGroup) {
 			pkg.Fail(c, 400, "角色名称或提示词无效")
 			return
 		}
+		if err := normalizeSpeech(req.Speech); err != nil {
+			pkg.Fail(c, 400, err.Error())
+			return
+		}
 		v, err := m.Service.Update(c.Param("id"), req)
 		if err != nil {
 			pkg.Fail(c, 404, "角色不存在")

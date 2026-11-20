@@ -158,7 +158,13 @@ export function useChat(
                 finished = true
                 updateReply(() => message)
                 // 仅正常完成且未被用户中断时触发朗读。
-                if (message.status === 'complete' && !abort.signal.aborted) onReply(message.content)
+                if (
+                  message.status === 'complete' &&
+                  !abort.signal.aborted &&
+                  useStudio.getState().characterID === state.characterID
+                ) {
+                  onReply(message.content)
+                }
               }
               break
           }

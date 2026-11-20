@@ -44,7 +44,7 @@ func (s *Service) RequestReply(sessionID string, eventID int) (bool, error) {
 		return false, errors.New("直播连接已变化，请刷新后重试")
 	}
 	config := s.config
-	if run.stopReply != nil || config.Mode == "paused" {
+	if run.stopReply != nil || config.Mode == "paused" || run.archive == nil || run.archive.EndedAt != nil || run.status.offline {
 		return false, nil
 	}
 	now := time.Now()
@@ -89,25 +89,19 @@ func (s *Service) RequestReply(sessionID string, eventID int) (bool, error) {
 	run.draft = ""
 	ctx, cancel := context.WithTimeout(run.ctx, 45*time.Second)
 	run.stopReply = cancel
-	previous := slices.Clone(run.replies)
-	go s.generate(ctx, cancel, run, config, run.nextReply, selected, previous)
+	input := run.replyContext(selected)
+	go s.generate(ctx, cancel, run, config, run.archive.ID, run.nextReply, selected, input)
 	return true, nil
 }
 
-func (s *Service) generate(ctx context.Context, cancel context.CancelFunc, run *session, config Config, replyID int, events []Event, previous []Reply) {
+func (s *Service) generate(ctx context.Context, cancel context.CancelFunc, run *session, config Config, archiveID string, replyID int, events []Event, input replyContext) {
 	defer cancel()
 	reply := Reply{ID: replyID, At: time.Now()}
 	for _, event := range events {
 		reply.EventIDs = append(reply.EventIDs, event.ID)
 	}
-	history := make([]model.Message, 0, 3)
-	for _, prior := range previous[max(0, len(previous)-2):] {
-		if prior.Text != "" && prior.Error == "" {
-			history = append(history, model.Message{Role: "assistant", Content: limitText(prior.Text, 160)})
-		}
-	}
-	data, _ := json.Marshal(events)
-	history = append(history, model.Message{Role: "user", Content: "下面是本轮收到的观众事件 JSON。按直播配置做一条适合播报的互动回复。\n" + string(data)})
+	data, _ := json.Marshal(input)
+	history := []model.Message{{Role: "user", Content: "请回应本轮直播事件。\n" + string(data)}}
 	var text strings.Builder
 	models, err := s.models.Get()
 	if err == nil {
@@ -145,11 +139,15 @@ func (s *Service) generate(ctx context.Context, cancel context.CancelFunc, run *
 		return
 	}
 	run.stopReply, run.draft = nil, ""
-	if run.ctx.Err() != nil || errors.Is(ctx.Err(), context.Canceled) {
+	if run.ctx.Err() != nil || errors.Is(ctx.Err(), context.Canceled) || run.archive == nil || run.archive.ID != archiveID {
 		return
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		reply.Error = "直播回复超时"
+	}
+	row := model.LiveReply{SessionID: archiveID, ID: reply.ID, Text: reply.Text, Error: reply.Error, EventIDs: reply.EventIDs, At: reply.At}
+	if err := s.db.Create(&row).Error; err != nil {
+		s.archiveWriteFailed(run)
 	}
 	if len(run.replies) == replyLimit {
 		run.replies = run.replies[1:]

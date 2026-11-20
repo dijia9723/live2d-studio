@@ -45,7 +45,7 @@ type Config struct {
 
 func defaultConfig() Config {
 	return Config{
-		Prompt:      "像直播搭档一样自然回应。优先回答有具体问题的弹幕，简短感谢礼物和关注，欢迎新观众。把重复互动合并成一句话。",
+		Prompt:      "像跟直播间的朋友聊天。有人问就先答，遇到有意思的弹幕可以顺势接个梗。收到礼物或关注时顺口谢一句。",
 		Temperature: 0.7, PollSeconds: 20, ReplySeconds: 8, BatchSize: 5, MaxTokens: 256,
 		Mode: "manual", Events: slices.Clone(kinds), ReplyEvents: []Kind{Chat, Gift, Follow},
 		Speak: true, Actions: true,

@@ -30,6 +30,7 @@ import (
 	"server/internal/modules/speech"
 	"server/internal/pkg"
 	"server/internal/router"
+	"server/internal/tts"
 	"server/internal/webui"
 )
 
@@ -133,7 +134,7 @@ func New(cfg config.Config) (*App, error) {
 	// 健康检查供前端判断后端是否已就绪。
 	r.GET("/api/v1/health", func(c *gin.Context) { pkg.OK(c, gin.H{"status": "ok", "version": "0.1.0", "agent": "agentcore"}) })
 	// 业务模块统一挂载到 /api/v1；场景媒体路由不经过 API 分组，单独注册。
-	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Settings: ss}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live})
+	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Characters: cs, Settings: ss, TTS: tts.New(cfg.TTSDir)}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live})
 	assets.RegisterMedia(r)
 	cubism2Runtime := filepath.Join(cfg.DataDir, "cubism2", "live2d.min.js")
 	r.GET("/api/v1/characters/cubism2-runtime", func(c *gin.Context) {
@@ -190,7 +191,9 @@ func (a *App) Listen() (*http.Server, net.Listener, error) {
 
 // Close 关闭底层数据库连接，供进程退出时释放文件句柄。
 func (a *App) Close() {
-	a.Live.Stop()
+	if err := a.Live.Stop(); err != nil {
+		slog.Error("结束直播记录失败", "error", err)
+	}
 	db, err := a.DB.DB()
 	if err == nil {
 		_ = db.Close()
