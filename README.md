@@ -1,12 +1,18 @@
 # Live2D Studio
 
-基于 **Wails 3 + Go / Gin + Eino + React / TypeScript** 的桌面 AI 伙伴工作室，参考 `example/Open-LLM-VTuber` 重写。应用、构建和运行均不依赖 Python。
+基于 **Wails 3 + Go / Gin + Eino + React / TypeScript** 的桌面 AI 伙伴工作室，参考 Open-LLM-VTuber 重写。应用、构建和运行均不依赖 Python。
 
-![工作台](docs/screenshots/workspace.jpg)
+本项目以源码可用、限制商业使用的方式发布。项目自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，允许按条款进行非商业使用、修改和分发。商业使用须另行获得权利人授权。第三方组件和素材分别适用其原有许可，见 [第三方说明](THIRD_PARTY.md)。
+
+![工作台](docs/screenshots/studio.png)
 
 当前版本已实现可运行的核心流程：Live2D 展示、角色人设、带上下文的流式对话、agentcore ADK 工具调用、语音输入与朗读、图片输入、会话持久化，以及透明桌宠窗口。原项目的完整功能覆盖情况见 [实现说明](docs/实现说明.md)。
 
 ## 在 Windows 上开始
+
+从 [GitHub Releases](https://github.com/dijia9723/live2d-studio/releases) 下载 Windows x64 ZIP，解压整个目录后打开 `Live2DStudio.exe`。运行需要 Windows WebView2 Runtime。发行包随附 Mao 和 Shizuku，首次启动时自动导入。
+
+### 从源码构建
 
 需要 Go 1.26+、Node.js 22+、npm，以及 Windows WebView2 Runtime。本项目固定 Wails v3.1.0，普通构建不需要额外安装 Wails CLI。
 
@@ -20,9 +26,9 @@
 .\bin\Live2DStudio.exe
 ```
 
-已经安装依赖时可使用 `.\scripts\build.ps1 -SkipInstall`。生成的程序已嵌入前端、Cubism Core 和两套样本模型；运行时无需 Node、Go 或外部静态资源 CDN。
+已经安装依赖时可使用 `.\scripts\build.ps1 -SkipInstall`。程序内嵌前端和 Cubism Core，运行时无需 Node、Go 或外部静态资源 CDN。源码构建时，可将样本的 `runtime/` 分别放入 `server/data/assets/mao_pro/` 和 `server/data/assets/shizuku/`，构建脚本会复制到输出目录。样本下载和授权见 [第三方说明](THIRD_PARTY.md)。
 
-首次启动后进入 **设置 → 语言模型**，选择服务并点击“保存并测试连接”。云端接口填写模型名称和密钥；本地 Ollama 可直接从已安装模型列表中选择，无需密钥。
+使用 AI 对话时，可在 **设置 → 语言模型** 自行配置服务。云端服务需要填入自己的密钥，本地 Ollama 可从已安装的模型中选择。
 
 ## 开发与测试
 
@@ -96,8 +102,6 @@ npm run build
 根地址、以 `/v1` 或 `/api` 结尾的地址均支持；修改地址后重新读取，刷新按钮可获取新安装的模型。读取列表不会覆盖已保存设置。未启动服务、空模型列表和错误地址会给出对应提示；应用不负责安装 Ollama 或自动下载模型。
 
 模型发现使用 Ollama 原生 [`/api/tags`](https://docs.ollama.com/api/tags)，聊天通过其 [OpenAI 兼容接口](https://docs.ollama.com/api/openai-compatibility) 接入现有 agentcore 流式链路。本地请求使用占位凭据，不向 Ollama 转发已保存的云端密钥。工具调用、图片识别及回复速度由所选模型和本机资源决定。
-
-![Ollama 模型管理界面（协议模拟服务验证）](docs/screenshots/ollama-models.jpg)
 
 ## 使用角色记忆与工具
 
@@ -182,7 +186,7 @@ scripts/                   PowerShell 开发与构建脚本
 
 ## 配置与数据
 
-可复制 `server/configs/config.example.yaml` 为 `server/configs/config.yaml`。本地配置、数据库和密钥均已加入 Git 忽略规则。
+可按需复制 `server/configs/config.example.yaml` 为 `server/configs/config.yaml`，自定义监听地址、端口和数据目录。本地配置、数据库和模型库 `models/` 均已加入 Git 忽略规则。
 
 - 默认监听 `127.0.0.1:12393`；`port: 0` 可使用随机空闲端口。
 - 使用 `go run` 从源码运行时，数据默认为 `server/data/studio.db`；模型导入到 `server/data/models/`。
