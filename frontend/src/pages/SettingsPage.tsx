@@ -4,9 +4,8 @@
  * 保存设置与测试连接（含“密钥留空即保留”的语义）。
  */
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import {
-  AudioLines,
   Brain,
   Calculator,
   Check,
@@ -38,7 +37,6 @@ import HotkeySettings from '../components/HotkeySettings'
 import OllamaModels from '../components/OllamaModels'
 import StagePlacementSettings from '../components/StagePlacementSettings'
 import ScreenWatchSettings from '../components/ScreenWatchSettings'
-import TTSWorkbench from '../components/TTSWorkbench'
 import {
   Select,
   SelectContent,
@@ -61,7 +59,6 @@ const sections = [
   { id: 'llm', name: '语言模型', icon: Cpu },
   { id: 'screen-watch', name: '观看模型', icon: Eye },
   { id: 'speech', name: '语音交互', icon: Volume2 },
-  { id: 'tts', name: 'TTS 调试工作台', icon: AudioLines },
   { id: 'agent', name: '智能体', icon: WandSparkles },
   { id: 'stage', name: '舞台布置', icon: PanelsTopLeft },
   { id: 'hotkeys', name: '热键管理', icon: Keyboard },
@@ -103,7 +100,7 @@ export default function SettingsPage() {
   const [params] = useSearchParams()
   const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
-  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch' || tab === 'tts'
+  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch'
   const page = useRef<HTMLDivElement>(null)
   const profiles = useLLMProfiles(s.settings!)
   const { form, setForm, clearLLM, setClearLLM } = profiles
@@ -114,6 +111,7 @@ export default function SettingsPage() {
   const [clearSpeech, setClearSpeech] = useState(false)
   const [showMemories, setShowMemories] = useState(false)
   const character = s.characters.find((item) => item.id === s.characterID) ?? s.characters[0]
+  const characterVoicePath = character ? `/characters?voice=${encodeURIComponent(character.id)}` : '/characters'
   // 脏检查：勾选清除密钥或任一设置分组变化都视为有未保存更改。
   const dirty =
     clearLLM ||
@@ -205,6 +203,8 @@ export default function SettingsPage() {
       )}
     </>
   )
+  if (params.get('section') === 'tts') return <Navigate replace to={characterVoicePath} />
+
   return (
     <div className="settings-page" ref={page}>
       <header className="page-header">
@@ -285,7 +285,6 @@ export default function SettingsPage() {
           {tab === 'hotkeys' && <HotkeySettings />}
           {tab === 'screen-watch' && <ScreenWatchSettings />}
           {tab === 'stage' && <StagePlacementSettings />}
-          {tab === 'tts' && <TTSWorkbench />}
           {tab === 'llm' && (
             <>
               <section className="settings-card">
@@ -572,8 +571,8 @@ export default function SettingsPage() {
                 <Volume2 size={18} />
                 <p>
                   在聊天区点击麦克风开始录音，再次点击结束。录音识别后会填入输入框，确认内容后发送。点击停止可打断回复与朗读。
-                  <Link className="settings-text-link" to="?section=tts">
-                    打开 TTS 调试工作台 <ChevronRight size={14} />
+                  <Link className="settings-text-link" to={characterVoicePath}>
+                    编辑角色语音 <ChevronRight size={14} />
                   </Link>
                 </p>
               </div>

@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowUpRight,
   Brain,
@@ -18,6 +18,7 @@ import {
   Tags,
   Trash2,
   Upload,
+  Volume2,
   X,
 } from 'lucide-react'
 import CharacterPreview from '../components/CharacterPreview'
@@ -29,14 +30,17 @@ import { notify, useStudio } from '../store/studio'
 import { api } from '../api/client'
 import { packageModelDirectory } from '../utils/modelImport'
 import { createCharacterPreviewRenderer } from '../utils/characterPreviewRenderer'
-import type { Character } from '../types/api'
+import type { Character, CharacterSpeech } from '../types/api'
 
 export default function CharactersPage() {
   const characters = useStudio((s) => s.characters)
   const characterID = useStudio((s) => s.characterID)
   const busy = useStudio((s) => s.busy)
   const navigate = useNavigate()
-  const [editing, setEditing] = useState<Character | null>(null)
+  const [params, setParams] = useSearchParams()
+  const [editing, setEditing] = useState<{ character: Character; tab: EditorTab } | null>(null)
+  const voiceCharacter = characters.find((character) => character.id === params.get('voice'))
+  const editorCharacter = editing?.character ?? voiceCharacter
   const [memoryCharacter, setMemoryCharacter] = useState<Character | null>(null)
   const [namingCharacter, setNamingCharacter] = useState<Character | null>(null)
   const [removingCharacter, setRemovingCharacter] = useState<Character | null>(null)
@@ -86,7 +90,7 @@ export default function CharactersPage() {
       const state = useStudio.getState()
       state.patch({ characters: [...state.characters, character] })
       setSearch('')
-      setEditing(character)
+      setEditing({ character, tab: 'profile' })
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : '模型导入失败')
     } finally {
@@ -205,9 +209,20 @@ export default function CharactersPage() {
                     </h3>
                     {character.description && <p>{character.description}</p>}
                     <div className="character-card-actions">
-                      <button className="button ghost" onClick={() => setEditing(character)}>
+                      <button
+                        className="button ghost"
+                        onClick={() => setEditing({ character, tab: 'profile' })}
+                      >
                         <Pencil size={15} />
                         角色配置
+                      </button>
+                      <button
+                        className="button ghost"
+                        aria-label={`编辑 ${character.name} 的角色语音`}
+                        onClick={() => setEditing({ character, tab: 'speech' })}
+                      >
+                        <Volume2 size={15} />
+                        角色语音
                       </button>
                       <button
                         className="button ghost"
@@ -226,14 +241,6 @@ export default function CharactersPage() {
                         管理记忆
                       </button>
                       <button
-                        className="button ghost"
-                        aria-label={`删除 ${character.name}`}
-                        onClick={() => setRemovingCharacter(character)}
-                      >
-                        <Trash2 size={15} />
-                        删除
-                      </button>
-                      <button
                         className="button soft character-chat"
                         disabled={busy}
                         onClick={() => {
@@ -243,6 +250,14 @@ export default function CharactersPage() {
                       >
                         开始对话
                         <ArrowUpRight size={15} />
+                      </button>
+                      <button
+                        className="button ghost"
+                        aria-label={`删除 ${character.name}`}
+                        onClick={() => setRemovingCharacter(character)}
+                      >
+                        <Trash2 size={15} />
+                        删除
                       </button>
                     </div>
                   </div>
@@ -287,8 +302,20 @@ export default function CharactersPage() {
           onClose={() => setNamingCharacter(null)}
         />
       )}
-      {editing && (
-        <CharacterEditor key={editing.id} character={editing} onClose={() => setEditing(null)} />
+      {editorCharacter && (
+        <CharacterEditor
+          key={editorCharacter.id}
+          character={editorCharacter}
+          initialTab={editing?.tab ?? 'speech'}
+          onClose={() => {
+            setEditing(null)
+            if (voiceCharacter) {
+              const next = new URLSearchParams(params)
+              next.delete('voice')
+              setParams(next, { replace: true })
+            }
+          }}
+        />
       )}
       {removingCharacter && (
         <CharacterDeleteDialog
@@ -412,17 +439,54 @@ function CharacterDeleteDialog({
   )
 }
 
+const editorTabs = [
+  { id: 'profile', label: '基本信息' },
+  { id: 'speech', label: '角色语音' },
+] as const
+type EditorTab = (typeof editorTabs)[number]['id']
+
+function sameSpeech(left?: CharacterSpeech, right?: CharacterSpeech) {
+  if ((left?.mode ?? 'inherit') !== (right?.mode ?? 'inherit')) return false
+  if (left?.mode === 'local' && right?.mode === 'local') {
+    return (
+      left.local_tts?.model === right.local_tts?.model &&
+      left.local_tts?.speaker === right.local_tts?.speaker &&
+      left.local_tts?.speed === right.local_tts?.speed
+    )
+  }
+  const leftVoice = left && 'voice' in left ? left.voice : undefined
+  const rightVoice = right && 'voice' in right ? right.voice : undefined
+  return (leftVoice ?? '') === (rightVoice ?? '')
+}
+
 /** 角色编辑弹窗：保存基本资料和朗读配置。 */
-function CharacterEditor({ character, onClose }: { character: Character; onClose: () => void }) {
+function CharacterEditor({
+  character,
+  initialTab,
+  onClose,
+}: {
+  character: Character
+  initialTab: EditorTab
+  onClose: () => void
+}) {
   const [editing, setEditing] = useState(character)
+  const [tab, setTab] = useState(initialTab)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const name = editing.name.trim()
   const encoder = new TextEncoder()
   const nameBytes = encoder.encode(name).length
   const promptBytes = encoder.encode(editing.system_prompt).length
-  const valid = nameBytes > 0 && nameBytes <= 100 && promptBytes <= 24000 &&
-    (editing.speech?.mode !== 'local' || !!editing.speech.local_tts)
+  const profileValid = nameBytes > 0 && nameBytes <= 100 && promptBytes <= 24000
+  const speechValid = editing.speech?.mode !== 'local' || !!editing.speech.local_tts
+  const valid = profileValid && speechValid
+  const speech = editing.speech
+  const speechChanged = !sameSpeech(speech, character.speech)
+  const dirty =
+    speechChanged ||
+    name !== character.name ||
+    editing.description !== character.description ||
+    editing.system_prompt !== character.system_prompt
 
   const close = () => {
     if (saving) return
@@ -430,12 +494,15 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
   }
 
   const save = async () => {
-    if (!valid || saving) return
+    if (!valid || saving || !dirty) return
     setSaving(true)
     setError('')
     try {
-      const speech = editing.speech === character.speech ? undefined : editing.speech
-      const saved = await api.saveCharacter({ ...editing, name, speech })
+      const saved = await api.saveCharacter({
+        ...editing,
+        name,
+        speech: speechChanged ? speech : undefined,
+      })
       const state = useStudio.getState()
       state.patch({
         characters: state.characters.map((item) => (item.id === saved.id ? saved : item)),
@@ -457,7 +524,7 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
       }}
     >
       <DialogContent
-        className="modal character-dialog character-editor"
+        className={`modal character-dialog character-editor${tab === 'speech' && speech?.mode === 'local' ? ' character-editor-wide' : ''}`}
         showCloseButton={false}
         aria-labelledby="character-editor-title"
         onEscapeKeyDown={(event) => {
@@ -473,7 +540,6 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
             <DialogTitle asChild>
               <h2 id="character-editor-title">{character.name} 的角色配置</h2>
             </DialogTitle>
-            <p>设置角色人设以及聊天、桌宠和直播使用的朗读音色。</p>
           </div>
           <button
             type="button"
@@ -493,63 +559,122 @@ function CharacterEditor({ character, onClose }: { character: Character; onClose
             void save()
           }}
         >
-          <label className="form-field">
-            角色名称
-            <input
-              maxLength={100}
-              disabled={saving}
-              value={editing.name}
-              aria-invalid={nameBytes > 100}
-              aria-describedby={nameBytes > 100 ? 'character-name-length' : undefined}
-              onChange={(event) => setEditing({ ...editing, name: event.target.value })}
-            />
-            {nameBytes > 100 && (
-              <small className="character-field-error" id="character-name-length">
-                名称最多 100 字节，请缩短输入。
+          <div
+            className="character-editor-tabs"
+            role="tablist"
+            aria-label="角色配置分类"
+            onKeyDown={(event) => {
+              const alternate = tab === 'profile' ? 'speech' : 'profile'
+              const next =
+                event.key === 'Home' ? 'profile' : event.key === 'End' ? 'speech' : alternate
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+              event.preventDefault()
+              setTab(next)
+              event.currentTarget
+                .querySelector<HTMLButtonElement>(`#character-editor-tab-${next}`)
+                ?.focus()
+            }}
+          >
+            {editorTabs.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`character-editor-tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls={`character-editor-panel-${id}`}
+                tabIndex={tab === id ? 0 : -1}
+                disabled={saving}
+                onClick={() => setTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div
+            role="tabpanel"
+            id="character-editor-panel-profile"
+            aria-labelledby="character-editor-tab-profile"
+            hidden={tab !== 'profile'}
+          >
+            <label className="form-field">
+              角色名称
+              <input
+                maxLength={100}
+                disabled={saving}
+                value={editing.name}
+                aria-invalid={nameBytes > 100}
+                aria-describedby={nameBytes > 100 ? 'character-name-length' : undefined}
+                onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+              />
+              {nameBytes > 100 && (
+                <small className="character-field-error" id="character-name-length">
+                  名称最多 100 字节，请缩短输入。
+                </small>
+              )}
+            </label>
+            <label className="form-field">
+              角色介绍
+              <input
+                maxLength={200}
+                disabled={saving}
+                value={editing.description}
+                onChange={(event) => setEditing({ ...editing, description: event.target.value })}
+              />
+            </label>
+            <label className="form-field">
+              系统提示词
+              <textarea
+                rows={7}
+                maxLength={24000}
+                disabled={saving}
+                value={editing.system_prompt}
+                aria-invalid={promptBytes > 24000}
+                aria-describedby="character-prompt-help"
+                onChange={(event) => setEditing({ ...editing, system_prompt: event.target.value })}
+              />
+              <small
+                className={promptBytes > 24000 ? 'character-field-error' : undefined}
+                id="character-prompt-help"
+              >
+                {promptBytes > 24000
+                  ? '提示词最多 24,000 字节，请缩短输入。'
+                  : '描述角色的身份、性格和说话方式。'}
               </small>
-            )}
-          </label>
-          <label className="form-field">
-            角色介绍
-            <input
-              maxLength={200}
+            </label>
+          </div>
+          <div
+            role="tabpanel"
+            id="character-editor-panel-speech"
+            aria-labelledby="character-editor-tab-speech"
+            hidden={tab !== 'speech'}
+          >
+            <CharacterSpeechFields
+              value={speech}
+              active={tab === 'speech'}
               disabled={saving}
-              value={editing.description}
-              onChange={(event) => setEditing({ ...editing, description: event.target.value })}
+              onChange={(speech) => setEditing((current) => ({ ...current, speech }))}
             />
-          </label>
-          <label className="form-field">
-            系统提示词
-            <textarea
-              rows={7}
-              maxLength={24000}
-              disabled={saving}
-              value={editing.system_prompt}
-              aria-invalid={promptBytes > 24000}
-              aria-describedby="character-prompt-help"
-              onChange={(event) => setEditing({ ...editing, system_prompt: event.target.value })}
-            />
-            <small
-              className={promptBytes > 24000 ? 'character-field-error' : undefined}
-              id="character-prompt-help"
-            >
-              {promptBytes > 24000
-                ? '提示词最多 24,000 字节，请缩短输入。'
-                : '描述角色的身份、性格和说话方式。'}
-            </small>
-          </label>
-          <CharacterSpeechFields value={editing.speech} disabled={saving}
-            onChange={(speech) => setEditing((current) => ({ ...current, speech }))} />
+          </div>
+          {tab === 'profile' && !speechValid && (
+            <p className="character-form-error">请在「角色语音」中选择本地模型。</p>
+          )}
+          {tab === 'speech' && !profileValid && (
+            <p className="character-form-error">请检查「基本信息」中的名称和系统提示词。</p>
+          )}
           {error && (
             <p className="character-form-error" role="alert">
               {error}
             </p>
           )}
           <footer className="modal-actions">
+            <span className="character-editor-save-state" role="status">
+              {saving ? '正在保存…' : dirty ? '有未保存的修改' : ''}
+            </span>
             <button type="button" className="button ghost" disabled={saving} onClick={close}>
               取消
             </button>
-            <button type="submit" className="button primary" disabled={saving || !valid}>
+            <button type="submit" className="button primary" disabled={saving || !valid || !dirty}>
               {saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
               保存角色配置
             </button>

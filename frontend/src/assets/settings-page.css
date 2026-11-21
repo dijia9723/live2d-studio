@@ -338,59 +338,6 @@
   margin-top: 12px;
 }
 
-.tts-refresh {
-  margin-left: auto;
-}
-
-.settings-page .preset-grid.tts-models {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-}
-
-.settings-page .tts-models > button {
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px;
-}
-
-.tts-models small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.tts-workbench textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #dbd2e8;
-  border-radius: 8px;
-  background: #fdfcff;
-  color: var(--ink);
-  font: inherit;
-  resize: vertical;
-}
-
-.tts-workbench textarea:focus-visible {
-  outline: 2px solid var(--purple);
-  outline-offset: 1px;
-}
-
-.tts-result {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.tts-result,
-.tts-apply {
-  margin-top: 14px;
-}
-
-.tts-result audio {
-  flex: 1 1 240px;
-  max-width: 100%;
-}
-
 .ollama-models {
   margin: 0 0 18px;
   padding: 13px;
