@@ -3,6 +3,7 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -21,10 +22,12 @@ import (
 	"server/internal/migrate"
 	"server/internal/modules/agent"
 	"server/internal/modules/character"
+	"server/internal/modules/coding"
 	"server/internal/modules/conversation"
 	"server/internal/modules/desktop"
 	"server/internal/modules/livemode"
 	"server/internal/modules/memory"
+	"server/internal/modules/piplugins"
 	"server/internal/modules/sceneassets"
 	"server/internal/modules/settings"
 	"server/internal/modules/speech"
@@ -37,11 +40,15 @@ import (
 // App 持有装配完成的 HTTP 路由、桌面模块、数据库连接与生效配置。
 // Router 由 Listen 包装成 http.Server；Desktop 供桌面构建登记窗口控制实现。
 type App struct {
-	Router  *gin.Engine
-	Desktop *desktop.Module
-	DB      *gorm.DB
-	Config  config.Config
-	Live    *livemode.Service
+	Router       *gin.Engine
+	Desktop      *desktop.Module
+	DB           *gorm.DB
+	Config       config.Config
+	Live         *livemode.Service
+	Terminal     *coding.TerminalService
+	BrowserDebug *coding.BrowserDebugService
+	Coding       *coding.Module
+	Plugins      *piplugins.Module
 }
 
 // New 初始化数据库、迁移并装配所有业务模块。
@@ -77,6 +84,10 @@ func New(cfg config.Config) (*App, error) {
 		}
 	}
 	if err = migrate.Run(db, freshDatabase); err != nil {
+		sqlDB.Close()
+		return nil, err
+	}
+	if err = coding.MigrateOrchestration(db); err != nil {
 		sqlDB.Close()
 		return nil, err
 	}
@@ -125,7 +136,8 @@ func New(cfg config.Config) (*App, error) {
 			// 本地接口随数据实时变化，禁止浏览器缓存，避免读到过期设置或会话。
 			c.Header("Cache-Control", "no-store")
 			// 普通 JSON 请求限制 26MB；导入与场景上传走 multipart，单独放开限制。
-			if c.Request.Method != "GET" && c.Request.URL.Path != "/api/v1/characters/import" && c.Request.URL.Path != "/api/v1/scene-assets" {
+			if c.Request.Method != "GET" && c.Request.URL.Path != "/api/v1/characters/import" &&
+				c.Request.URL.Path != "/api/v1/scene-assets" && c.Request.URL.Path != "/api/v1/coding/plugins/import" {
 				c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 26<<20)
 			}
 		}
@@ -134,7 +146,37 @@ func New(cfg config.Config) (*App, error) {
 	// 健康检查供前端判断后端是否已就绪。
 	r.GET("/api/v1/health", func(c *gin.Context) { pkg.OK(c, gin.H{"status": "ok", "version": "0.1.0", "agent": "agentcore"}) })
 	// 业务模块统一挂载到 /api/v1；场景媒体路由不经过 API 分组，单独注册。
-	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Characters: cs, Settings: ss, TTS: tts.New(cfg.TTSDir)}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live})
+	plugins := piplugins.New(filepath.Join(cfg.DataDir, "pi-plugins"), ds.Available)
+	plugins.ConfigureHost()
+	plugins.ConfigureHostCompletion(
+		func() (piplugins.HostCompletionModel, error) {
+			cfg, err := ss.Get()
+			return piplugins.HostCompletionModel{
+				Key: cfg.LLM.Provider + "/" + cfg.LLM.Model, Name: cfg.LLM.Model, IsDefault: true,
+			}, err
+		},
+		func(ctx context.Context, request piplugins.HostCompletionRequest) (string, error) {
+			cfg, err := ss.Get()
+			if err != nil {
+				return "", err
+			}
+			if request.ModelKey != "" && request.ModelKey != cfg.LLM.Provider+"/"+cfg.LLM.Model {
+				return "", fmt.Errorf("插件请求的模型与当前配置不一致")
+			}
+			cfg.LLM.MaxTokens = request.MaxTokens
+			return agent.CompleteText(ctx, cfg.LLM, request.System, request.Prompt)
+		},
+	)
+	terminal := coding.NewTerminalService()
+	debugBrowser := coding.NewBrowserDebugService()
+	code := &coding.Module{
+		DB: db, Settings: ss, RuntimeDir: cfg.PiRuntimeDir, StateDir: filepath.Join(cfg.DataDir, "coding-sessions"),
+		DesktopAvailable: ds.Available, PickDirectory: ds.PickDirectory,
+		PluginEnabled: plugins.Enabled, Plugins: plugins,
+		Terminal: terminal, BrowserDebug: debugBrowser,
+	}
+	plugins.ConfigureHostWorkspace(code.PluginWorkspaceCall)
+	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Characters: cs, Settings: ss, TTS: tts.New(cfg.TTSDir)}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live}, code, plugins)
 	assets.RegisterMedia(r)
 	cubism2Runtime := filepath.Join(cfg.DataDir, "cubism2", "live2d.min.js")
 	r.GET("/api/v1/characters/cubism2-runtime", func(c *gin.Context) {
@@ -169,7 +211,7 @@ func New(cfg config.Config) (*App, error) {
 	})
 	// 前端资源必须最后注册：其 NoRoute 兜底会接管所有未匹配的 GET 请求。
 	webui.Register(r)
-	return &App{Router: r, Desktop: ds, DB: db, Config: cfg, Live: live}, nil
+	return &App{Router: r, Desktop: ds, DB: db, Config: cfg, Live: live, Terminal: terminal, BrowserDebug: debugBrowser, Coding: code, Plugins: plugins}, nil
 }
 
 // Listen 在配置的地址上监听，并把路由交给后台运行的 http.Server。
@@ -191,6 +233,10 @@ func (a *App) Listen() (*http.Server, net.Listener, error) {
 
 // Close 关闭底层数据库连接，供进程退出时释放文件句柄。
 func (a *App) Close() {
+	a.Terminal.Close()
+	a.BrowserDebug.Close()
+	a.Coding.StopOrchestration()
+	a.Plugins.CloseHost()
 	if err := a.Live.Stop(); err != nil {
 		slog.Error("结束直播记录失败", "error", err)
 	}

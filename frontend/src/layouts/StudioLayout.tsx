@@ -7,6 +7,7 @@ import {
   AudioLines,
   ArrowUpRight,
   CircleHelp,
+  Code2,
   Flower2,
   LayoutGrid,
   Settings2,
@@ -18,6 +19,7 @@ import { notify, useStudio } from '../store/studio'
 
 const navigation = [
   { path: '/', label: '工作台', Icon: LayoutGrid },
+  { path: '/coding', label: '编码模式', Icon: Code2 },
   { path: '/characters', label: '角色', Icon: Users },
   { path: '/settings', label: '设置', Icon: Settings2 },
 ]

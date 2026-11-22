@@ -19,6 +19,12 @@ Live2D Cubism Core（`frontend/public/lib/live2dcubismcore.min.js`）版权所�
 
 [Open-LLM-VTuber](https://github.com/Open-LLM-VTuber/Open-LLM-VTuber) 使用 MIT 许可证，版权为 Copyright (c) 2025 Yi-Ting Chiu。其 Live2D 样本模型适用各自的条款。
 
+[PI-Desktop](https://github.com/vastsa/PI-Desktop) 是编码工作台的参考项目。运行时依赖 [Pi Coding Agent SDK 1.5.2](https://github.com/earendil-works/pi/tree/v1.5.2/packages/coding-agent)，许可及版权声明随 npm 包提供。
+
+编码插件中心使用 [PI-Desktop 的插件清单和官方市场](https://github.com/vastsa/PI-Desktop/tree/main/docs/spec/07-plugins)。内置插件能力由 Studio 的 Go 和 React 代码实现。市场及本地导入的第三方插件按各自软件包的许可分发。
+
+终端界面使用 MIT 许可的 [xterm.js 和 Fit Addon](https://github.com/xtermjs/xterm.js)。非 Windows 终端使用 MIT 许可的 [creack/pty](https://github.com/creack/pty)。
+
 ## 抖音直播消息
 
 [douyinLive](https://github.com/jwwsjlm/douyinLive/blob/v2.0.25/LICENSE) 和 [douyinlive-proto](https://github.com/jwwsjlm/douyinlive-proto/blob/v0.1.2/LICENSE) 使用 MIT 许可证。以下文本适用于这两个库和 Open-LLM-VTuber。

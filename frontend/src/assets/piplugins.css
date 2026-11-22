@@ -1,0 +1,473 @@
+.pi-plugins-page,
+.pi-plugin-dialog {
+  --pi-surface: #1b1920;
+  --pi-card: #221f29;
+  --pi-line: #393341;
+  --pi-text: #f0ebf5;
+  --pi-muted: #b6aabd;
+  --pi-accent: #ceb4ff;
+  --pi-hover: #372d46;
+  background: var(--pi-surface);
+  color: var(--pi-text);
+  color-scheme: dark;
+}
+
+.pi-plugins-page {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  font-size: 14px;
+}
+
+.pi-plugins-body {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: clamp(18px, 3vw, 36px);
+}
+
+.pi-plugins-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pi-muted);
+  font-size: 13px;
+}
+
+.pi-plugins-back:hover {
+  color: var(--pi-accent);
+}
+
+.pi-plugins-header,
+.pi-plugins-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.pi-plugins-header {
+  margin: 14px 0 20px;
+}
+
+.pi-plugins-header h1 {
+  margin: 0;
+  font-size: clamp(21px, 2.4vw, 29px);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.pi-plugins-toolbar {
+  margin-bottom: 16px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--pi-line);
+}
+
+.pi-plugins-views,
+.pi-plugins-filters {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.pi-plugins-views button {
+  padding: 7px 11px;
+  border-radius: 6px;
+  color: var(--pi-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pi-plugins-views button:hover,
+.pi-plugins-views button[aria-pressed='true'] {
+  background: var(--pi-hover);
+  color: var(--pi-text);
+}
+
+.pi-plugins-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  border: 1px solid var(--pi-line);
+  border-radius: 6px;
+  color: var(--pi-muted);
+}
+
+.pi-plugins-search input {
+  width: clamp(135px, 17vw, 220px);
+  min-width: 0;
+  min-height: 35px;
+  outline: 0;
+  font-size: 13px;
+  color: var(--pi-text);
+}
+
+.pi-plugins-search:focus-within {
+  border-color: var(--pi-accent);
+}
+
+.pi-plugin-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid var(--pi-line);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.pi-plugin-button:hover:not(:disabled) {
+  background: var(--pi-hover);
+}
+
+.pi-plugin-button[data-primary='true'] {
+  border-color: var(--pi-accent);
+  background: var(--pi-accent);
+  color: #272031;
+  font-weight: 650;
+}
+
+.pi-plugin-button[data-primary='true']:hover:not(:disabled) {
+  background: #e1cdff;
+}
+
+.pi-plugin-button[data-danger='true'] {
+  border-color: #84535c;
+  background: #432a36;
+  color: #ffd0d9;
+}
+
+.pi-plugin-button[data-danger='true']:hover:not(:disabled) {
+  background: #583646;
+}
+
+.pi-plugin-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pi-plugin-refresh {
+  width: 37px;
+  height: 37px;
+  flex: none;
+}
+
+.pi-plugins-page :is(button, a):focus-visible,
+.pi-plugin-dialog :is(button, a, select):focus-visible {
+  outline: 2px solid var(--pi-accent);
+  outline-offset: 2px;
+}
+
+.pi-plugins-page svg,
+.pi-plugin-dialog svg {
+  flex-shrink: 0;
+}
+
+.pi-plugins-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 256px), 1fr));
+  gap: 12px;
+}
+
+.pi-plugin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 165px;
+  border: 1px solid var(--pi-line);
+  border-radius: 10px;
+  padding: 13px;
+  background: var(--pi-card);
+}
+
+.pi-plugin-card header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.pi-plugin-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 37px;
+  height: 37px;
+  border-radius: 8px;
+  background: var(--pi-hover);
+  color: var(--pi-accent);
+}
+
+.pi-plugin-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.pi-plugin-name h2 {
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pi-plugin-name p,
+.pi-plugin-meta,
+.pi-plugin-summary {
+  color: var(--pi-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.pi-plugin-name p,
+.pi-plugin-version,
+.pi-plugin-details code {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+}
+
+.pi-plugin-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.pi-plugin-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.pi-plugin-status {
+  border: 1px solid var(--pi-line);
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: var(--pi-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.pi-plugin-status[data-enabled='true'] {
+  border-color: #47634e;
+  background: #25382d;
+  color: #b8dfc4;
+}
+
+.pi-plugin-card-actions,
+.pi-plugin-dialog-actions,
+.pi-plugin-pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pi-plugin-card-actions {
+  border-top: 1px solid var(--pi-line);
+  padding-top: 9px;
+}
+
+.pi-plugin-pagination {
+  align-items: center;
+  justify-content: center;
+  margin-top: 15px;
+  color: var(--pi-muted);
+  font-size: 13px;
+}
+
+.pi-plugins-empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 11px;
+  min-height: 190px;
+  border: 1px dashed var(--pi-line);
+  border-radius: 9px;
+  padding: 18px;
+  text-align: center;
+  color: var(--pi-muted);
+}
+
+.pi-plugins-error,
+.pi-plugins-notice {
+  margin-bottom: 10px;
+  border-radius: 6px;
+  padding: 7px 10px;
+  overflow-wrap: anywhere;
+}
+
+.pi-plugins-error {
+  background: #432a36;
+  color: #ffd0d9;
+}
+
+.pi-plugins-notice {
+  background: #25382d;
+  color: #c2e2ca;
+}
+
+.pi-plugin-dialog {
+  display: grid;
+  gap: 12px;
+  width: 480px;
+  border: 1px solid var(--pi-line);
+  border-radius: 12px;
+  padding: 20px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.pi-plugin-dialog h2 {
+  color: var(--pi-text);
+}
+
+.pi-plugin-dialog-name {
+  color: var(--pi-accent);
+  font-weight: 650;
+}
+
+.pi-plugin-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  border-top: 1px solid var(--pi-line);
+  padding-top: 10px;
+}
+
+.pi-plugin-details dt,
+.pi-plugin-details-group p {
+  color: var(--pi-muted);
+}
+
+.pi-plugin-details-group h3 {
+  margin-bottom: 5px;
+  font-weight: 650;
+}
+
+.pi-plugin-details-group ul,
+.pi-plugin-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pi-plugin-details-group li {
+  border: 1px solid var(--pi-line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  color: var(--pi-muted);
+}
+
+.pi-plugin-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--pi-accent);
+  text-decoration: underline;
+}
+
+.pi-plugin-safety-notes {
+  white-space: pre-wrap;
+  color: var(--pi-muted);
+}
+
+.pi-plugin-readme {
+  max-height: 16rem;
+  overflow: auto;
+  border-top: 1px solid var(--pi-line);
+  padding-top: 10px;
+  color: var(--pi-muted);
+}
+
+.pi-plugin-readme :is(p, ul, ol, pre) + :is(p, ul, ol, pre) {
+  margin-top: 7px;
+}
+
+.pi-plugin-readme ul {
+  list-style: disc inside;
+}
+
+.pi-plugin-readme ol {
+  list-style: decimal inside;
+}
+
+.pi-plugin-readme pre {
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--pi-card);
+  padding: 7px;
+}
+
+.pi-plugin-version-select {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.pi-plugin-version-select select {
+  min-height: 32px;
+  border: 1px solid var(--pi-line);
+  border-radius: 6px;
+  background: var(--pi-card);
+  padding-inline: 8px;
+}
+
+.pi-plugin-dialog-actions {
+  border-top: 1px solid var(--pi-line);
+  padding-top: 10px;
+}
+.pi-plugin-dialog.pi-plugin-runtime {
+  width: min(900px, calc(100vw - 38px));
+}
+.pi-plugin-runtime-dock {
+  flex: 1;
+  padding: 8px;
+}
+.pi-plugin-runtime-dock header {
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.pi-plugin-runtime h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pi-plugin-runtime-frame {
+  width: 100%;
+  min-height: min(56vh, 520px);
+  border: 1px solid #494052;
+  border-radius: 8px;
+  background: #fff;
+}
+.pi-plugin-runtime-settings {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #494052;
+  border-radius: 8px;
+}
+.pi-plugin-runtime-setting,
+.pi-plugin-runtime-settings label {
+  display: grid;
+  gap: 7px;
+}
+.pi-plugin-runtime-settings input:not([type='checkbox']),
+.pi-plugin-runtime-settings select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 9px;
+  color: inherit;
+  border: 1px solid #494052;
+  border-radius: 5px;
+  background: #22202a;
+}
+.pi-plugin-runtime-setting code {
+  word-break: break-all;
+}

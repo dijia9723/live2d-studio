@@ -14,19 +14,19 @@
 
 ### 从源码构建
 
-需要 Go 1.26.4+、Node.js 22+、npm，以及 Windows WebView2 Runtime。本项目固定 Wails v3.1.0，普通构建不需要额外安装 Wails CLI。
+需要 Go 1.26.4+、Node.js 22.19+、npm，以及 Windows WebView2 Runtime。本项目固定 Wails v3.1.0，普通构建不需要额外安装 Wails CLI。
 
 在项目根目录运行：
 
 ```powershell
-# 安装前端依赖、构建界面、生成 Windows 桌面程序
+# 安装前端和 Pi 依赖、构建界面、生成 Windows 桌面程序
 .\scripts\build.ps1
 
 # 打开桌面程序
 .\bin\Live2DStudio.exe
 ```
 
-已经安装依赖时可使用 `.\scripts\build.ps1 -SkipInstall`。程序内嵌前端和 Cubism Core，运行时无需 Node、Go 或外部静态资源 CDN。源码构建时，可将样本的 `runtime/` 分别放入 `server/data/assets/mao_pro/` 和 `server/data/assets/shizuku/`，构建脚本会复制到输出目录。样本下载和授权见 [第三方说明](THIRD_PARTY.md)。
+已经安装依赖时可使用 `.\scripts\build.ps1 -SkipInstall`。程序内嵌前端和 Cubism Core。编码模式运行 Pi 时需要本机有 Node.js。源码构建时，可将样本的 `runtime/` 分别放入 `server/data/assets/mao_pro/` 和 `server/data/assets/shizuku/`，构建脚本会复制到输出目录。样本下载和授权见 [第三方说明](THIRD_PARTY.md)。
 
 使用 AI 对话时，可在 **设置 → 语言模型** 自行配置服务。云端服务需要填入自己的密钥，本地 Ollama 可从已安装的模型中选择。
 
@@ -79,6 +79,7 @@ npm run build
 | 叠加特效 | 樱花、星光、萤火、光晕、飘雪，可组合及调强度；另支持图片 / 视频自定义叠加层与混合模式 |
 | 角色管理 | ZIP 导入 Cubism 模型，编辑角色名、介绍与 System Prompt |
 | 文字对话 | OpenAI Chat Completions 兼容接口，SSE 流式输出、Markdown、停止生成 |
+| 编码模式 | Pi 编码会话、只读计划、项目文件编辑、Git 变更 |
 | 本地 Ollama | 自动读取已安装模型，按名称搜索、一键选择，显示规模 / 量化 / 大小；保存后用于连接测试和流式聊天 |
 | 智能体 | 可选 agentcore ADK 工具循环，支持指定时区查时、角色表情、四则运算、角色记忆检索 / 保存，以及修改当前角色的名称、介绍与人设。工具执行状态随回复保存 |
 | 角色记忆 | 按角色添加、编辑和删除偏好与事实，新会话可继续参考 |
@@ -90,6 +91,38 @@ npm run build
 | 桌面窗口 | Wails 3 主窗口、置顶、透明桌宠；按住模型或透明区域拖动，右键打开聊天、切换朗读或关闭桌宠 |
 
 浏览器语音可用性取决于浏览器、WebView 和系统。API 语音模式会请求麦克风权限；权限由用户自行授予。嘴型当前使用播放状态驱动的动画，不是音素或音频能量级别的精确口型。
+
+### 编码模式
+
+在侧栏点击「编码模式」，打开本地项目目录并新建会话。左侧是项目和会话，中间显示 Pi 的回复和文件操作，右侧可查看与保存 UTF-8 文本文件以及审阅 Git 变更。计划模式可以浏览和读取项目文件，编码模式可以在项目内创建或修改文件。编码会话与 Live2D 聊天分开保存。会话顶部可使用全局默认模型，或从「设置 → 语言模型」已配置的服务中为当前会话指定模型。
+
+左侧可按会话名称筛选、重命名、归档和恢复会话，也可以复制对话及 Pi 上下文来创建独立分支。在提问框输入 `@` 或点击引用按钮，可搜索并插入项目文件路径。右侧可搜索并打开文件，还能预览 Markdown 的当前编辑内容。
+
+右侧「终端」在所选项目目录启动交互式 Shell。会话顶部可创建 Goal、填写验收条件并批准开始。Goal 支持暂停、恢复和查看每轮进展。子 Agent 与工作会话使用独立的 Pi 上下文，可以并行调查代码，桌面用户可显式允许工作会话修改项目内文件。创建工作会话时可指定模型。未指定时沿用角色已配置的模型或父会话的模型设置。
+
+Pi 会读取项目目录的 `AGENTS.override.md`、`AGENTS.md`、`CLAUDE.md` 或 `.claude/CLAUDE.md`，按目录逐层取第一份非空文件。通用编码指令可放在应用数据目录的 `coding-sessions/AGENTS.md`。
+
+Pi 运行时需要 Node.js 22.19 或更高版本。直接运行源码时，在仓库根目录执行以下命令安装锁定版本依赖，然后在编码模式中重新检查运行时。
+
+```powershell
+npm --prefix server/pi-runtime ci --ignore-scripts
+```
+
+默认 Windows 构建会把 Pi 依赖安装到程序同级的 `pi-runtime`。使用 `-SkipInstall` 构建后，可以在发行目录运行 `npm --prefix pi-runtime ci --ignore-scripts` 补装依赖。支持通过 `pi_runtime_dir` 或 `STUDIO_PI_RUNTIME_DIR` 指定运行时目录。工作台沿用 [PI-Desktop](https://github.com/vastsa/PI-Desktop) 的项目、会话和工作面板工作流，使用 Pi SDK 与 Go 宿主。
+
+#### 编码插件
+
+在编码模式顶部打开「插件中心」，可以管理随应用提供的三个插件，也可以搜索官方市场或导入本地 `.piplug`。从市场安装时会校验包的大小、SHA-256、插件 ID 和版本。第三方插件安装后需在插件中心查看能力并手动启用。包和启用状态保存在应用数据目录的 `pi-plugins/`。
+
+- **文件管理器**提供项目内的新建、移动、删除文件或空目录、自动刷新、行号引用，以及 Markdown、JSON、CSV、图片、音视频、PDF、Excel 和 SQLite 预览。SQLite 读取数据库文件的只读快照，Excel 显示工作表中的已保存值和公式缓存。
+- **浏览器**在右侧面板提供网页预览、地址历史和刷新。拒绝被嵌入的网页可用系统浏览器打开。调试模式使用独立 Edge／Chromium 配置，提供页面截图和只读无障碍树。
+- **官方增强**提供会话标题、提示词润色、后续消息建议和个人／项目编码记忆。模型润色标题、改写草稿、建议和 Agent 读取或写入记忆可分别开启。
+
+插件详情会列出支持的能力。启用主题插件后，在编码工作台顶部切换配色。Skills 和 HTTP MCP 沿用插件清单。使用本地 stdio MCP 时，在桌面插件详情检查命令、参数及环境变量关联，再授权启动。更新或重装插件后需要重新授权。
+
+在桌面客户端启用第三方 JavaScript 时，可单独授权宿主运行。已授权插件的命令、设置和面板可从编码模式顶部打开，工作面板视图在右侧切换。宿主提供独立的 JavaScript 执行进程、插件数据存储、Agent 工具、后台服务和插件间消息。插件可按声明的权限读取当前会话和项目文件。
+
+本地 `.piplug` 可声明 `agentExtensions` 贡献点，经桌面客户端单独授权后，在交互式编码会话中加载可信 Pi 扩展。更新或重装需要重新授权。依赖 Electron 专属接口、通用插件 CDP 或其他尚未实现的宿主接口的市场插件仍需适配。
 
 ### 本地 TTS
 

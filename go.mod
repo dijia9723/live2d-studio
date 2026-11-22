@@ -25,6 +25,7 @@ require (
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.18-0.20260527084435-846f52bd97c6 // indirect
 	github.com/codeGROOVE-dev/retry v1.3.1 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.4.2 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.2 // indirect
 	github.com/dop251/goja v0.0.0-20260701091749-b07b74453ea9 // indirect

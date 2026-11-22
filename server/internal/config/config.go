@@ -50,16 +50,17 @@ type Settings struct {
 
 // Config 是进程级配置：监听地址、数据目录，以及内联的 Settings。
 type Config struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	DataDir  string `yaml:"data_dir"`
-	TTSDir   string `yaml:"tts_dir"`
-	Settings `yaml:",inline"`
+	Host         string `yaml:"host"`
+	Port         int    `yaml:"port"`
+	DataDir      string `yaml:"data_dir"`
+	TTSDir       string `yaml:"tts_dir"`
+	PiRuntimeDir string `yaml:"pi_runtime_dir"`
+	Settings     `yaml:",inline"`
 }
 
 // Defaults 返回可离线启动的默认配置：只监听回环地址，语音默认交给浏览器。
 func Defaults() Config {
-	return Config{Host: "127.0.0.1", Port: 12393, DataDir: "data", TTSDir: "tts-models", Settings: Settings{
+	return Config{Host: "127.0.0.1", Port: 12393, DataDir: "data", TTSDir: "tts-models", PiRuntimeDir: "pi-runtime", Settings: Settings{
 		LLM:    LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", Temperature: 0.7, MaxTokens: 2048, ContextMessages: 40},
 		Speech: Speech{Mode: "browser", BaseURL: "https://api.openai.com/v1", ASRModel: "whisper-1", TTSModel: "tts-1", Voice: "alloy", Language: "zh-CN"},
 	}}
@@ -92,6 +93,12 @@ func Load(path string) (Config, error) {
 	}
 	if !filepath.IsAbs(cfg.TTSDir) {
 		cfg.TTSDir = filepath.Join(filepath.Dir(filepath.Dir(path)), cfg.TTSDir)
+	}
+	if dir := os.Getenv("STUDIO_PI_RUNTIME_DIR"); dir != "" {
+		cfg.PiRuntimeDir = dir
+	}
+	if !filepath.IsAbs(cfg.PiRuntimeDir) {
+		cfg.PiRuntimeDir = filepath.Join(filepath.Dir(filepath.Dir(path)), cfg.PiRuntimeDir)
 	}
 	if host := os.Getenv("STUDIO_HOST"); host != "" {
 		cfg.Host = host

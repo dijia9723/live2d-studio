@@ -20,6 +20,15 @@ try {
 New-Item -ItemType Directory -Force -Path $taskBin | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $taskBin 'configs') | Out-Null
 Copy-Item -LiteralPath (Join-Path $taskRoot 'server/configs/config.example.yaml') -Destination (Join-Path $taskBin 'configs/config.example.yaml')
+$piRuntime = Join-Path $taskBin 'pi-runtime'
+New-Item -ItemType Directory -Force -Path $piRuntime | Out-Null
+foreach ($file in 'package.json', 'package-lock.json', 'worker.mjs', 'plugin-mcp.mjs') {
+  Copy-Item -LiteralPath (Join-Path $taskRoot "server/pi-runtime/$file") -Destination $piRuntime
+}
+if (-not $SkipInstall) {
+  npm --prefix $piRuntime ci --ignore-scripts
+  if ($LASTEXITCODE -ne 0) { throw 'Pi 运行时依赖安装失败' }
+}
 # 只复制两个初始模型的运行时资源和随附说明。
 $assets = Join-Path $taskRoot 'server/data/assets'
 foreach ($model in 'mao_pro', 'shizuku') {

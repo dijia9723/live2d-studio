@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"errors"
 	"github.com/gin-gonic/gin"
 	"server/internal/pkg"
 	"sync"
@@ -35,6 +36,16 @@ func (m *Module) Available() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.controller != nil
+}
+
+func (m *Module) PickDirectory() (string, error) {
+	m.mu.RLock()
+	picker, ok := m.controller.(interface{ PickDirectory() (string, error) })
+	m.mu.RUnlock()
+	if !ok {
+		return "", errors.New("此功能需要桌面客户端")
+	}
+	return picker.PickDirectory()
 }
 
 // Register 挂载桌面能力查询与窗口操作接口。

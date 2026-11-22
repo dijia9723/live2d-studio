@@ -12,6 +12,7 @@ import (
 
 	"server/internal/bootstrap"
 	"server/internal/config"
+	"server/internal/modules/piplugins"
 )
 
 // Run 解析启动参数并完成配置加载、服务装配与监听，随后进入桌面或 headless 模式运行。
@@ -20,6 +21,9 @@ import (
 // 监听端口 → 桌面模式交给 Wails 事件循环，headless 模式阻塞等待中断信号。
 // 退出时先以 5 秒超时关闭 HTTP 服务，再由延迟调用关闭数据库连接。
 func Run() {
+	if len(os.Args) == 2 && os.Args[1] == "-pi-plugin-host" {
+		os.Exit(piplugins.RunPluginWorker(os.Stdin, os.Stdout))
+	}
 	// -config 显式指定 YAML 配置；-headless 跳过 Wails 窗口，便于脚本或容器运行。
 	configPath := flag.String("config", "", "YAML 配置文件路径")
 	headless := flag.Bool("headless", false, "只启动 Gin HTTP 服务")

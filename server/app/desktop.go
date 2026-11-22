@@ -99,6 +99,11 @@ func (w *windows) switchURL(pet bool, handoff *desktop.PetHandoff) string {
 	return "/?" + params.Encode()
 }
 
+func (w *windows) PickDirectory() (string, error) {
+	return w.app.Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).
+		AttachToWindow(w.main).SetTitle("打开编码项目").PromptForSingleSelection()
+}
+
 // runDesktop 启动 Wails 应用：页面资源经 DesktopHandler 代理本地 HTTP 服务，
 // 既保证原生运行时可用，又避免聊天 SSE 被 Wails 的资源层整体缓冲。
 func runDesktop(backend *bootstrap.App, address string) error {
@@ -111,5 +116,6 @@ func runDesktop(backend *bootstrap.App, address string) error {
 	shell := &windows{app: app, main: window}
 	registerScreenCapture(app, shell)
 	backend.Desktop.Set(shell)
+	backend.Plugins.StartHost()
 	return app.Run()
 }

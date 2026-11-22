@@ -4,12 +4,47 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
+	"github.com/cloudwego/eino/schema"
 	"server/internal/config"
 )
+
+func CompleteText(ctx context.Context, cfg config.LLM, instruction, input string) (string, error) {
+	key := strings.TrimSpace(cfg.APIKey)
+	if key == "" {
+		if cfg.Provider != "ollama" && cfg.Provider != "lmstudio" {
+			return "", errors.New("请先配置语言模型服务")
+		}
+		key = "local"
+	}
+	client, err := newAgenticChatModel(ctx, cfg, key)
+	if err != nil {
+		return "", err
+	}
+	reply, err := client.Generate(ctx, []*schema.AgenticMessage{
+		{Role: schema.AgenticRoleTypeSystem, ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.UserInputText{Text: instruction}),
+		}},
+		schema.UserAgenticMessage(input),
+	})
+	if err != nil {
+		return "", err
+	}
+	if reply == nil {
+		return "", errors.New("模型未返回内容")
+	}
+	var result strings.Builder
+	forwardAssistantText(reply, func(event Event) { result.WriteString(event.Text) })
+	text := strings.TrimSpace(result.String())
+	if text == "" {
+		return "", errors.New("模型未返回内容")
+	}
+	return text, nil
+}
 
 func newAgenticChatModel(ctx context.Context, cfg config.LLM, key string) (*agenticopenai.ChatModel, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
