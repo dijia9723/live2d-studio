@@ -1,8 +1,13 @@
+/**
+ * CodingBrowserDebug 通过后端启动隔离的 Edge/Chromium 会话，提供地址导航、
+ * 页面无障碍结构树查看与截图能力，用于调试本地 Web 项目。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ListTree, ScanLine, Square } from 'lucide-react'
 import { baseURL, http } from '../../api/client'
 import '../../assets/coding-browser-debug.css'
 
+/** BrowserNode 后端返回的页面结构节点，depth 用于缩进展示层级。 */
 interface BrowserNode {
   role: string
   label?: string
@@ -12,6 +17,7 @@ interface BrowserNode {
 const endpoint = '/coding/browser-debug'
 const route = (id: string) => `${endpoint}/${encodeURIComponent(id)}`
 
+/** stopDetached 在窗口卸载时用 keepalive 请求结束遗留的调试会话。 */
 function stopDetached(id: string) {
   return fetch(`${baseURL}${route(id)}`, {
     method: 'DELETE',
@@ -20,11 +26,14 @@ function stopDetached(id: string) {
   })
 }
 
+/** CodingBrowserDebug 隔离浏览器调试面板；visible 仅控制显示，不销毁调试会话。 */
 export default function CodingBrowserDebug({
   visible = true,
   initialURL = '',
 }: {
+  /** 是否显示面板。 */
   visible?: boolean
+  /** 启动调试时预填的地址。 */
   initialURL?: string
 }) {
   const alive = useRef(true)
@@ -40,12 +49,14 @@ export default function CodingBrowserDebug({
   useEffect(() => {
     alive.current = true
     return () => {
+      // 组件卸载时后端进程仍在运行，需要主动通知后端结束，避免遗留浏览器进程。
       alive.current = false
       if (owned.current) void stopDetached(owned.current).catch(() => {})
     }
   }, [])
 
   const task = async (work: () => Promise<void>) => {
+    // 串行化操作：导航/截图/检查同时发起时后端状态会互相覆盖。
     if (busy) return
     setError('')
     setBusy(true)
@@ -63,6 +74,7 @@ export default function CodingBrowserDebug({
       const response = await http.post<{ data: { id: string } }>(endpoint, {})
       const next = response.data.data.id
       if (!alive.current) {
+        // 启动请求返回前组件已卸载，立即回收刚创建的调试会话。
         void stopDetached(next).catch(() => {})
         return
       }
@@ -78,6 +90,7 @@ export default function CodingBrowserDebug({
       const url = /^[a-z][a-z\d+.-]*:\/\//i.test(target) ? target : `https://${target}`
       const response = await http.post<{ data: { url: string } }>(`${route(id)}/navigate`, { url })
       setPage(response.data.data.url)
+      // 页面已变化，旧的页面结构和截图失效，清空避免误导。
       setTree(undefined)
       setSnapshot('')
     })

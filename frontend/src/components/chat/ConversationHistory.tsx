@@ -1,3 +1,7 @@
+/**
+ * 文件职责：角色对话历史列表。
+ * 支持搜索、打开、重命名与删除对话，并在删除当前对话后回到角色选择。
+ */
 import { useState } from 'react'
 import { MessageSquare, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { api } from '../../api/client'
@@ -7,13 +11,16 @@ import type { Conversation } from '../../types/api'
 import { shortDate } from '../../utils/format'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
+/** 对话历史面板属性。 */
 interface Props {
   characterID: string
   characterName: string
   onStart: () => void
+  /** 成功打开对话后的回调 */
   onOpen: () => void
 }
 
+/** 角色对话历史面板。 */
 export default function ConversationHistory({
   characterID,
   characterName,
@@ -34,6 +41,7 @@ export default function ConversationHistory({
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState('')
   const trimmedTitle = title.trim()
+  // 按码点计数，避免 emoji 等代理对被算成两个字符。
   const titleValid = trimmedTitle.length > 0 && Array.from(trimmedTitle).length <= 100
   const query = search.trim().toLowerCase()
   const characterHistory = conversations.filter((item) => item.character_id === characterID)
@@ -60,10 +68,12 @@ export default function ConversationHistory({
       if (action.kind === 'delete') {
         await api.deleteConversation(id)
         const studio = useStudio.getState()
+        // 删除的是当前打开的对话时，退回角色选择，避免停留在已失效的会话。
         if (studio.conversationID === id) studio.selectCharacter(studio.characterID)
         useStudio.setState((state) => ({
           conversations: state.conversations.filter((item) => item.id !== id),
         }))
+        // 同步清掉本地草稿，防止新建对话时带出已删除会话的输入。
         updateDraft(id, () => emptyDraft)
       } else {
         await api.renameConversation(id, trimmedTitle)
@@ -161,6 +171,7 @@ export default function ConversationHistory({
         <DialogContent
           className="modal shell-dialog"
           showCloseButton={false}
+          // 保存过程中禁止 Esc/点击外部关闭，避免请求结果到达时弹窗状态已丢失。
           onEscapeKeyDown={(event) => {
             if (saving) event.preventDefault()
           }}

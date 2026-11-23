@@ -1,3 +1,5 @@
+// service_test.go 覆盖直播配置、自动回应、归档结算与重启恢复的完整流程。
+
 package livemode
 
 import (

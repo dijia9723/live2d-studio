@@ -1,3 +1,4 @@
+// builtin_sqlite_test.go 覆盖 SQLite 预览的只读快照、分页与视图限制。
 package coding
 
 import (

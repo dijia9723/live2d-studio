@@ -1,3 +1,7 @@
+/**
+ * CodingWorkPanel 是编码工作台的右侧面板：在文件浏览/编辑、Git 变更、浏览器预览、
+ * 终端和插件视图之间切换，并负责文件保存、外部变更检测与引用到会话。
+ */
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUp,
@@ -30,17 +34,27 @@ import {
 import { Textarea } from '../ui/textarea'
 import type { PiHostPlugin } from '../../api/piplugins'
 
+/** Props 工作面板的入参。 */
 interface Props {
+  /** 当前编码项目。 */
   project: CodingProject
+  /** 会话写入文件后推送的更新标记，用于触发文件重新加载。 */
   update?: { path: string }
+  /** 是否启用文件管理插件能力。 */
   filePlugin: boolean
+  /** 是否启用浏览器插件能力。 */
   browserPlugin: boolean
+  /** 初始视图；来自 URL 的 panel 参数。 */
   initialTab?: 'browser' | 'files' | 'terminal'
+  /** 可用的运行时插件，用于「插件视图」标签。 */
   runtimePlugins: PiHostPlugin[]
+  /** 当前会话 ID，传给插件作为上下文。 */
   sessionID?: string
+  /** 把文件引用插入会话输入框。 */
   onQuote: (reference: string) => void
 }
 
+/** CodingWorkPanel 编码工作台右侧多视图工作面板。 */
 export default function CodingWorkPanel({
   project,
   update,
@@ -54,6 +68,7 @@ export default function CodingWorkPanel({
   const [tab, setTab] = useState<'files' | 'changes' | 'browser' | 'terminal' | 'plugins'>(
     initialTab,
   )
+  // 终端一旦挂载就保持存在（仅 hidden 切换），避免切标签时丢失终端会话。
   const [terminalMounted, setTerminalMounted] = useState(initialTab === 'terminal')
   const [fileActionsOpen, setFileActionsOpen] = useState(false)
   const [entryAction, setEntryAction] = useState<'file' | 'directory' | 'move' | 'remove'>('file')
@@ -85,11 +100,13 @@ export default function CodingWorkPanel({
   useEffect(() => {
     if (seenUpdate.current === update) return
     seenUpdate.current = update
+    // 会话改动文件后自动重载当前文件，但用户有未保存修改时不覆盖草稿。
     if (update?.path === selection && !dirty && !saving) setFileReload((value) => value + 1)
   }, [update, selection, dirty, saving])
 
   useEffect(() => {
     if (tab !== 'files' && tab !== 'changes') return
+    // 隐藏标签不请求数据；切回时依赖状态变化重新触发。
     const request = new AbortController()
     const failed = (error: Error) => {
       if (!request.signal.aborted) setError(error.message)
@@ -117,6 +134,7 @@ export default function CodingWorkPanel({
 
   useEffect(() => {
     if (!selection) return
+    // 媒体/数据库预览不需要文本内容，跳过文本读取以免把二进制当文本解析。
     if (media) {
       setFile(undefined)
       return
@@ -142,7 +160,9 @@ export default function CodingWorkPanel({
     if (!filePlugin || !watch || tab !== 'files' || saving || loading || media) return
     const controller = new AbortController()
     let refreshing = false
+    // 后端没有文件系统推送通道，用 3 秒轮询对比 revision 检测外部改动。
     const timer = window.setInterval(async () => {
+      // 页面不可见或上一轮未结束时跳过，减少无意义请求。
       if (document.hidden || refreshing) return
       refreshing = true
       try {
@@ -154,6 +174,7 @@ export default function CodingWorkPanel({
         } else if (file) {
           const next = await codingAPI.file(project.id, selection, controller.signal)
           if (!controller.signal.aborted && next.revision !== file.revision) {
+            // 有未保存修改时不直接覆盖，只提示磁盘已变更，由用户决定是否重载。
             if (dirty) setExternalChange(true)
             else setFileReload((value) => value + 1)
           }
@@ -187,6 +208,7 @@ export default function CodingWorkPanel({
     setSaving(true)
     setError('')
     try {
+      // 提交读取时的 revision 做乐观并发控制，磁盘被外部改动时由后端拒绝覆盖。
       const saved = await codingAPI.saveFile(project.id, selection, {
         content: draft,
         revision: file.revision,
@@ -202,6 +224,7 @@ export default function CodingWorkPanel({
   }
 
   const closeFile = () => {
+    // 未保存修改需二次确认，避免误触关闭丢失编辑。
     if (dirty && !window.confirm('放弃此文件未保存的修改？')) return
     setSelection('')
     setPreview(false)
@@ -211,6 +234,7 @@ export default function CodingWorkPanel({
   }
 
   const openFile = (path: string) => {
+    // 切换到另一个文件前确认放弃当前草稿。
     if (saving || (selection !== path && dirty && !window.confirm('放弃此文件未保存的修改？')))
       return
     setTab('files')
@@ -227,6 +251,7 @@ export default function CodingWorkPanel({
     const path = entryPath.trim()
     const target = entryTarget.trim()
     if (entryAction === 'remove' && !window.confirm(`删除项目条目 ${path}？`)) return
+    // 删除/移动的路径包含正在编辑且未保存的文件时直接拒绝，避免编辑器指向已消失的文件。
     if (
       (entryAction === 'remove' || entryAction === 'move') &&
       dirty &&
@@ -254,6 +279,7 @@ export default function CodingWorkPanel({
 
   const quote = () => {
     const input = editor.current
+    // 草稿未修改、非预览态且有选区时引用「路径:行号范围」，否则只引用文件路径。
     if (!dirty && !preview && input && input.selectionEnd > input.selectionStart) {
       const start = draft.slice(0, input.selectionStart).split('\n').length
       const end = draft.slice(0, input.selectionEnd - 1).split('\n').length
@@ -579,6 +605,7 @@ export default function CodingWorkPanel({
               spellCheck={false}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
+                // Ctrl/Cmd+S 保存并阻止浏览器默认的「保存网页」。
                 if ((event.ctrlKey || event.metaKey) && event.key === 's') {
                   event.preventDefault()
                   void save()

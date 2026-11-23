@@ -1,3 +1,4 @@
+// plugin_workspace_test.go 覆盖插件工作区读取的项目与清单范围限制。
 package coding
 
 import (

@@ -1,3 +1,4 @@
+// browser_debug.go 负责启动隔离的无头浏览器，并通过 CDP 执行导航、可访问性检查与截图。
 package coding
 
 import (
@@ -31,7 +32,7 @@ var (
 	browserTargetID = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 )
 
-// BrowserDebugService owns one opt-in browser instance with a temporary profile.
+// BrowserDebugService 管理一个按需启动、使用临时配置目录的独立浏览器实例。
 type BrowserDebugService struct {
 	mu      sync.Mutex
 	active  *browserDebugSession
@@ -39,6 +40,7 @@ type BrowserDebugService struct {
 	closed  bool
 }
 
+// NewBrowserDebugService 创建一个空闲的浏览器调试服务。
 func NewBrowserDebugService() *BrowserDebugService { return &BrowserDebugService{} }
 
 type browserDebugSession struct {
@@ -96,6 +98,7 @@ func (s *BrowserDebugService) start(ctx context.Context) (*browserDebugSession, 
 	}
 	s.opening = true
 	s.mu.Unlock()
+	// 启动过程不持锁，仅用 opening 标记阻止并发启动；完成后重新加锁确认服务未被关闭。
 	session, err := openDebugBrowser(ctx)
 	s.mu.Lock()
 	s.opening = false
@@ -143,6 +146,7 @@ func (s *BrowserDebugService) stop(id string) error {
 	return nil
 }
 
+// Close 关闭调试浏览器、清理临时配置并停止服务。
 func (s *BrowserDebugService) Close() {
 	if s == nil {
 		return
@@ -173,7 +177,7 @@ func openDebugBrowser(ctx context.Context) (*browserDebugSession, error) {
 		"--disable-default-apps", "--auth-schemes=basic,digest", "--no-pings", "about:blank",
 	}
 	cmd := exec.Command(browser, args...)
-	// Keep Studio's environment configuration out of the debugged browser.
+	// 使用过滤后的环境，避免把 Studio 的配置和密钥带进被调试的浏览器。
 	cmd.Env = terminalEnvironment()
 	hideWindow(cmd)
 	if err := cmd.Start(); err != nil {
@@ -181,6 +185,7 @@ func openDebugBrowser(ctx context.Context) (*browserDebugSession, error) {
 		return nil, errors.New("无法启动独立浏览器")
 	}
 	p := &browserDebugSession{id: uuid.NewString(), dir: dir, process: cmd, done: make(chan struct{}), calls: make(chan struct{}, 1)}
+	// 进程退出时关闭 done，服务据此回收会话并清理临时目录。
 	go func() {
 		_ = cmd.Wait()
 		close(p.done)
@@ -288,6 +293,7 @@ func (p *browserDebugSession) stop() {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+	// 调用线程被阻塞过久时用进程退出作为兜底信号；随后删除临时配置目录，失败时短暂重试。
 	for range 5 {
 		if os.RemoveAll(p.dir) == nil {
 			return
@@ -296,6 +302,7 @@ func (p *browserDebugSession) stop() {
 	}
 }
 
+// call 发送一条 CDP 请求并等待同 ID 的响应；单槽信号量保证同一连接上的请求串行，避免响应错配。
 func (p *browserDebugSession) call(ctx context.Context, method string, parameters, result any) error {
 	select {
 	case p.calls <- struct{}{}:
@@ -442,7 +449,7 @@ func (p *browserDebugSession) inspect(ctx context.Context) ([]browserDebugNode, 
 			output = append(output, browserDebugNode{Role: browserNodeString(role, 64), Label: browserNodeString(label, 200), Depth: depth})
 		}
 		if editable {
-			// Exclude content from editable controls, even when the page filled it.
+			// 不输出可编辑控件的文本内容，避免把用户在页面里填写的敏感信息带进模型上下文。
 			return
 		}
 		for _, id := range item.Children {

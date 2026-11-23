@@ -1,3 +1,4 @@
+// host_manifest.go 负责把插件清单的 contributes 声明解析为受限的宿主能力规格。
 package piplugins
 
 import (
@@ -7,8 +8,10 @@ import (
 	"strings"
 )
 
+// hostMemberID 限定命令、视图、工具、话题等标识的字符集，便于日志与前端的稳定引用。
 var hostMemberID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
 
+// hostLabel 兼容清单中“纯文本”或“按语言映射”两种标题写法，统一取中文优先的展示文本。
 type hostLabel string
 
 func (s *hostLabel) UnmarshalJSON(data []byte) error {
@@ -74,6 +77,8 @@ type hostSpec struct {
 	Bus         hostBus       `json:"bus"`
 }
 
+// hostSpec 按权限裁剪清单声明：未授予对应权限的能力不会被下发到进程或前端。
+// 各分类独立解码，未知或损坏的类别不会连累其他合法能力。
 func (m Manifest) hostSpec() hostSpec {
 	name, _, _ := localize(m.Name, m.Description, m.SafetyNotes, m.I18n)
 	spec := hostSpec{ID: m.ID, Name: name, Permissions: m.Permissions,
@@ -81,7 +86,7 @@ func (m Manifest) hostSpec() hostSpec {
 	}
 	var declarations map[string]json.RawMessage
 	_ = json.Unmarshal(m.Contributes, &declarations)
-	// Decode categories separately so an unfamiliar contribution does not hide compatible ones.
+	// 分类独立解码，避免某个不认识的贡献项导致兼容能力整体失效。
 	if err := json.Unmarshal(declarations["commands"], &spec.Commands); err != nil {
 		spec.Commands = nil
 	}
@@ -144,6 +149,7 @@ func (m Manifest) hostSpec() hostSpec {
 	return spec
 }
 
+// hostCapabilities 汇总插件实际可用的运行能力，仅作前端展示与启用校验，不代表已授权。
 func (m Manifest) hostCapabilities() []string {
 	spec := m.hostSpec()
 	var capable []string

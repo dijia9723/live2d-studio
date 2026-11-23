@@ -1,3 +1,4 @@
+// browser_debug_http.go 负责浏览器调试会话的 HTTP 路由与参数校验。
 package coding
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// registerBrowserDebug 注册浏览器调试路由，并限制只有本机桌面客户端可用。
 func (m *Module) registerBrowserDebug(group *gin.RouterGroup) {
 	local := group.Group("/browser-debug", func(c *gin.Context) {
 		host, _, _ := net.SplitHostPort(c.Request.RemoteAddr)

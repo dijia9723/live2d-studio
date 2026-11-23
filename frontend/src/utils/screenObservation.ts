@@ -1,3 +1,9 @@
+/**
+ * 文件职责：屏幕观察的采样、变化检测、裁图与文本整理工具。
+ * 全部坐标使用相对于整屏的 0–1 归一化值，便于在 OCR 结果与裁图之间换算。
+ */
+
+/** 归一化矩形区域（x/y/w/h 均为 0–1）。 */
 export interface ScreenRect {
   x: number
   y: number
@@ -5,20 +11,24 @@ export interface ScreenRect {
   h: number
 }
 
+/** 归一化坐标点。 */
 export interface ScreenPoint {
   x: number
   y: number
 }
 
+/** 一行 OCR 文本及其在整屏中的归一化位置。 */
 export interface ScreenLine {
   text: string
   bounds: ScreenRect
 }
 
 export const fullScreen: ScreenRect = { x: 0, y: 0, w: 1, h: 1 }
+// 采样指纹固定为 64×40，足够判断区域变化，又远低于原图开销。
 const columns = 64
 const rows = 40
 
+/** 创建屏幕采样器；返回函数会把整帧缩绘成低分辨率像素数据作为指纹。 */
 export function screenSampler() {
   const preview = document.createElement('canvas')
   preview.width = columns
@@ -30,6 +40,10 @@ export function screenSampler() {
   }
 }
 
+/**
+ * 比较两帧指纹，返回发生变化的最小归一化区域。
+ * 无历史帧时视为整屏变化；变化面积超过 70% 时直接返回整屏，避免无意义的局部裁图。
+ */
 export function changedScreenArea(
   previous: Uint8ClampedArray | undefined,
   next: Uint8ClampedArray,
@@ -46,6 +60,7 @@ export function changedScreenArea(
         Math.abs(next[at] - previous[at]) +
         Math.abs(next[at + 1] - previous[at + 1]) +
         Math.abs(next[at + 2] - previous[at + 2])
+      // 阈值过滤轻微的压缩噪点与光标闪烁。
       if (difference < 28) continue
       left = Math.min(left, x)
       top = Math.min(top, y)
@@ -61,6 +76,7 @@ export function changedScreenArea(
   return w * h > 0.7 ? fullScreen : { x, y, w, h }
 }
 
+/** 从整帧中裁出指定区域，并把长边限制到 maxSide 以控制上传/推理体积。 */
 export function cropScreen(frame: HTMLCanvasElement, area: ScreenRect, maxSide: number) {
   const result = document.createElement('canvas')
   const width = Math.max(1, Math.round(frame.width * area.w))
@@ -84,6 +100,10 @@ export function cropScreen(frame: HTMLCanvasElement, area: ScreenRect, maxSide: 
   return result
 }
 
+/**
+ * 计算提问时的聚焦区域。
+ * 有鼠标位置时以光标为中心取 55% 视野，否则退回最近变化区域或整屏。
+ */
 export function focusArea(point: ScreenPoint | undefined, lastChange: ScreenRect | undefined) {
   if (!point) return lastChange || fullScreen
   const w = 0.55
@@ -93,6 +113,10 @@ export function focusArea(point: ScreenPoint | undefined, lastChange: ScreenRect
   return { x, y, w, h }
 }
 
+/**
+ * 把新识别的行合并进已有结果。
+ * 只替换中心落在变化区域内的旧行，区域外的旧文字继续保留，最后按位置排序去重。
+ */
 export function mergeScreenLines(previous: ScreenLine[], lines: ScreenLine[], area: ScreenRect) {
   const outside = previous.filter(({ bounds }) => {
     const x = bounds.x + bounds.w / 2
@@ -104,6 +128,7 @@ export function mergeScreenLines(previous: ScreenLine[], lines: ScreenLine[], ar
     .slice(0, 250)
 }
 
+/** 对比前后两轮识别结果，生成一句人类可读的变化摘要；优先突出错误提示。 */
 export function describeScreenChange(previous: ScreenLine[], current: ScreenLine[]) {
   const before = new Set(previous.map(({ text }) => text))
   const after = new Set(current.map(({ text }) => text))
@@ -122,7 +147,9 @@ export function describeScreenChange(previous: ScreenLine[], current: ScreenLine
     .slice(0, 340)
 }
 
+// 用户提到“这里/鼠标/光标”等指示词时，说明问题可能指向特定位置。
 export const pointedQuestion = /这里|那里|这个|那个|我指|我点|鼠标|光标|\b(?:this|here|cursor)\b/i
+// 错误类关键词，用于在摘要和排序中提升错误提示的权重。
 const screenError =
   /错误|失败|异常|拒绝访问|报错|没有.{0,8}权限|权限不足|\berror\b|\bfailed\b|exception|access denied/i
 const recentQuestion =
@@ -134,8 +161,15 @@ const screenReference =
 const screenFollowUp =
   /^(?:那(?:么|我)?|所以|然后|接下来|这个)?[，,、 ]*(?:怎么办|怎么(?:处理|解决|修复|改|做|弄|排查)|如何(?:处理|解决|修复|排查)|为啥|为什么(?:会这样|报错|失败)?|原因是什么|下一步(?:做什么|怎么做)?|应该点哪个|现在好了(?:没有|吗)?|好了(?:没有|吗)?|还在(?:吗|么)?|还报错吗|重试吗)[？?。！! ]*$|^(?:so[, ]*)?(?:why|how (?:do i|can i) (?:fix|resolve) (?:it|this)|is it fixed(?: now)?)\s*[?.!]*$/i
 
+/** 屏幕提问的意图：current 当前画面、recent 最近变化、follow-up 延续上一轮。 */
 export type ScreenQuestionIntent = 'current' | 'recent' | 'follow-up'
 
+/**
+ * 判断问题的屏幕意图。
+ * 明确的屏幕指示词优先判为 current；否则依次看是否在问最近变化、是否延续上一轮。
+ * @param hasScreenTurn 上一轮是否已经提供过屏幕上下文
+ * @returns 意图；问题与屏幕无关时返回 undefined
+ */
 export function screenQuestionIntent(
   question: string,
   hasScreenTurn: boolean,
@@ -153,6 +187,7 @@ export function screenQuestionIntent(
     return 'current'
 }
 
+/** 是否需要把截图一并交给模型（而非只给 OCR 文本）。 */
 export function needsScreenImage(question: string) {
   if (
     /颜色|配色|布局|图表|长什么样|发.{0,6}(?:图|截图)|\b(?:colou?r|layout|chart|show me (?:the|this) screenshot)\b/i.test(
@@ -185,6 +220,10 @@ function questionTerms(question: string) {
   ].slice(0, 32)
 }
 
+/**
+ * 生成最终的屏幕描述文本。
+ * 按行位置排序，错误类文本优先并置顶，限制总长度以控制上下文成本。
+ */
 export function describeScreen(
   lines: ScreenLine[],
   changes: string[],

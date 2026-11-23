@@ -1,3 +1,8 @@
+/**
+ * 文件职责：屏幕观察 Hook。
+ * 以固定节奏采集屏幕/窗口画面，用本地 PaddleOCR 识别文字并跟踪变化，
+ * 在对话提问时生成屏幕上下文（文字摘要 + 必要时裁图）供模型理解。
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PaddleOCR } from '@paddleocr/paddleocr-js'
 import type { ScreenContext } from '../types/api'
@@ -22,6 +27,7 @@ interface WatchFrame {
   pointer?: ScreenPoint
 }
 
+/** 画面来源：窗口视频流或桌面端持续截帧，统一成 next()/close() 协议。 */
 interface WatchSource {
   next(signal: AbortSignal): Promise<CanvasImageSource | null>
   pointer?: ScreenPoint
@@ -37,6 +43,7 @@ type Stats = {
   preview?: string[]
 }
 
+/** 一次观看会话的完整运行态，关闭时统一通过 controller 与 source 释放。 */
 interface WatchSession {
   scope: Scope
   source: WatchSource
@@ -54,9 +61,12 @@ interface WatchSession {
   refresh(readText: boolean, signal: AbortSignal): Promise<void>
 }
 
+// 提问时最多等待这么久刷新画面，保证交互不被 OCR 拖住。
 const questionRefreshMs = 520
+// 追问窗口：上一轮屏幕问答在该时间内才作为“历史线索”带入。
 const screenFollowUpMs = 120_000
 
+/** 加载本地 PaddleOCR；截图文字只在本机推理，不上传。 */
 async function startLocalOCR() {
   const { PaddleOCR } = await import('@paddleocr/paddleocr-js')
   const assets = new URL('/ocr/', window.location.href).href
@@ -68,12 +78,14 @@ async function startLocalOCR() {
     textRecognitionModelName: recognition,
     textRecognitionModelAsset: { url: assets + recognition + '_onnx_infer.tar' },
     worker: import.meta.env.DEV
+      // 开发环境使用同源的 worker 文件；打包环境交给库自己创建 worker。
       ? { createWorker: () => new Worker(assets + 'worker.mjs', { type: 'module' }) }
       : true,
     ortOptions: { backend: 'wasm', wasmPaths: assets, numThreads: 1 },
   })
 }
 
+/** 对裁图执行 OCR，并把归一化坐标换算回整屏的归一化区域。 */
 async function readScreen(
   ocr: Pick<PaddleOCR, 'predict'>,
   crop: HTMLCanvasElement,
@@ -106,6 +118,7 @@ async function readScreen(
   })
 }
 
+/** 桌面端持续截帧来源：通过原生 watch_id 拉取最新画面与鼠标位置。 */
 function desktopRegion(id: string): WatchSource {
   return {
     async next(signal) {
@@ -123,6 +136,13 @@ function desktopRegion(id: string): WatchSource {
   }
 }
 
+/**
+ * 管理屏幕观察的采集、识别与提问上下文。
+ * @param character 当前角色 ID，切换角色时停止观察
+ * @param conversation 当前会话 ID；null 表示尚未创建会话
+ * @returns stats/error 展示状态，region/windowSource 开始观察，
+ *          togglePause/stop 控制运行，prepareQuestion/finishQuestion 生成提问上下文
+ */
 export function useScreenWatch(character: string, conversation: string | null) {
   const scope = useRef<Scope>({ character, conversation })
   scope.current = { character, conversation }
@@ -131,6 +151,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
   const [error, setError] = useState('')
   const windowRequest = useRef<AbortController | null>(null)
 
+  // 统一释放：取消进行中的窗口授权、停止采集流、结束 OCR 引擎。
   const dispose = useCallback(() => {
     windowRequest.current?.abort()
     windowRequest.current = null
@@ -147,6 +168,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
   }, [dispose])
 
   useEffect(() => {
+    // 页面隐藏/卸载时媒体流不会自动关闭，需主动释放。
     window.addEventListener('pagehide', dispose)
     return () => {
       window.removeEventListener('pagehide', dispose)
@@ -161,6 +183,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
     }
     if (active.scope.character === character) {
       if (active.scope.conversation === conversation) return
+      // 首条消息发出时才创建会话：允许把草稿阶段的观察无缝迁移到新会话。
       if (active.scope.conversation === null && conversation && active.bindDraft) {
         active.scope = { character, conversation }
         active.bindDraft = false
@@ -215,6 +238,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
     signal.addEventListener(
       'abort',
       () => {
+        // 中止时清掉定时器并释放 OCR 的 wasm/worker 资源。
         clearTimeout(timer)
         void engine.then((ocr) => ocr.dispose()).catch(() => {})
       },
@@ -236,6 +260,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
           picture instanceof HTMLVideoElement
             ? picture.videoHeight
             : (picture as HTMLImageElement).height
+        // 长边限制在 1600 像素内，兼顾 OCR 精度与逐帧采样的开销。
         const scale = Math.min(1, 1600 / Math.max(width, height))
         const w = Math.max(1, Math.round(width * scale))
         const h = Math.max(1, Math.round(height * scale))
@@ -249,6 +274,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
         painter.drawImage(picture, 0, 0, w, h)
         active.hasFrame = true
         const signature = sample(frame)
+        // 用低分辨率指纹判断画面是否变化，只对变化区域重新 OCR。
         if (changedScreenArea(latest, signature)) {
           latest = signature
           lastMotion = now
@@ -266,6 +292,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
     }
 
     function scanLatest() {
+      // 同一时刻只跑一次识别，避免定时器与提问刷新重复推理。
       if (recognition) return recognition
       const input = latest
       const area = active.pendingArea
@@ -275,6 +302,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
       lastScan = performance.now()
       recognition = engine
         .then(async (ocr) => {
+          // 识别期间画面或会话可能已变化，结果过期就丢弃，避免把旧文字写回。
           if (signal.aborted || active.paused || revision !== frameRevision) return
           const started = performance.now()
           const lines = await readScreen(ocr, crop, area)
@@ -312,6 +340,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
       await readLatest()
       if (signal.aborted) return
       const now = performance.now()
+      // 画面有变化或距上次扫描过久才重新识别，避免每个心跳都跑 OCR；暂停时 scanLatest 会直接返回。
       if (!active.recognized || now - lastMotion >= 240 || now - lastScan >= 1400) {
         void scanLatest()
       }
@@ -341,6 +370,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         audio: false,
+        // 只申请窗口画面并限制帧率，降低采样负担。
         video: { displaySurface: 'window', frameRate: { ideal: 5, max: 8 } },
       })
       const close = () => stream.getTracks().forEach((track) => track.stop())
@@ -350,6 +380,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
       video.srcObject = stream
       video.muted = true
       video.playsInline = true
+      // 用户直接从系统取消/关闭共享时，同样回到停止状态。
       stream.getVideoTracks()[0]?.addEventListener('ended', stop, { once: true })
       begin(
         {
@@ -399,6 +430,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
       active?.scope.character === scope.current.character &&
       active.scope.conversation === scope.current.conversation
     if (!active || !inScope()) return undefined
+    // 草稿阶段（conversation 为 null）提问后要等会话创建完成再绑定。
     active.bindDraft = active.scope.conversation === null
     const lastTurn = active.lastTurn
     const prior =
@@ -417,6 +449,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
     const request = AbortSignal.any([
       signal,
       active.controller.signal,
+      // 刷新有上限，超时就用最近一次完成的识别结果回答。
       AbortSignal.timeout(questionRefreshMs),
     ])
     let sampled = false
@@ -477,6 +510,7 @@ export function useScreenWatch(character: string, conversation: string | null) {
 
   function finishQuestion(owner: Scope) {
     const active = session.current
+    // 只有草稿阶段提问的会话才需要接管；已绑定会话保持原 scope。
     if (!active?.bindDraft) return
     active.bindDraft = false
     if (active.scope.character === owner.character && active.scope.conversation === null) {

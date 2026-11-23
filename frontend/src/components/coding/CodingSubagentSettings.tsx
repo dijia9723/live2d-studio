@@ -1,3 +1,7 @@
+/**
+ * CodingSubagentSettings 管理编排用的子 Agent 定义：启用/停用、新建、
+ * 编辑任务说明与模型，并可恢复内置定义或删除自定义定义。
+ */
 import { useState } from 'react'
 import { orchestrationAPI, type CodingSubagent } from '../../api/codingOrchestration'
 import { CodingModelFields } from './CodingSessionModel'
@@ -5,11 +9,14 @@ import { Textarea } from '../ui/textarea'
 
 const emptySubagent = { name: '', label: '', instructions: '', enabled: true, builtin: false }
 
+/** CodingSubagentSettings 子 Agent 定义管理面板。 */
 export default function CodingSubagentSettings({
   agents,
   onChange,
 }: {
+  /** 当前子 Agent 列表。 */
   agents: CodingSubagent[]
+  /** 列表更新后回调。 */
   onChange: (items: CodingSubagent[]) => void
 }) {
   const [editor, setEditor] = useState<{ agent: CodingSubagent; fresh: boolean }>()
@@ -26,6 +33,7 @@ export default function CodingSubagentSettings({
     setError('')
     try {
       await work()
+      // 以服务端返回为准回读列表，保证排序与默认字段一致。
       onChange(await orchestrationAPI.subagents())
       if (close) setEditor(undefined)
     } catch (cause) {
@@ -86,6 +94,7 @@ export default function CodingSubagentSettings({
           onSubmit={(event) => {
             event.preventDefault()
             if (editor.fresh && agents.some((item) => item.name === editor.agent.name)) {
+              // 新建时先在前端拦截重名，避免覆盖已有定义。
               setError('已存在同名子 Agent，请使用不同的标识')
               return
             }

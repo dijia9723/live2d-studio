@@ -1,5 +1,6 @@
 //go:build !windows && !linux && !darwin
 
+// terminal_unsupported.go 在不支持的平台返回终端不可用错误。
 package coding
 
 import "errors"

@@ -1,3 +1,4 @@
+// search.go 负责按文件名或路径在项目内做限次搜索。
 package coding
 
 import (
@@ -27,6 +28,7 @@ func (m *Module) search(c *gin.Context) {
 	ctx := c.Request.Context()
 	matches := make([]string, 0, 30)
 	visited := 0
+	// 遍历大仓库可能耗时，按请求上下文取消并设置访问与结果上限，避免阻塞其他请求。
 	err := fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if ctx.Err() != nil {
 			return ctx.Err()

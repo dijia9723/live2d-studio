@@ -1,3 +1,4 @@
+// sessions.go 负责编码会话的创建、重命名、归档与分支复制。
 package coding
 
 import (
@@ -20,6 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// idleSession 读取会话并拒绝仍在生成或持有后台任务的会话，避免并发改写同一会话。
 func (m *Module) idleSession(c *gin.Context) (model.CodingSession, bool) {
 	session, ok := m.session(c)
 	if ok {
@@ -77,7 +79,7 @@ func (m *Module) forkSession(c *gin.Context) {
 	title := []rune(source.Title)
 	child := model.CodingSession{
 		ID: uuid.NewString(), ProjectID: source.ProjectID,
-		Title: string(title[:min(len(title), 75)]) + "（分支）",
+		Title:         string(title[:min(len(title), 75)]) + "（分支）",
 		ModelProvider: source.ModelProvider, ModelName: source.ModelName,
 	}
 	sourceFile := filepath.Join(m.StateDir, source.ID+".jsonl")
@@ -102,7 +104,7 @@ func (m *Module) forkSession(c *gin.Context) {
 	pkg.OK(c, child)
 }
 
-// Copy Pi's JSONL entries intact so tool replies and compaction survive the fork.
+// copyPiSession 原样复制 Pi 的 JSONL 记录，保留工具回复与上下文压缩结果，并在新文件头写入分支会话 ID。
 func copyPiSession(source, target, id string) error {
 	file, err := os.Open(source)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -1,3 +1,4 @@
+// git.go 负责读取项目的 Git 变更状态与差异，并限制仓库自定义过滤器。
 package coding
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// gitOutput 在固定超时内执行只读 Git 命令并截取输出，避免仓库过大或钩子卡住请求。
 func gitOutput(ctx context.Context, dir string, args ...string) (string, bool, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -34,7 +36,7 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, bool, b
 	return string(data), err == nil && waitErr == nil, false
 }
 
-// Git comparisons can invoke repository-configured filters when reading the working tree.
+// gitReadOptions 关闭仓库自定义的 clean/process 过滤器，防止比较差异时执行项目配置的任意命令。
 func gitReadOptions(ctx context.Context, dir string) ([]string, bool) {
 	keys, ok, truncated := gitOutput(ctx, dir, "config", "--null", "--name-only", "--list", "--includes")
 	if !ok || truncated {

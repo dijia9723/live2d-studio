@@ -1,3 +1,7 @@
+/**
+ * CodingPage 是编码工作台主页面：左侧管理项目与会话，中间渲染对话与输入框，
+ * 右侧加载 CodingWorkPanel，并负责 SSE 流式对话、提示词增强与插件运行时联动。
+ */
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   Archive,
@@ -52,6 +56,7 @@ import {
 import { Textarea } from '../../components/ui/textarea'
 import '../../assets/coding.css'
 
+// 工具名称到中文标签的映射，未收录的工具直接显示原始名称。
 const toolLabels: Record<string, string> = {
   list_files: '浏览',
   read_file: '读取',
@@ -65,6 +70,7 @@ const toolLabels: Record<string, string> = {
   project_instructions: '读取项目指令',
 }
 
+/** ToolLog 展示一条助手消息中执行过的工具调用摘要。 */
 function ToolLog({ tools }: { tools?: CodingToolRun[] }) {
   if (!tools?.length) return null
   return (
@@ -78,10 +84,12 @@ function ToolLog({ tools }: { tools?: CodingToolRun[] }) {
   )
 }
 
+/** report 将未知异常转换为编码工作台可展示的中文错误。 */
 function report(cause: unknown) {
   return cause instanceof Error ? cause.message : '编码工作台操作失败'
 }
 
+/** CodingPage 编码工作台页面。 */
 export default function CodingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const panel = searchParams.get('panel')
@@ -131,12 +139,14 @@ export default function CodingPage() {
   const working = !!pending
   const project = projects.find((item) => item.id === projectID) ?? projects[0]
   const projectSessions = sessions?.project === project?.id ? (sessions?.items ?? []) : []
+  // 归档与会话列表互斥展示，避免活跃列表被历史会话淹没。
   const shownSessions = projectSessions.filter((item) => item.archived === showArchived)
   const session = shownSessions.find((item) => item.id === sessionID) ?? shownSessions[0]
   const matchingSessions = shownSessions.filter((item) =>
     item.title.toLowerCase().includes(sessionQuery.trim().toLowerCase()),
   )
   const messages = history?.session === session?.id ? (history?.messages ?? []) : []
+  // 只有会话未归档、历史已加载、运行时就绪且编排空闲时才允许发送。
   const ready =
     !!session &&
     !session.archived &&
@@ -161,6 +171,7 @@ export default function CodingPage() {
     if (!runtimePlugins.length) return
     const controller = new AbortController()
     let running = false
+    // 插件运行时的 toast 只能轮询拉取；1.6 秒一次且页面隐藏时暂停。
     const timer = window.setInterval(async () => {
       if (document.hidden || running) return
       running = true
@@ -173,7 +184,7 @@ export default function CodingPage() {
           }
         }
       } catch {
-        // The plugin runtime can be stopped while a notification request is in flight.
+        // 插件运行时可能在通知请求进行中被停止，这里的失败可忽略。
       } finally {
         running = false
       }
@@ -208,6 +219,7 @@ export default function CodingPage() {
       .then((items) => {
         if (controller.signal.aborted) return
         setPlugins(items)
+        // 仅在官方增强插件启用时才加载增强配置，避免无谓请求。
         if (items.some((item) => item.id === 'pi.official-enhancements' && item.enabled)) {
           codingAPI
             .enhancements(controller.signal)
@@ -225,6 +237,7 @@ export default function CodingPage() {
       })
       .catch(failed)
     return () => {
+      // 页面卸载时中止所有在途请求，包括流式对话、改写与建议。
       controller.abort()
       request.current?.abort()
       rewriteRequest.current?.abort()
@@ -263,6 +276,7 @@ export default function CodingPage() {
   }, [session?.id])
 
   const selectSession = (id: string) => {
+    // 切换会话前中止上一个会话的改写/建议请求并清空临时状态，防止结果串到新会话。
     rewriteRequest.current?.abort()
     suggestionRequest.current?.abort()
     setRewriting(false)
@@ -285,6 +299,7 @@ export default function CodingPage() {
     try {
       const after = await codingAPI.rewrite(before, controller.signal)
       if (!controller.signal.aborted) {
+        // 仅当用户在此期间没有继续修改草稿时才替换，避免覆盖新输入。
         setPrompt((current) => (current === before ? after : current))
         setRewriteUndo({ before, after })
       }
@@ -382,6 +397,7 @@ export default function CodingPage() {
 
   const openReferences = () => {
     const input = promptInput.current
+    // 打开选择器前记录光标位置，插入引用后按此位置回填。
     if (input) referenceSelection.current = [input.selectionStart, input.selectionEnd]
     setReferenceOpen(true)
   }
@@ -389,12 +405,15 @@ export default function CodingPage() {
   const insertReference = (path: string) => {
     const [start, end] = referenceSelection.current
     const reference = `\`${path}\``
+    // 仅当光标前一个字符不是空白时补空格，保证引用与已有文本分开。
     const prefix = start > 0 && !/\s$/.test(prompt.slice(0, start)) ? ' ' : ''
     const inserted = `${prefix}${reference} `
     const next = prompt.slice(0, start) + inserted + prompt.slice(end)
+    // 超出输入上限时放弃插入，避免静默截断。
     if (next.length > 16000) return
     setPrompt(next)
     setReferenceOpen(false)
+    // 等 React 更新 value 后再恢复焦点与光标，否则会被重置到末尾。
     requestAnimationFrame(() => {
       promptInput.current?.focus()
       promptInput.current?.setSelectionRange(start + inserted.length, start + inserted.length)
@@ -407,7 +426,9 @@ export default function CodingPage() {
     const controller = new AbortController()
     request.current = controller
     setError('')
+    // pending 承载本次流式回复的临时状态：用户消息、增量文本与工具调用。
     setPending({ user: text, answer: '', tools: [] })
+    // 发出新消息即作废上一轮的后续建议与改写撤销点。
     suggestionRequest.current?.abort()
     setSuggestion(undefined)
     setRewriteUndo(undefined)
@@ -415,6 +436,7 @@ export default function CodingPage() {
     try {
       const final = await streamCoding(session.id, text, mode, controller.signal, (event) => {
         if (event.type === 'started') {
+          // 首条消息后后端可能自动生成标题，这里同步到会话列表。
           setSessions(
             (current) =>
               current && {
@@ -426,11 +448,13 @@ export default function CodingPage() {
           )
         }
         if (event.type === 'delta') {
+          // 增量文本逐段追加，保持打字机效果。
           setPending((current) => current && { ...current, answer: current.answer + event.text })
         }
         if (event.type === 'tool') {
           setPending((current) => current && { ...current, tools: [...current.tools, event] })
         }
+        // 后端写入了项目文件时通知右侧工作面板刷新对应文件。
         if (event.type === 'changed') setWorkspaceUpdate({ path: event.path })
       })
       setHistory({
@@ -442,6 +466,7 @@ export default function CodingPage() {
         ],
       })
       if (enhancements?.suggestions && final.status === 'complete') {
+        // 仅完整回复才生成后续建议，避免中断/失败时请求模型。
         const request = new AbortController()
         suggestionRequest.current = request
         codingAPI
@@ -454,7 +479,9 @@ export default function CodingPage() {
     } catch (cause) {
       if (!controller.signal.aborted) {
         setError(report(cause))
+        // 失败时把输入还原到输入框，方便用户重试。
         setPrompt(text)
+        // 流式中途失败可能已落库部分消息，重新拉取以保证历史一致。
         const items = await codingAPI.messages(session.id, controller.signal).catch(() => undefined)
         if (items && !controller.signal.aborted)
           setHistory({ session: session.id, messages: items })
@@ -479,6 +506,7 @@ export default function CodingPage() {
 
   const lastMessage = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    // 消息增加或流式文本/工具更新时贴底滚动；依赖具体长度而非数组引用以覆盖增量场景。
     const transcript = lastMessage.current
     if (transcript) transcript.scrollTop = transcript.scrollHeight
   }, [messages.length, pending?.answer, pending?.tools.length])
@@ -787,6 +815,7 @@ export default function CodingPage() {
           />
         )}
         {runtime && !runtime.ready && (
+          // 运行时就绪前无法建立会话，给出提示并允许手动重新检查。
           <div className="coding-runtime-notice" role="status">
             <span>{runtime.message}</span>
             <button
@@ -894,12 +923,15 @@ export default function CodingPage() {
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={(event) => {
+                // Tab 仅在输入框为空时采用后续建议，避免覆盖已有草稿。
                 if (event.key === 'Tab' && !event.shiftKey && !prompt && suggestedText) {
                   event.preventDefault()
                   setPrompt(suggestedText)
                   setSuggestion(undefined)
                 }
+                // Esc 放弃当前建议。
                 if (event.key === 'Escape' && suggestedText) setSuggestion(undefined)
+                // @ 只在行首或空白后触发文件引用，避免干扰邮箱等普通文本。
                 if (
                   event.key === '@' &&
                   !event.ctrlKey &&
@@ -910,6 +942,7 @@ export default function CodingPage() {
                   event.preventDefault()
                   openReferences()
                 }
+                // Ctrl/Cmd+Enter 发送，保留 Enter 换行的默认行为。
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                   event.preventDefault()
                   void send()
@@ -955,6 +988,7 @@ export default function CodingPage() {
                   </button>
                 )}
                 {rewriteUndo && prompt === rewriteUndo.after && (
+                  // 仅当输入框仍是增强后的文本时才提供撤销，防止覆盖用户新输入。
                   <button
                     type="button"
                     className="coding-icon"
@@ -983,6 +1017,7 @@ export default function CodingPage() {
                 </Select>
               </div>
               {working ? (
+                // 流式回复期间只能停止；stopping 时禁用按钮防止重复请求。
                 <button type="button" className="coding-button" disabled={stopping} onClick={stop}>
                   <Square size={14} />
                   {stopping ? '正在停止…' : '停止'}
@@ -1002,6 +1037,7 @@ export default function CodingPage() {
         )}
       </section>
       {project ? (
+        // 项目或 URL 面板参数变化时重建面板，确保初始标签与项目上下文一致。
         <CodingWorkPanel
           key={`${project.id}-${requestedPanel}`}
           project={project}
@@ -1012,10 +1048,12 @@ export default function CodingPage() {
           runtimePlugins={runtimePlugins}
           sessionID={session?.id}
           onQuote={(reference) => {
+            // 归档/运行中的会话视为只读，引用前先拦截并提示。
             if (!session || session.archived || working) {
               setError('打开可编辑的编码会话后再引用文件')
               return
             }
+            // 引用追加到末尾并保留一个空格分隔，同时遵守输入长度上限。
             setPrompt((value) =>
               `${value.trimEnd()}${value.trim() ? ' ' : ''}\`${reference}\` `.slice(0, 16000),
             )

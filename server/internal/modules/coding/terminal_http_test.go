@@ -1,5 +1,6 @@
 //go:build windows || linux || darwin
 
+// terminal_http_test.go 覆盖终端 HTTP 路由的工作区校验与退出码流式输出。
 package coding
 
 import (

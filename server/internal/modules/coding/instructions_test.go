@@ -1,3 +1,4 @@
+// instructions_test.go 覆盖项目指令文件的优先级与预算限制。
 package coding
 
 import (

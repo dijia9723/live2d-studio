@@ -1,3 +1,4 @@
+// manifest.go 负责插件清单的定义、路径校验与本地化展示信息生成。
 package piplugins
 
 import (
@@ -28,6 +29,8 @@ type pluginTranslation struct {
 	SafetyNotes string `json:"safetyNotes"`
 }
 
+// Manifest 是 manifest.json 的映射，描述插件身份、入口、权限与各类贡献声明。
+// Permissions 是后续所有能力裁剪与授权的唯一依据。
 type Manifest struct {
 	SchemaVersion int                          `json:"schemaVersion"`
 	ID            string                       `json:"id"`
@@ -58,11 +61,14 @@ type Manifest struct {
 	} `json:"net"`
 }
 
+// validPluginID 要求反向域名式的小写 ID，并排除 Windows 保留设备名，
+// 因为插件 ID 会参与目录与文件名拼装。
 func validPluginID(id string) bool {
 	first, _, _ := strings.Cut(id, ".")
 	return len(id) <= 150 && pluginID.MatchString(id) && !reservedWinName(first)
 }
 
+// reservedWinName 识别 CON、NUL、COM1 等 Windows 保留名，避免创建文件时行为不一致。
 func reservedWinName(name string) bool {
 	stem, _, _ := strings.Cut(name, ".")
 	switch stem = strings.ToLower(strings.TrimRight(stem, " ")); stem {
@@ -73,7 +79,8 @@ func reservedWinName(name string) bool {
 		strings.ContainsRune("0123456789¹²³", []rune(stem)[3])
 }
 
-// packagePath rejects aliases that are legal on Unix but may resolve differently on Windows.
+// packagePath 拒绝在 Unix 合法但在 Windows 上可能解析到其他位置的别名，
+// 同时拦截绝对路径、控制字符、尾部空格点和保留设备名，确保解包始终落在插件根目录内。
 func packagePath(name string) (string, error) {
 	if name == "." || !filepath.IsLocal(name) || strings.ContainsAny(name, `\:<>"|?*`) || len(name) > 512 {
 		return "", errors.New("插件包含有无效的文件路径")
@@ -87,6 +94,7 @@ func packagePath(name string) (string, error) {
 	return filepath.Localize(name)
 }
 
+// readLimited 多读一个字节用于判断是否超限，避免把超大输入整体读入内存。
 func readLimited(reader io.Reader, max int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(reader, max+1))
 	if err != nil {
@@ -98,6 +106,8 @@ func readLimited(reader io.Reader, max int64) ([]byte, error) {
 	return data, nil
 }
 
+// readManifest 读取并校验清单的结构约束：版本号、ID、名称、语义化版本与所有声明的入口文件，
+// 返回原始字节供调用方计算哈希，防止安装后清单被替换。
 func readManifest(root *os.Root) (Manifest, []byte, error) {
 	file, err := root.Open("manifest.json")
 	if err != nil {
@@ -129,6 +139,7 @@ func readManifest(root *os.Root) (Manifest, []byte, error) {
 	return manifest, data, nil
 }
 
+// validatePaths 确认清单声明的入口、视图、主题、Skill 与可信扩展都是包内真实存在的普通文件。
 func (m Manifest) validatePaths(root *os.Root) error {
 	if _, err := m.trustedExtensionPaths(); err != nil {
 		return err
@@ -199,6 +210,7 @@ func (m Manifest) validatePaths(root *os.Root) error {
 	return nil
 }
 
+// localize 按中文、英文、原始文本的顺序取第一个非空值，保证界面始终有可展示文案。
 func localize(name, description, safety string, translations map[string]pluginTranslation) (string, string, string) {
 	zh := translations["zh-CN"]
 	en := translations["en"]
@@ -206,6 +218,7 @@ func localize(name, description, safety string, translations map[string]pluginTr
 		firstText(zh.SafetyNotes, en.SafetyNotes, safety)
 }
 
+// firstText 返回第一个去空白后非空的字符串。
 func firstText(texts ...string) string {
 	for _, text := range texts {
 		if strings.TrimSpace(text) != "" {
@@ -215,6 +228,7 @@ func firstText(texts ...string) string {
 	return ""
 }
 
+// safeDisplayURL 只放行 http(s) 且不含用户信息的地址，避免把 javascript: 等协议带入前端。
 func safeDisplayURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil {
@@ -223,6 +237,8 @@ func safeDisplayURL(raw string) string {
 	return u.String()
 }
 
+// plugin 生成对外的插件摘要，只保留当前版本实际支持的能力即 Supported，
+// 便于前端在启用前判断插件能否在当前工作台运行。
 func (m Manifest) plugin() Plugin {
 	name, description, safety := localize(m.Name, m.Description, m.SafetyNotes, m.I18n)
 	var author string
@@ -283,6 +299,7 @@ func (m Manifest) plugin() Plugin {
 		Permissions: append([]string{}, m.Permissions...), Contributions: keys, Supported: slices.Compact(supported)}
 }
 
+// referenceURL 解析相对引用，失败时返回 nil 由调用方跳过该候选地址。
 func referenceURL(base *url.URL, raw string) *url.URL {
 	ref, err := url.Parse(raw)
 	if err != nil || ref == nil || ref.String() == "" {
@@ -291,4 +308,5 @@ func referenceURL(base *url.URL, raw string) *url.URL {
 	return base.ResolveReference(ref)
 }
 
+// extension 统一返回小写扩展名，便于跨平台比较文件类型。
 func extension(filename string) string { return strings.ToLower(path.Ext(filename)) }

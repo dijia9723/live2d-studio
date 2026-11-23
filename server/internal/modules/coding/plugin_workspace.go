@@ -1,3 +1,4 @@
+// plugin_workspace.go 负责响应插件对工作区、会话与只读文件的访问请求。
 package coding
 
 import (
@@ -17,8 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PluginWorkspaceCall resolves project and session IDs supplied by the Studio
-// dispatcher. Plugin arguments cannot select another project or session.
+// PluginWorkspaceCall 处理插件发来的工作区、会话与文件读取调用。
+// 项目与会话 ID 由 Studio 分发器注入，插件参数无法选择其他项目或会话。
 func (m *Module) PluginWorkspaceCall(ctx context.Context, item piplugins.Installation, selection piplugins.HostWorkspaceContext, method string, payload json.RawMessage) (any, error) {
 	if selection.ProjectID == "" {
 		switch method {
@@ -99,6 +100,7 @@ func (m *Module) PluginWorkspaceCall(ctx context.Context, item piplugins.Install
 	}
 }
 
+// pluginWorkspaceFile 在项目根目录内执行插件的只读文件操作，并要求路径落在清单声明的范围内。
 func pluginWorkspaceFile(ctx context.Context, project model.CodingProject, manifest piplugins.Manifest, method string, payload json.RawMessage) (any, error) {
 	var input struct {
 		Path          string `json:"path"`
@@ -181,6 +183,7 @@ func pluginWorkspaceFile(ctx context.Context, project model.CodingProject, manif
 	return meta, nil
 }
 
+// pluginPathVisible 用状态机匹配清单声明的通配符范围，并拒绝凭据类文件，避免插件越权读取。
 func pluginPathVisible(manifest piplugins.Manifest, relative string, directory bool) bool {
 	if manifest.FS.Read.Root != "workspace" {
 		return false

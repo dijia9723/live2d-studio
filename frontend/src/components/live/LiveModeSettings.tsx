@@ -1,8 +1,13 @@
+/**
+ * 文件职责：抖音直播配置表单。
+ * 编辑直播间、轮询/回复节奏、提示词与各消息类型的接收/自动回应开关。
+ */
 import { Save } from 'lucide-react'
 import { liveKinds } from '../../api/live'
 import type { LiveConfig, LiveKind } from '../../api/live'
 import { Textarea } from '../ui/textarea'
 
+// 数值字段的输入范围，预算与节奏都限制在合理区间内。
 const numbers = [
   { key: 'temperature', label: '温度', min: 0, max: 2, step: 0.1 },
   { key: 'poll_seconds', label: '开播轮询（秒）', min: 5, max: 300, step: 1 },
@@ -11,16 +16,20 @@ const numbers = [
   { key: 'max_tokens', label: '回复 token 上限', min: 32, max: 2048, step: 1 },
 ] as const
 
+/** 直播配置表单属性。 */
 interface Props {
   value: LiveConfig
   labels: Record<LiveKind, string>
+  /** 直播进行中，部分字段不可修改 */
   running: boolean
+  /** 有命令执行中，表单整体只读 */
   pending: boolean
   dirty: boolean
   change: (config: LiveConfig) => void
   save: () => void
 }
 
+/** 抖音直播配置表单。 */
 export default function LiveModeSettings({
   value,
   labels,
@@ -36,6 +45,7 @@ export default function LiveModeSettings({
     if (checked) selected.add(kind)
     else selected.delete(kind)
     next[group] = liveKinds.filter((item) => selected.has(item))
+    // 取消接收某类消息时，必须同时取消它的自动回应，避免配置出现不一致。
     if (group === 'events' && !checked)
       next.reply_events = value.reply_events?.filter((item) => item !== kind) ?? []
     change(next)
@@ -68,6 +78,7 @@ export default function LiveModeSettings({
               max={max}
               step={step}
               value={value[key]}
+              // 相关的节奏参数在监听中会直接影响已建立的连接，禁止运行时修改。
               disabled={pending || (key === 'poll_seconds' && running)}
               onChange={(e) => change({ ...value, [key]: Number(e.target.value) })}
             />

@@ -1,3 +1,4 @@
+// install.go 负责 .piplug 压缩包的解包、路径与大小校验以及插件安装记录落库。
 package piplugins
 
 import (
@@ -21,11 +22,14 @@ import (
 )
 
 const (
+	// 同时限制压缩包大小、解压总量与条目数，防止压缩炸弹耗尽磁盘或内存。
 	maxPackageSize  = 50 << 20
 	maxExpandedSize = 256 << 20
 	maxEntries      = 4096
 )
 
+// extract 先把所有条目路径规范化并统计解压总量，确认无误后才写盘。
+// 预先校验可以让符号链接、大小写冲突和超限包在创建任何文件前被整体拒绝。
 func extract(root *os.Root, archive []byte) error {
 	entries, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
 	if err != nil || len(entries.File) == 0 || len(entries.File) > maxEntries {
@@ -89,6 +93,7 @@ func extract(root *os.Root, archive []byte) error {
 	return nil
 }
 
+// extractFile 以独占方式写入并核对实际字节数，声明大小与实际不符即视为可疑包。
 func extractFile(root *os.Root, filename string, f *zip.File) error {
 	from, err := f.Open()
 	if err != nil {
@@ -110,6 +115,9 @@ func extractFile(root *os.Root, filename string, f *zip.File) error {
 	return nil
 }
 
+// install 在临时目录解包并校验清单，全部通过后才写入注册表。
+// expectedID/expectedVersion 用于市场安装时绑定目录记录，避免下载到的包与所选版本不一致；
+// 同时记录清单 SHA-256 与可信扩展摘要，供后续启动和授权时复核。
 func (m *Module) install(archive []byte, source, expectedID, expectedVersion string) (Plugin, error) {
 	if len(archive) == 0 || len(archive) > maxPackageSize {
 		return Plugin{}, errors.New("插件包应小于 50 MiB")
@@ -180,6 +188,7 @@ func (m *Module) install(archive []byte, source, expectedID, expectedVersion str
 	return plugin, nil
 }
 
+// importPlugin 处理本地导入：先用 MaxBytesReader 限制请求体，再校验扩展名与文件大小。
 func (m *Module) importPlugin(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPackageSize+(1<<20))
 	header, err := c.FormFile("file")

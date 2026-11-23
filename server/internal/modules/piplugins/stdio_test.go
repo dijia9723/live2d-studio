@@ -1,3 +1,4 @@
+// stdio_test.go 覆盖本地 stdio MCP 的桌面授权、参数绑定与撤销行为。
 package piplugins
 
 import (

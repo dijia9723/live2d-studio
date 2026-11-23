@@ -1,3 +1,7 @@
+/**
+ * 文件职责：快捷键管理设置。
+ * 列出可绑定动作，支持录入新热键、清除、恢复默认，并在录入时检测冲突。
+ */
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { Keyboard, Pencil, RotateCcw, X } from 'lucide-react'
 import { useHotkeys } from '../../store/hotkeys'
@@ -15,10 +19,12 @@ import {
 } from '../../utils/hotkeys'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
+/** 快捷键管理面板。 */
 export default function HotkeySettings() {
   const { bindings, bind, reset } = useHotkeys()
   const desktop = useStudio((state) => state.desktop)
   const screenSnipAvailable = supportsDesktopSnip(desktop)
+  // 网页端没有原生框选能力，隐藏对应动作，避免用户绑定无效热键。
   const actions = screenSnipAvailable
     ? hotkeyActionIDs
     : hotkeyActionIDs.filter((action) => action !== 'captureScreen')
@@ -29,6 +35,7 @@ export default function HotkeySettings() {
   const conflict =
     editing && candidate
       ? hotkeyConflict(
+          // 不可用的截图动作按未绑定处理，避免它误报冲突。
           screenSnipAvailable ? bindings : { ...bindings, captureScreen: null },
           editing,
           candidate,
@@ -36,6 +43,7 @@ export default function HotkeySettings() {
       : undefined
 
   const capture = (event: KeyboardEvent<HTMLInputElement>) => {
+    // Esc/Tab 用于关闭/移动焦点，输入法组合态也不应被记录为热键。
     if (!editing || event.key === 'Escape' || event.key === 'Tab' || event.nativeEvent.isComposing)
       return
     event.preventDefault()
@@ -112,10 +120,12 @@ export default function HotkeySettings() {
           className="modal shell-dialog"
           showCloseButton={false}
           onOpenAutoFocus={(event) => {
+            // 打开后直接聚焦录入框，用户可以立即按键录入。
             event.preventDefault()
             recorder.current?.focus()
           }}
           onCloseAutoFocus={(event) => {
+            // 关闭后把焦点还回原来的编辑按钮，保持键盘操作连续。
             event.preventDefault()
             editButton.current?.focus()
           }}

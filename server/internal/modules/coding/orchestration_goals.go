@@ -1,3 +1,4 @@
+// orchestration_goals.go 负责 Goal 的创建、审批、续跑与验收条件推进。
 package coding
 
 import (
@@ -66,6 +67,7 @@ func validOrchestrationText(text string, max int) bool {
 	return strings.TrimSpace(text) != "" && !strings.ContainsRune(text, 0) && utf8.RuneCountInString(text) <= max
 }
 
+// createGoal 先写出目标文档并记录哈希，再把提案置为待审批；新提案会作废同一会话中尚未审批的旧提案。
 func (m *Module) createGoal(c *gin.Context) {
 	var input struct {
 		Title     string   `json:"title"`
@@ -134,6 +136,7 @@ func (m *Module) createGoal(c *gin.Context) {
 	pkg.OK(c, goal)
 }
 
+// writeGoalArtifact 以排他方式创建目标文档，并复用项目路径校验，保证文件不会被静默覆盖。
 func writeGoalArtifact(root *os.Root, path, text string) error {
 	path = filepath.FromSlash(path)
 	if err := checkFilePath(root, path); err != nil {
@@ -260,6 +263,7 @@ func (m *Module) startGoal(c *gin.Context, goal *codingGoal, action, mode, note 
 	if root == nil {
 		return
 	}
+	// 执行前复核目标文件哈希，确保审批的就是用户看到的那份内容，防止目录被替换或改写。
 	if artifact, err := readFile(root, goal.Artifact); err != nil || artifact.Revision != goal.ArtifactHash {
 		_ = root.Close()
 		pkg.Fail(c, 409, "目标文件已移动或变更，请创建新提案")
@@ -293,6 +297,7 @@ type goalTurnResult struct {
 	} `json:"criteria"`
 }
 
+// parseGoalTurn 从回复最后一行解析 GOAL_RESULT 标记；只接受最后一行，避免正文中的示例被误当作进度。
 func parseGoalTurn(text string) (goalTurnResult, bool) {
 	var result goalTurnResult
 	lines := strings.TrimSpace(text)
@@ -320,6 +325,7 @@ Progress (JSON): %s
 Latest user direction: %s`, goalMarkdown(goal), progress, note)
 }
 
+// applyGoalTurn 只采纳带具体证据的通过状态；缺少证据时不允许把目标标记为完成。
 func applyGoalTurn(goal *codingGoal, result goalTurnResult) {
 	for _, item := range result.Criteria {
 		if item.Index < 1 || item.Index > len(goal.Criteria) || (item.State != "passed" && item.State != "failed" && item.State != "pending") {

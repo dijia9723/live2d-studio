@@ -1,3 +1,4 @@
+// builtin_sqlite.go 负责以只读快照方式预览项目内的 SQLite 数据库。
 package coding
 
 import (
@@ -71,12 +72,13 @@ func (m *Module) sqlitePreview(c *gin.Context) {
 	pkg.OK(c, data)
 }
 
+// previewSQLite 先复制出有界快照再用只读连接查询。SQLite 驱动需要原生文件名，
+// 复制快照可以避免驱动跟随项目路径变化或打开 -wal/-shm 边车文件。
 func previewSQLite(ctx context.Context, root *os.Root, local, chosenTable string, page int) (sqlitePreviewPage, error) {
 	data := sqlitePreviewPage{
 		Tables: []string{}, Columns: []string{}, Rows: [][]*string{}, Page: page, PageSize: sqlitePreviewRows,
 	}
-	// SQLite needs a native filename. Copy one bounded main file from the scoped
-	// handle so the driver cannot follow project path changes or open sidecars.
+	// 复制一份有界的主库文件到临时目录，让驱动无法跟随项目路径变化或打开边车文件。
 	scratch, err := os.MkdirTemp("", "studio-sqlite-preview-")
 	if err != nil {
 		return data, errors.New("无法准备 SQLite 预览")
@@ -155,8 +157,7 @@ func readSQLitePreview(ctx context.Context, db *sql.DB, chosenTable string, data
 		}
 		chosenTable = data.Tables[0]
 	}
-	// Only regular main-schema tables can be queried. Do not invoke virtual
-	// tables, shadow tables, or arbitrary views supplied by the file.
+	// 只查询 main schema 中的普通表，不触发表文件自带的虚拟表、影子表或任意视图。
 	var allowedTable string
 	if err := db.QueryRowContext(ctx, `
 		SELECT name FROM pragma_table_list
@@ -176,8 +177,8 @@ func readSQLitePreview(ctx context.Context, db *sql.DB, chosenTable string, data
 	if len(data.Columns) == 0 {
 		return nil
 	}
-	// Bind data and quote identifiers validated against SQLite's main schema.
-	// Render all cells as bounded strings so 64-bit integers remain exact.
+	// 数据用占位符绑定，标识符则按已校验的 main schema 名称加引号；
+	// 所有单元格渲染成有界字符串，保证 64 位整数不丢失精度。
 	limitedColumns := make([]string, 0, len(data.Columns))
 	for _, column := range data.Columns {
 		id := sqliteIdentifier(column)

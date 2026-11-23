@@ -1,3 +1,4 @@
+// trusted_extension.go 负责可信 Pi 扩展的摘要校验、桌面授权与每轮运行的快照隔离。
 package piplugins
 
 import (
@@ -21,6 +22,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 可信扩展会以代码形式交给外部代理执行，因此入口数、单轮总大小与单次运行数量的上限
+// 都必须写死在宿主侧，不能由插件自行放宽。
 const (
 	trustedExtensionPermission = "agent.extension"
 	trustedExtensionCapability = "agentExtensions"
@@ -29,12 +32,14 @@ const (
 	maxTrustedBytesPerRun      = 512 << 20
 )
 
+// trustedExtensionGrant 绑定插件版本、安装目录与内容摘要，任一变化即视为需要重新授权。
 type trustedExtensionGrant struct {
 	Version   string `json:"version"`
 	Directory string `json:"directory"`
 	Digest    string `json:"digest"`
 }
 
+// trustedExtensionStatus 返回给前端用于展示入口、内容是否完整以及是否已获授权。
 type trustedExtensionStatus struct {
 	Version  string   `json:"version"`
 	Entries  []string `json:"entries"`
@@ -42,6 +47,8 @@ type trustedExtensionStatus struct {
 	Approved bool     `json:"approved"`
 }
 
+// trustedExtensionPaths 校验可信扩展声明：最多 8 个入口、必须声明 agent.extension 权限、
+// 路径合法且扩展名为 TypeScript 或 JavaScript。
 func (m Manifest) trustedExtensionPaths() ([]string, error) {
 	var contributions struct {
 		Entries []string `json:"agentExtensions"`
@@ -78,8 +85,8 @@ func (m Manifest) trustedExtensionPaths() ([]string, error) {
 	return entries, nil
 }
 
-// hashTrustedPackage hashes the same file data it can copy into a per-run snapshot.
-// A snapshot is activated only when it matches the original local installation.
+// hashTrustedPackage 在读取同一次数据时完成哈希与复制：target 非空时把文件写入本轮快照，
+// 目标端只有摘要与原始安装完全一致才会被后续启用，从而避免检查后到运行前被替换。
 func hashTrustedPackage(ctx context.Context, source, target *os.Root) (string, int64, error) {
 	digest := sha256.New()
 	var bytesRead int64
@@ -149,11 +156,14 @@ func hashTrustedPackage(ctx context.Context, source, target *os.Root) (string, i
 	return hex.EncodeToString(digest.Sum(nil)), bytesRead, nil
 }
 
+// RegisterTrustedExtensions 挂载可信扩展的状态查询与授权接口。
 func (m *Module) RegisterTrustedExtensions(g *gin.RouterGroup) {
 	g.GET("/:id/trusted-extension", m.trustedExtensionDetails)
 	g.PUT("/:id/trusted-extension", m.updateTrustedExtensionGrant)
 }
 
+// trustedDesktopRequest 要求请求来源必须是 Wails 桌面外壳的 Origin，
+// 使普通浏览器页面无法为可执行扩展授权。
 func (m *Module) trustedDesktopRequest(c *gin.Context) bool {
 	if m.desktopAvailable == nil || !m.desktopAvailable() {
 		return false
@@ -167,12 +177,14 @@ func (m *Module) trustedDesktopRequest(c *gin.Context) bool {
 		origin.Scheme == "wails" && origin.Host == "localhost"
 }
 
+// trustedGrantMatches 判定授权是否仍然有效：来源、版本、目录与摘要必须同时一致。
 func trustedGrantMatches(record storedPlugin) bool {
 	grant := record.ExtensionGrant
 	return record.Source == "local" && grant != nil && record.ExtensionDigest != "" &&
 		grant.Version == record.Version && grant.Directory == record.Directory && grant.Digest == record.ExtensionDigest
 }
 
+// trustedExtensionStatus 重新计算包摘要，判断内容是否仍完整，并给出是否具备有效授权。
 func (m *Module) trustedExtensionStatus(ctx context.Context, record storedPlugin) (trustedExtensionStatus, error) {
 	state := trustedExtensionStatus{Version: record.Version, Entries: []string{}}
 	installed, err := m.openInstalled(record)
@@ -201,6 +213,7 @@ func (m *Module) trustedExtensionStatus(ctx context.Context, record storedPlugin
 	return state, nil
 }
 
+// trustedExtensionDetails 返回指定插件的可信扩展状态。
 func (m *Module) trustedExtensionDetails(c *gin.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -222,6 +235,8 @@ func (m *Module) trustedExtensionDetails(c *gin.Context) {
 	pkg.OK(c, state)
 }
 
+// updateTrustedExtensionGrant 授予或撤销可信扩展：仅桌面来源可授权，
+// 且授权前要求插件内容摘要与安装记录一致。
 func (m *Module) updateTrustedExtensionGrant(c *gin.Context) {
 	var input struct {
 		Approved *bool  `json:"approved"`
@@ -269,8 +284,8 @@ func (m *Module) updateTrustedExtensionGrant(c *gin.Context) {
 	pkg.OK(c, state)
 }
 
-// StageTrustedExtensions returns verified local entry paths owned by this run.
-// Call cleanup only after the worker exits; package updates cannot change a running snapshot.
+// StageTrustedExtensions 把已授权且内容一致的本地扩展复制到本轮临时目录，返回可加载的入口路径。
+// 只有 worker 退出后才能调用 cleanup；快照与安装目录解耦，因此运行期间升级插件不会影响当前一轮。
 func (m *Module) StageTrustedExtensions(ctx context.Context) ([]string, func(), error) {
 	noop := func() {}
 	if m == nil || m.desktopAvailable == nil || !m.desktopAvailable() {
@@ -326,6 +341,7 @@ func (m *Module) StageTrustedExtensions(ctx context.Context) ([]string, func(), 
 	return paths, cleanup, nil
 }
 
+// stageTrustedPackage 复制单个插件到快照目录，并核对摘要与大小都与安装时完全一致。
 func (m *Module) stageTrustedPackage(ctx context.Context, record storedPlugin, target string) ([]string, error) {
 	installed, err := m.openInstalled(record)
 	if err != nil {

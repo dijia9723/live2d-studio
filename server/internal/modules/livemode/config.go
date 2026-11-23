@@ -1,3 +1,5 @@
+// config.go 负责直播模块配置的默认值、校验、持久化读取，以及直播间地址解析。
+
 package livemode
 
 import (
@@ -12,21 +14,29 @@ import (
 	"server/internal/model"
 )
 
-// ID 1 is used by the general Studio settings.
+// configRecordID 是直播配置在设置表里的固定记录 ID，1 号记录留给 Studio 的通用设置。
 const configRecordID = 2
 
+// Kind 是直播互动事件的类型。
 type Kind string
 
+// 支持的互动事件类型。
 const (
-	Chat   Kind = "chat"
-	Gift   Kind = "gift"
-	Like   Kind = "like"
-	Enter  Kind = "enter"
+	// Chat 是观众弹幕。
+	Chat Kind = "chat"
+	// Gift 是礼物。
+	Gift Kind = "gift"
+	// Like 是点赞。
+	Like Kind = "like"
+	// Enter 是观众进场。
+	Enter Kind = "enter"
+	// Follow 是关注主播。
 	Follow Kind = "follow"
 )
 
 var kinds = []Kind{Chat, Gift, Like, Enter, Follow}
 
+// Config 是直播连接与自动回应的配置。
 type Config struct {
 	Room         string  `json:"room"`
 	CharacterID  string  `json:"character_id"`
@@ -43,6 +53,7 @@ type Config struct {
 	Actions      bool    `json:"actions"`
 }
 
+// defaultConfig 返回未保存过配置时使用的默认值：手动模式，仅对弹幕、礼物和关注自动回应。
 func defaultConfig() Config {
 	return Config{
 		Prompt:      "像跟直播间的朋友聊天。有人问就先答，遇到有意思的弹幕可以顺势接个梗。收到礼物或关注时顺口谢一句。",
@@ -52,6 +63,9 @@ func defaultConfig() Config {
 	}
 }
 
+// roomID 把用户输入规范化为纯数字直播间 ID。
+// 只接受数字或 live.douyin.com 的 https 链接，拒绝其他主机、协议和带用户信息的 URL，
+// 避免把任意地址传给监听库造成访问非预期站点。
 func roomID(value string) (string, error) {
 	id := strings.TrimSpace(value)
 	if strings.Contains(id, "://") {
@@ -67,6 +81,8 @@ func roomID(value string) (string, error) {
 	return id, nil
 }
 
+// normalize 清洗并校验配置，同时把事件类型收敛为固定顺序，
+// 保证保存后的配置稳定且不含未知值。
 func (c *Config) normalize() error {
 	c.Room = strings.TrimSpace(c.Room)
 	if c.Room != "" {
@@ -104,6 +120,8 @@ func (c *Config) normalize() error {
 	return nil
 }
 
+// loadConfig 从设置表读取直播配置；记录不存在时回退到默认配置，
+// 解析失败则直接返回错误，避免用错误配置覆盖用户已保存的值。
 func loadConfig(db *gorm.DB) (Config, error) {
 	config := defaultConfig()
 	var record model.Setting

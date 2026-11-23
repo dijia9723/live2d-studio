@@ -1,3 +1,4 @@
+// instructions.go 负责读取项目与全局的编码指令文件（AGENTS.md、CLAUDE.md 等）。
 package coding
 
 import (
@@ -16,6 +17,7 @@ type projectInstruction struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
+// projectInstructions 从项目根到目标目录逐级收集指令文件，按优先级每层只取一个，并受总预算限制。
 func projectInstructions(root *os.Root, directory string) []projectInstruction {
 	remaining := projectInstructionBudget
 	if strings.Count(directory, string(filepath.Separator)) > 40 {
@@ -61,6 +63,7 @@ func globalInstruction(stateDir string) *projectInstruction {
 	return &source
 }
 
+// readProjectInstruction 读取单个指令文件；截断时回退到合法 UTF-8 边界，避免破坏多字节字符。
 func readProjectInstruction(root *os.Root, local string, limit int) (projectInstruction, bool) {
 	if checkFilePath(root, local) != nil {
 		return projectInstruction{}, false

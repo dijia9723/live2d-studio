@@ -1,3 +1,7 @@
+/**
+ * CodingPluginsPage 是编码工作台的插件中心：展示已安装插件与插件市场，
+ * 支持安装/启用/停用/卸载、插件设置以及桌面端的授权操作。
+ */
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
@@ -32,11 +36,16 @@ import CodingStdioSettings from '../../components/coding/CodingStdioSettings'
 import CodingTrustedExtension from '../../components/coding/CodingTrustedExtension'
 import '../../assets/piplugins.css'
 
+/** Plugin 已安装插件或市场条目的联合类型。 */
 type Plugin = PiPlugin | PiMarketplacePlugin
+/** View 插件中心的两个视图。 */
 type View = 'installed' | 'marketplace'
+/** PluginDialog 当前打开的确认对话框及其目标插件。 */
 type PluginDialog = { action: 'details' | 'enable' | 'remove' | 'install'; plugin: Plugin }
 
+/** sourceNames 把插件来源标识转换为展示文案。 */
 const sourceNames = { bundled: '内置', local: '本地导入', marketplace: '插件市场' }
+/** capabilities 插件能力标识到中文名称的映射；未收录的标识原样显示。 */
 const capabilities: Record<string, string> = {
   commands: '工作台命令',
   panels: '独立面板',
@@ -64,7 +73,9 @@ const capabilities: Record<string, string> = {
   settings: '插件设置',
 }
 
+/** marketPageSize 市场每页条目数，避免一次渲染过多卡片。 */
 const marketPageSize = 24
+/** hostCapabilities 当前宿主实际支持的能力集合，用于标记不兼容的插件。 */
 const hostCapabilities = new Set([
   'commands',
   'views',
@@ -74,24 +85,29 @@ const hostCapabilities = new Set([
   'services',
   'bus',
 ])
+/** builtins 内置插件的图标与跳转入口，不依赖插件运行时即可引导用户。 */
 const builtins = {
   'pi.file-manager': { icon: FolderTree, route: '/coding?panel=files', link: '打开文件面板' },
   'pi.browser': { icon: Globe2, route: '/coding?panel=browser', link: '打开浏览器面板' },
   'pi.official-enhancements': { icon: Sparkles, route: '/coding/enhancements', link: '打开设置' },
 } as const
 
+/** installed 判断条目是否已安装（已安装插件带 source 字段，市场条目没有）。 */
 function installed(plugin: Plugin): plugin is PiPlugin {
   return 'source' in plugin
 }
 
+/** capabilityName 返回能力的展示名称。 */
 function capabilityName(value: string) {
   return Object.hasOwn(capabilities, value) ? capabilities[value] : value
 }
 
+/** description 把未知异常转换为可展示的中文错误。 */
 function description(error: unknown) {
   return error instanceof Error ? error.message : '插件操作失败'
 }
 
+/** externalLink 仅允许 https 链接，拒绝 javascript: 等危险协议。 */
 function externalLink(value: string | undefined) {
   if (!value) return undefined
   try {
@@ -102,6 +118,7 @@ function externalLink(value: string | undefined) {
   }
 }
 
+/** PluginCard 插件卡片，按已安装/市场两种来源展示状态、来源与主操作。 */
 function PluginCard({
   plugin,
   installedPlugin,
@@ -203,6 +220,7 @@ function PluginCard({
   )
 }
 
+/** CodingPluginsPage 插件中心页面。 */
 export default function CodingPluginsPage() {
   const [view, setView] = useState<View>('installed')
   const [query, setQuery] = useState('')
@@ -252,6 +270,7 @@ export default function CodingPluginsPage() {
 
   useEffect(() => {
     if (view !== 'marketplace' || haveMarketplace || haveMarketError) return
+    // 市场只在首次切换到该视图时加载；已有数据或错误时不再重复请求。
     const controller = new AbortController()
     piPluginsAPI
       .marketplace(controller.signal)
@@ -357,6 +376,7 @@ export default function CodingPluginsPage() {
   const search = query.trim().toLowerCase()
   const ordered = [...(activeList ?? [])]
     .sort(
+      // 内置插件优先，其余按名称排序，保证列表顺序稳定。
       (a, b) =>
         Number(installed(b) && b.source === 'bundled') -
           Number(installed(a) && a.source === 'bundled') ||
@@ -376,7 +396,8 @@ export default function CodingPluginsPage() {
   const visiblePlugins =
     view === 'installed'
       ? ordered
-      : ordered.slice((activePage - 1) * marketPageSize, activePage * marketPageSize)
+      : // 已安装列表通常较短，只有市场视图做分页。
+        ordered.slice((activePage - 1) * marketPageSize, activePage * marketPageSize)
   const selected = dialog?.plugin
   const selectedInstalled = selected && installed(selected) ? selected : undefined
   const selectedVersions = selected && 'versions' in selected ? selected.versions : []
@@ -680,6 +701,7 @@ export default function CodingPluginsPage() {
                 {dialog.action === 'enable' && hasRuntime && (
                   <div className="pi-plugin-runtime-settings">
                     <label>
+                      {/* 运行 JavaScript 属于高风险能力，仅桌面端可授予。 */}
                       <input
                         type="checkbox"
                         checked={execute}
@@ -710,6 +732,7 @@ export default function CodingPluginsPage() {
                   'readme_markdown' in selected &&
                   selected.readme_markdown && (
                     <div className="pi-plugin-readme">
+                      {/* readme 来自第三方包，禁用原始 HTML、图片和链接以降低注入风险。 */}
                       <ReactMarkdown skipHtml disallowedElements={['img', 'a']} unwrapDisallowed>
                         {selected.readme_markdown}
                       </ReactMarkdown>
@@ -718,6 +741,7 @@ export default function CodingPluginsPage() {
                 {dialog.action === 'details' && (selected.homepage || selected.repository) && (
                   <div className="pi-plugin-links">
                     {(['homepage', 'repository'] as const).map((key) => {
+                      // 仅渲染通过 https 校验的链接，非法地址直接隐藏。
                       const href = externalLink(selected[key])
                       return (
                         href && (

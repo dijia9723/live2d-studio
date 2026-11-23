@@ -1,3 +1,7 @@
+/**
+ * 文件职责：摄像头骨骼预览画布。
+ * 用 requestAnimationFrame 读取最新关键点并绘制骨架与面部点，仅在数据变化时重绘。
+ */
 import { useEffect, useRef, type RefObject } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import {
@@ -6,7 +10,7 @@ import {
   type CameraLandmarks,
 } from '../../utils/cameraTracking'
 
-// MediaPipe Pose indices for the torso, arms, hands, legs, and feet.
+// MediaPipe Pose 的躯干、手臂、手部、腿部与脚部关键点索引。
 const bones = [
   [11, 12],
   [11, 23],
@@ -36,6 +40,7 @@ const bones = [
   [30, 32],
 ]
 
+// 线宽与半径按画布尺寸缩放，保证不同窗口大小下观感一致。
 function drawSkeleton(
   context: CanvasRenderingContext2D,
   face: NormalizedLandmark[],
@@ -82,6 +87,7 @@ function drawSkeleton(
   context.fill()
 }
 
+/** 骨骼预览画布；接收共享的关键点引用以避免每帧触发 React 渲染。 */
 export default function CameraSkeleton({
   landmarks,
 }: {
@@ -99,6 +105,7 @@ export default function CameraSkeleton({
     let lastPose: NormalizedLandmark[] | undefined
     const render = (now: number) => {
       const preview = landmarks.current
+      // 超过有效期的关键点不再绘制，避免摄像头暂停后残留旧姿势。
       const face =
         preview?.face && now - preview.face.time < cameraSampleMaxAge
           ? preview.face.points
@@ -117,6 +124,7 @@ export default function CameraSkeleton({
         target.height = preview.height
       }
       if (resized || face !== lastFace || pose !== lastPose) {
+        // 关键点引用未变说明视频没有新帧，跳过重绘以节省 CPU。
         drawSkeleton(context, face ?? [], pose ?? [])
         lastFace = face
         lastPose = pose

@@ -1,3 +1,7 @@
+/**
+ * 文件职责：抖音直播陪伴主面板。
+ * 聚合实时消息流、AI 回应、历史记录与配置三个视图，并展示连接阶段和真人角色差异提示。
+ */
 import { useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
@@ -24,6 +28,7 @@ import LiveModeHistory from './LiveModeHistory'
 import type { useLiveMode } from '../../hooks/useLiveMode'
 import { useStudio } from '../../store/studio'
 
+/** 互动类型的中文名。 */
 const labels: Record<LiveKind, string> = {
   chat: '弹幕',
   gift: '礼物',
@@ -32,6 +37,7 @@ const labels: Record<LiveKind, string> = {
   follow: '关注',
 }
 const icons = { chat: MessageSquare, gift: Gift, like: Heart, enter: Users, follow: UserPlus }
+/** 连接阶段文案，与后端 state.phase 对应。 */
 const phases: Record<LiveState['phase'], string> = {
   stopped: '已停止',
   checking: '查询开播状态',
@@ -52,6 +58,7 @@ const time = new Intl.DateTimeFormat('zh-CN', {
   second: '2-digit',
 })
 
+/** 把一条互动事件转成可读描述。 */
 function eventDescription(event: LiveEvent) {
   switch (event.kind) {
     case 'chat':
@@ -67,6 +74,7 @@ function eventDescription(event: LiveEvent) {
   }
 }
 
+/** 直播面板属性。 */
 interface Props {
   live: ReturnType<typeof useLiveMode>
   characterID: string
@@ -74,9 +82,11 @@ interface Props {
   speaking: boolean
   stageFeedback: string
   stopSpeaking: () => void
+  /** 把当前角色切回直播配置中的角色 */
   selectHost: (id: string) => void
 }
 
+/** 抖音直播主面板。 */
 export default function LiveModePanel({
   live,
   characterID,
@@ -92,12 +102,15 @@ export default function LiveModePanel({
   const [view, setView] = useState<(typeof views)[number]['id']>('messages')
   const [filter, setFilter] = useState<LiveKind | 'all'>('all')
   const replies = state?.replies ?? []
+  // 后台直播角色与当前舞台角色不一致时，回复无法驱动舞台，需要引导用户切回。
   const needsHost = state?.running && characterID !== state.config.character_id
   const host = needsHost ? roles.find(({ id }) => id === state.config.character_id) : undefined
   const visible = (state?.events ?? [])
     .filter((event) => filter === 'all' || event.kind === filter)
+    // 后端按时间正序返回，这里反转为最新在前，便于实时阅读。
     .reverse()
 
+  // 标签栏使用 roving tabindex：方向键/Home/End 在标签间移动并同步焦点。
   function switchView(event: KeyboardEvent<HTMLDivElement>) {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()

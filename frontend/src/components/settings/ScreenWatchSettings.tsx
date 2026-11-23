@@ -1,3 +1,8 @@
+/**
+ * 文件职责：屏幕观察的模型配置。
+ * 分别为「快速理解」（文字 OCR）与「视觉理解」（裁图）选择服务与模型，
+ * 复用语言模型的地址与密钥，模型名留空即关闭该能力。
+ */
 import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import type { LLMProvider, ScreenWatchSettings as ModelSettings } from '../../types/api'
@@ -15,11 +20,13 @@ const providers: { id: LLMProvider; label: string }[] = [
   { id: 'ollama', label: 'Ollama' },
   { id: 'lmstudio', label: 'LM Studio' },
 ]
+// 两种用途可分别配置：文字摘要便宜，视觉理解按需触发。
 const usages = [
   { key: 'fast', title: '快速理解', hint: '可选。屏幕文字较多时，提取与问题有关的内容。' },
   { key: 'vision', title: '视觉理解', hint: '可选。需要理解图标、颜色或图表时，用一张裁图回答。' },
 ] as const
 
+/** 观看模型设置卡片。 */
 export default function ScreenWatchSettings() {
   const [form, setForm] = useState<ModelSettings>({})
   const [ready, setReady] = useState(false)
@@ -50,6 +57,7 @@ export default function ScreenWatchSettings() {
     const models: ModelSettings = {}
     for (const { key } of usages) {
       const value = form[key]
+      // 只提交填写了模型名的项，留空的用途视为关闭。
       if (value?.model.trim()) models[key] = { ...value, model: value.model.trim() }
     }
     try {

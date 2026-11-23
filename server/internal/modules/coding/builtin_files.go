@@ -1,3 +1,4 @@
+// builtin_files.go 负责内置文件管理器的文件操作与媒体预览接口。
 package coding
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// requireBuiltin 检查指定内置插件是否启用，用于按插件开关收敛文件管理能力。
 func (m *Module) requireBuiltin(c *gin.Context, id string) bool {
 	if m.PluginEnabled == nil || !m.PluginEnabled(id) {
 		pkg.Fail(c, 409, "请在插件中心启用此插件")
@@ -132,6 +134,7 @@ func (m *Module) mediaPreview(c *gin.Context) {
 		return
 	}
 	defer file.Close()
+	// 媒体预览可能被浏览器直接渲染，加上沙箱 CSP 禁止脚本和外部资源，避免预览变成页面执行面。
 	c.Header("Content-Type", contentType)
 	c.Header("Content-Security-Policy", "sandbox; default-src 'none'")
 	http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), file)

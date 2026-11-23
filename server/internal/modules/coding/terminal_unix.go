@@ -1,5 +1,6 @@
 //go:build linux || darwin
 
+// terminal_unix.go 基于伪终端实现 Linux 与 macOS 的交互终端。
 package coding
 
 import (
@@ -36,8 +37,7 @@ func openPseudoTerminal(directory string, size terminalSize) (pseudoTerminal, er
 	if err != nil {
 		return nil, err
 	}
-	// Go's poller needs a non-blocking master so Close can wake a pending read
-	// even when a descendant has kept the slave open.
+	// Go 的 poller 需要非阻塞的 master，这样即使子进程仍持有 slave，Close 也能唤醒阻塞中的读取。
 	fd, err := unix.Dup(int(device.Fd()))
 	_ = device.Close()
 	if err == nil {

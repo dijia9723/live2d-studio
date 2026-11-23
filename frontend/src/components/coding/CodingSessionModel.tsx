@@ -1,3 +1,7 @@
+/**
+ * CodingSessionModel 提供会话级模型配置：展示当前生效模型，
+ * 通过对话框切换模型服务/名称，并复用模型字段供子 Agent 等场景编辑。
+ */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { http } from '../../api/client'
@@ -10,17 +14,20 @@ import {
   SelectValue,
 } from '../ui/select'
 
+/** ModelSelection 会话或子 Agent 的模型选择；空字符串表示跟随上层/全局默认。 */
 export interface ModelSelection {
   model_provider: string
   model_name: string
 }
 
+/** ModelOption 后端模型目录中的一个可用选项。 */
 interface ModelOption {
   provider: string
   model: string
   available: boolean
 }
 
+/** SessionModel 会话模型接口返回：包含显式选择（可为空）与最终生效项。 */
 interface SessionModel extends Partial<ModelSelection> {
   effective: ModelOption
 }
@@ -35,15 +42,20 @@ const providers: Record<string, string> = {
 const errorMessage = (cause: unknown) =>
   cause instanceof Error ? cause.message : '读取模型配置失败'
 
+/** CodingModelFields 可复用的模型服务与名称表单字段，空选择由 defaultLabel 表示继承。 */
 export function CodingModelFields({
   value,
   onChange,
   disabled,
   defaultLabel = '跟随全局模型',
 }: {
+  /** 当前模型选择。 */
   value: ModelSelection
+  /** 选择变化回调。 */
   onChange: (value: ModelSelection) => void
+  /** 是否禁用编辑。 */
   disabled?: boolean
+  /** 未显式指定模型时下拉框展示的文案。 */
   defaultLabel?: string
 }) {
   const [catalog, setCatalog] = useState<ModelOption[]>()
@@ -114,11 +126,14 @@ export function CodingModelFields({
   )
 }
 
+/** CodingSessionModel 会话模型切换按钮与保存对话框。 */
 export default function CodingSessionModel({
   session,
   disabled,
 }: {
+  /** 会话 ID。 */
   session: string
+  /** 是否禁用切换。 */
   disabled?: boolean
 }) {
   const [current, setCurrent] = useState<SessionModel>()
@@ -162,6 +177,7 @@ export default function CodingSessionModel({
         disabled={disabled}
         title={current?.effective.model || '会话模型'}
         onClick={() => {
+          // 每次打开都从服务端状态回填草稿，避免上次未保存的编辑残留。
           setDraft({
             model_provider: current?.model_provider || '',
             model_name: current?.model_name || '',
@@ -174,6 +190,7 @@ export default function CodingSessionModel({
       <Dialog
         open={open}
         onOpenChange={(next) => {
+          // 保存请求进行中不允许关闭，避免用户误以为设置已生效。
           if (!busy) setOpen(next)
         }}
       >

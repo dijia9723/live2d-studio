@@ -1,3 +1,5 @@
+// handler.go 负责注册直播模块的 HTTP 路由与请求参数校验。
+
 package livemode
 
 import (
@@ -10,12 +12,15 @@ import (
 	"server/internal/pkg"
 )
 
+// Module 把直播服务挂载为一组 HTTP 接口。
 type Module struct{ Service *Service }
 
+// Register 注册直播状态、控制、回复与直播记录相关路由。
 func (m *Module) Register(r *gin.RouterGroup) {
 	live := r.Group("/live")
 	live.GET("/state", func(c *gin.Context) { pkg.OK(c, m.Service.Snapshot()) })
 	live.GET("/sessions", func(c *gin.Context) {
+		// 页码需要设上限，避免超大偏移量拖慢数据库查询。
 		page, err := strconv.Atoi(c.DefaultQuery("page", "0"))
 		if err != nil || page < 0 || page > 1000000 {
 			pkg.Fail(c, 400, "直播记录页码无效")

@@ -1,3 +1,7 @@
+/**
+ * 文件职责：本地 TTS 的音色与语速字段。
+ * 音色编号范围由模型配置决定，语速在 0.5×–2× 之间可调。
+ */
 import type { LocalTTSOptions, TTSModel } from '../../types/api'
 import {
   Select,
@@ -7,8 +11,10 @@ import {
   SelectValue,
 } from '../ui/select'
 
+/** 本地 TTS 模型档位的中文名。 */
 export const ttsTierLabels = { low: '低配', medium: '中配', high: '高配' }
 
+/** 音色/语速字段属性。 */
 interface Props {
   model: TTSModel
   options: LocalTTSOptions
@@ -16,6 +22,7 @@ interface Props {
   onChange: (options: LocalTTSOptions) => void
 }
 
+/** 本地 TTS 音色与语速选择。 */
 export default function TTSSpeakerFields({ model, options, disabled, onChange }: Props) {
   return (
     <div className="form-row">
@@ -30,6 +37,7 @@ export default function TTSSpeakerFields({ model, options, disabled, onChange }:
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            {/* 音色编号是闭区间，长度需 +1；无名称时回退为编号。 */}
             {Array.from({ length: model.speaker_max - model.speaker_min + 1 }, (_, index) => {
               const id = model.speaker_min + index
               return (

@@ -1,70 +1,36 @@
 # Live2D Studio
 
-基于 **Wails 3 + Go / Gin + Eino + React / TypeScript** 的桌面 AI 伙伴工作室，参考 Open-LLM-VTuber 重写。应用、构建和运行均不依赖 Python。
+基于 **Wails 3 + Go / Gin + Eino + React / TypeScript** 的桌面 AI 伙伴工作室，参考 Open-LLM-VTuber 重写。
 
-本项目以源码可用、限制商业使用的方式发布。项目自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，允许按条款进行非商业使用、修改和分发。商业使用须另行获得权利人授权。第三方组件和素材分别适用其原有许可，见 [第三方说明](THIRD_PARTY.md)。
+[功能](#功能) · [快速开始](#快速开始) · [使用指南](#使用指南) · [项目结构](#项目结构) · [配置与数据](#配置与数据) · [常见问题](#常见问题)
 
 ![工作台](docs/screenshots/studio.png)
 
-当前版本已实现可运行的核心流程：Live2D 展示、角色人设、带上下文的流式对话、agentcore ADK 工具调用、语音输入与朗读、图片输入、会话持久化，以及透明桌宠窗口。原项目的完整功能覆盖情况见 [实现说明](docs/实现说明.md)。
+当前版本已实现可运行的核心流程：Live2D 展示、角色人设、带上下文的流式对话、agentcore ADK 工具调用、语音输入与朗读、图片输入、会话持久化，以及透明桌宠窗口。原项目的完整功能覆盖情况见 [实现说明](docs/实现说明.md)，产品需求见 [项目需求](docs/项目需求.md)。
 
-## 在 Windows 上开始
+## 目录
 
-从 [GitHub Releases](https://github.com/dijia9723/live2d-studio/releases) 下载 Windows x64 ZIP，解压整个目录后打开 `Live2DStudio.exe`。运行需要 Windows WebView2 Runtime。发行包随附 Mao 和 Shizuku，首次启动时自动导入。
-
-### 从源码构建
-
-需要 Go 1.26.4+、Node.js 22.19+、npm，以及 Windows WebView2 Runtime。本项目固定 Wails v3.1.0，普通构建不需要额外安装 Wails CLI。
-
-在项目根目录运行：
-
-```powershell
-# 安装前端和 Pi 依赖、构建界面、生成 Windows 桌面程序
-.\scripts\build.ps1
-
-# 打开桌面程序
-.\bin\Live2DStudio.exe
-```
-
-已经安装依赖时可使用 `.\scripts\build.ps1 -SkipInstall`。程序内嵌前端和 Cubism Core。编码模式运行 Pi 时需要本机有 Node.js。源码构建时，可将样本的 `runtime/` 分别放入 `server/data/assets/mao_pro/` 和 `server/data/assets/shizuku/`，构建脚本会复制到输出目录。样本下载和授权见 [第三方说明](THIRD_PARTY.md)。
-
-使用 AI 对话时，可在 **设置 → 语言模型** 自行配置服务。云端服务需要填入自己的密钥，本地 Ollama 可从已安装的模型中选择。
-
-## 开发与测试
-
-```powershell
-# 一条命令启动桌面开发：Vite 热更新 + Wails 桌面窗口（需要 wails3 CLI）
-wails3 dev
-
-# 同一桌面开发流程的 PowerShell 入口
-.\scripts\dev.ps1
-
-# 只用浏览器调试前端：先启动无窗口后端，再启动 Vite（5173）
-go run -tags headless . -headless
-cd frontend; npm run dev
-
-# 构建独立的无窗口服务
-.\scripts\build.ps1 -Target server
-.\bin\studio-server.exe -headless
-# 浏览器打开 http://127.0.0.1:12393
-
-# 后端集成测试与静态检查
-cd server
-go test -tags headless ./...
-go vet -tags headless ./...
-
-# 前端类型检查与生产构建
-cd ../frontend
-npm run check
-npm test
-npm run build
-```
-
-`wails3 dev` 的桌面窗口直接使用 Vite 开发资源，前端修改可热更新，不依赖 `dist`。也可以在浏览器中打开 Vite 地址（默认 `http://localhost:9245`）。开发窗口的 API、角色模型及场景素材仍由本次启动的 Go 服务提供。
-
-发布版将 `server/internal/webui/dist` 内嵌进可执行文件；修改前端后，需重新运行 `./scripts/build.ps1` 更新发布版。
-
-`server/agentcore` 作为本地 Go 模块接入，根模块与 `server` 均通过 `replace` 引用该目录，构建时需保留它。
+- [功能](#功能)
+  - [编码模式](#编码模式)
+  - [编码插件](#编码插件)
+- [快速开始](#快速开始)
+  - [下载发行版](#下载发行版)
+  - [从源码构建](#从源码构建)
+  - [开发与测试](#开发与测试)
+- [使用指南](#使用指南)
+  - [抖音直播模式](#抖音直播模式)
+  - [本地 Ollama 模型](#本地-ollama-模型)
+  - [角色记忆与工具](#角色记忆与工具)
+  - [舞台管理](#舞台管理)
+  - [画布标题与计数](#画布标题与计数)
+  - [一起看与截图](#一起看与截图)
+  - [本地 TTS](#本地-tts)
+- [项目结构](#项目结构)
+- [配置与数据](#配置与数据)
+- [Docker（浏览器版，可选）](#docker浏览器版可选)
+- [接口与测试](#接口与测试)
+- [常见问题](#常见问题)
+- [第三方资源](#第三方资源)
 
 ## 功能
 
@@ -124,25 +90,69 @@ npm --prefix server/pi-runtime ci --ignore-scripts
 
 本地 `.piplug` 可声明 `agentExtensions` 贡献点，经桌面客户端单独授权后，在交互式编码会话中加载可信 Pi 扩展。更新或重装需要重新授权。依赖 Electron 专属接口、通用插件 CDP 或其他尚未实现的宿主接口的市场插件仍需适配。
 
-### 本地 TTS
+## 快速开始
 
-点击角色卡上的「角色语音」，将朗读方式设为「本地 TTS」即可选择低配 AISHELL-3、中配 Fanchen-C 或高配 Kokoro。调整音色和语速后可直接试听、下载 WAV，再保存为该角色的朗读配置。角色语音也支持系统音色和语音 API。麦克风识别方式和 API 连接在「设置 → 语音交互」中配置。
+### 下载发行版
 
-需要 Python 3.10–3.14、PowerShell 7 和 `tar`。在项目根目录运行以下命令安装推理环境和模型，然后在工作台点击「刷新模型」。
+从 [GitHub Releases](https://github.com/dijia9723/live2d-studio/releases) 下载 Windows x64 ZIP，解压整个目录后打开 `Live2DStudio.exe`。运行需要 Windows WebView2 Runtime。发行包随附 Mao 和 Shizuku，首次启动时自动导入。
+
+使用 AI 对话时，可在 **设置 → 语言模型** 自行配置服务。云端服务需要填入自己的密钥，本地 Ollama 可从已安装的模型中选择。
+
+### 从源码构建
+
+需要 Go 1.26.4+、Node.js 22.19+、npm，以及 Windows WebView2 Runtime。本项目固定 Wails v3.1.0，普通构建不需要额外安装 Wails CLI。
+
+在项目根目录运行：
 
 ```powershell
-pwsh -File scripts/install-tts.ps1
+# 安装前端和 Pi 依赖、构建界面、生成 Windows 桌面程序
+.\scripts\build.ps1
+
+# 打开桌面程序
+.\bin\Live2DStudio.exe
 ```
 
-只装单档时可传入 `-Tier low`、`-Tier medium` 或 `-Tier high`，三档模型下载量约为 32、119 和 350 MB。源码运行时默认读取 `server/tts-models/`，发布版读取 `configs/` 同级的 `tts-models/`。可用 `-Destination` 安装到指定位置，再通过 `tts_dir` 或 `STUDIO_TTS_DIR` 指向该目录。模型和虚拟环境由 Git 忽略，安装完成后使用 CPU 离线合成。模型来源见 [Sherpa-ONNX 模型发布页](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models)。
+已经安装依赖时可使用 `.\scripts\build.ps1 -SkipInstall`。程序内嵌前端和 Cubism Core。编码模式运行 Pi 时需要本机有 Node.js。源码构建时，可将样本的 `runtime/` 分别放入 `server/data/assets/mao_pro/` 和 `server/data/assets/shizuku/`，构建脚本会复制到输出目录。样本下载和授权见 [第三方说明](THIRD_PARTY.md)。
 
-- `GET /api/v1/speech/tts/models` 返回模型、音色范围和安装状态。
-- `POST /api/v1/speech/tts/synthesize` 使用请求中的模型参数并返回 WAV。例如 `{"text":"欢迎来到直播间。","model":"aishell3","speaker":33,"speed":1}`。每次最多 1000 字，语速为 0.5–2 倍。
-- `POST /api/v1/speech/synthesize` 接收 `text` 和 `character_id`，按角色配置返回本地 WAV 或外部服务 MP3。系统语音由客户端播放。
+### 开发与测试
 
-在 Windows 工作台点击截图时，工作台会先隐藏。框选后点截图工具栏的眼睛图标，桌宠会接手「一起看」和当前对话。在工作台的「一起看」菜单选择观看窗口时，也会先切到桌宠，由桌宠打开系统窗口选择器。观看时可以直接问「这个页面报了什么错」，也可以暂停或结束观看。右击桌宠选择「打开工作台」可以回到当前会话。OCR 在本机运行，空闲观看不发起模型请求。「设置 → 观看模型」可选配快速理解和支持图片的视觉模型。
+```powershell
+# 一条命令启动桌面开发：Vite 热更新 + Wails 桌面窗口（需要 wails3 CLI）
+wails3 dev
 
-## 使用抖音直播模式
+# 同一桌面开发流程的 PowerShell 入口
+.\scripts\dev.ps1
+
+# 只用浏览器调试前端：先启动无窗口后端，再启动 Vite（5173）
+go run -tags headless . -headless
+cd frontend; npm run dev
+
+# 构建独立的无窗口服务
+.\scripts\build.ps1 -Target server
+.\bin\studio-server.exe -headless
+# 浏览器打开 http://127.0.0.1:12393
+
+# 后端集成测试与静态检查
+cd server
+go test -tags headless ./...
+go vet -tags headless ./...
+
+# 前端类型检查与生产构建
+cd ../frontend
+npm run check
+npm test
+npm run build
+```
+
+`wails3 dev` 的桌面窗口直接使用 Vite 开发资源，前端修改可热更新，不依赖 `dist`。也可以在浏览器中打开 Vite 地址（默认 `http://localhost:9245`）。开发窗口的 API、角色模型及场景素材仍由本次启动的 Go 服务提供。
+
+发布版将 `server/internal/webui/dist` 内嵌进可执行文件；修改前端后，需重新运行 `.\scripts\build.ps1` 更新发布版。
+
+`server/agentcore` 作为本地 Go 模块接入，根模块与 `server` 均通过 `replace` 引用该目录，构建时需保留它。
+
+## 使用指南
+
+### 抖音直播模式
 
 在工作台左侧舞台选择出镜角色，打开右侧 **直播模式 → 抖音配置**，填入抖音直播间数字 ID 或 `https://live.douyin.com/<ID>`，再点击 **开始监听**。切到顶部的 **直播消息** 标签，即可查看和筛选弹幕、礼物、点赞、进场和关注。直播间未开播时，应用会按设置的周期检查开播状态。
 
@@ -152,7 +162,7 @@ pwsh -File scripts/install-tts.ps1
 
 直播事件通过 [douyinLive](https://github.com/jwwsjlm/douyinLive/tree/v2.0.25) 读取，实际接收类型取决于抖音直播间和上游接口。
 
-## 使用本地 Ollama 模型
+### 本地 Ollama 模型
 
 模型服务 Tab（OpenAI、DeepSeek、Ollama、LM Studio）每次切换都会从后端读取该服务的配置。各服务分别保存地址、模型、参数、工具开关和密钥；没有保存过的服务才使用后端初始值。点击 **保存设置** 后启用当前服务。旧版数据库中的当前配置会保留并归入对应服务；未保存的表单编辑在当前页面按服务保留，刷新后重新读取数据库。读取失败时显示重试入口，不用默认值代替已存数据。
 
@@ -162,7 +172,7 @@ pwsh -File scripts/install-tts.ps1
 
 模型发现使用 Ollama 原生 [`/api/tags`](https://docs.ollama.com/api/tags)，聊天通过其 [OpenAI 兼容接口](https://docs.ollama.com/api/openai-compatibility) 接入现有 agentcore 流式链路。本地请求使用占位凭据，不向 Ollama 转发已保存的云端密钥。工具调用、图片识别及回复速度由所选模型和本机资源决定。
 
-## 使用角色记忆与工具
+### 角色记忆与工具
 
 点击角色卡片或工作台聊天标题旁的记忆入口，可以管理该角色的记忆。在自己发送的消息下点击 **存为记忆**，可以编辑预填内容，再确认保存。每个角色可保存 100 条，每条最多 300 字。新回复会参考最近更新的 8 条。
 
@@ -180,7 +190,7 @@ Mao 与 Shizuku 的模型资源不再打包进二进制，源文件放在数据�
 
 同一工作台窗口里，切换页面或会话会保留各自的未发送草稿。刷新后会重新打开上次选中的会话。会话中的当前输入会完整发送，近期历史会按文字和图片的传输大小择取，原始消息保存在本机。
 
-## 使用舞台管理
+### 舞台管理
 
 在工作台画布上方点 **摄像头跟随**，或在右侧 **摄像头 → 开启摄像头** 授权。右侧显示实时镜像预览，切换到对话或舞台设置时跟随保持开启。建议单人入镜，让脸和双肩可见；角色会镜像跟随转头、歪头、眨眼、张嘴和上半身转动/侧倾。实际效果取决于角色绑定的参数，不包含手指或四肢跟踪；聊天朗读时仍优先使用原有口型同步。短暂跟丢时保持平滑，持续未检测到人物则渐退回鼠标控制。手动关闭或离开工作台会释放摄像头。网页需要通过 HTTPS 或 localhost 打开。识别在本机运行，不采集麦克风，不录制或上传画面。
 
@@ -203,7 +213,7 @@ Mao 与 Shizuku 的模型资源不再打包进二进制，源文件放在数据�
 
 切回 **AI 对话** 时，舞台效果继续运行，对话输入与正在生成的回复均保留。
 
-## 使用画布标题与计数
+### 画布标题与计数
 
 在 **舞台设置 → 组件** 添加标题或计数组件。开启“编辑布局”后可拖动元素、拖动右下角调整大小，或用方向键微调，Shift 加方向键加速。完成后点击 **完成**，组件会穿透鼠标，不影响角色互动。右侧可以设置字号、颜色、对齐、不透明度、位置、尺寸、图层、显隐与锁定，也可以复制元素、撤销最近一次元素删除。
 
@@ -219,26 +229,76 @@ HTML 组件可直接粘贴 HTML / CSS 或导入 `.html` 文件，也可以套用
 
 ![画布标题与多计数组件](docs/screenshots/canvas-widgets.jpg)
 
+### 一起看与截图
+
+在 Windows 工作台点击截图时，工作台会先隐藏。框选后点截图工具栏的眼睛图标，桌宠会接手「一起看」和当前对话。在工作台的「一起看」菜单选择观看窗口时，也会先切到桌宠，由桌宠打开系统窗口选择器。观看时可以直接问「这个页面报了什么错」，也可以暂停或结束观看。右击桌宠选择「打开工作台」可以回到当前会话。OCR 在本机运行，空闲观看不发起模型请求。「设置 → 观看模型」可选配快速理解和支持图片的视觉模型。
+
+### 本地 TTS
+
+点击角色卡上的「角色语音」，将朗读方式设为「本地 TTS」即可选择低配 AISHELL-3、中配 Fanchen-C 或高配 Kokoro。调整音色和语速后可直接试听、下载 WAV，再保存为该角色的朗读配置。角色语音也支持系统音色和语音 API。麦克风识别方式和 API 连接在「设置 → 语音交互」中配置。
+
+需要 Python 3.10–3.14、PowerShell 7 和 `tar`。在项目根目录运行以下命令安装推理环境和模型，然后在工作台点击「刷新模型」。
+
+```powershell
+pwsh -File scripts/install-tts.ps1
+```
+
+只装单档时可传入 `-Tier low`、`-Tier medium` 或 `-Tier high`，三档模型下载量约为 32、119 和 350 MB。源码运行时默认读取 `server/tts-models/`，发布版读取 `configs/` 同级的 `tts-models/`。可用 `-Destination` 安装到指定位置，再通过 `tts_dir` 或 `STUDIO_TTS_DIR` 指向该目录。模型和虚拟环境由 Git 忽略，安装完成后使用 CPU 离线合成。模型来源见 [Sherpa-ONNX 模型发布页](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models)。
+
+- `GET /api/v1/speech/tts/models` 返回模型、音色范围和安装状态。
+- `POST /api/v1/speech/tts/synthesize` 使用请求中的模型参数并返回 WAV。例如 `{"text":"欢迎来到直播间。","model":"aishell3","speaker":33,"speed":1}`。每次最多 1000 字，语速为 0.5–2 倍。
+- `POST /api/v1/speech/synthesize` 接收 `text` 和 `character_id`，按角色配置返回本地 WAV 或外部服务 MP3。系统语音由客户端播放。
+
 ## 项目结构
 
-遵循 `docs/项目标准格式.md` 的前后端拆分和模块化组织。唯一程序入口为根目录 `main.go`（调用 `server/app`）；原生桌面与 headless 启动使用构建标签隔离，`wails3 dev` 读取根目录 `Taskfile.yml` 与 `build/config.yml`。
+遵循 [项目标准格式](docs/项目标准格式.md) 的前后端拆分和模块化组织。唯一程序入口为根目录 `main.go`（调用 `server/app`）；原生桌面与 headless 启动使用构建标签隔离，`wails3 dev` 读取根目录 `Taskfile.yml` 与 `build/config.yml`。
 
 ```text
-main.go                    唯一入口，调用 server/app
-go.mod                    根模块，通过 replace 引用 server 模块
-Taskfile.yml              wails3 dev 的编译、Vite 与启动任务
-build/config.yml          wails3 dev 的文件监视与执行配置
-frontend/src/
-  api/ assets/ components/ hooks/ layouts/ pages/ router/ store/ types/ utils/
-server/
-  app/                     启动装配、桌面与无窗口适配
-  configs/                 YAML 模板与本地配置
-  docs/                    OpenAPI 接口定义
-  internal/
-    bootstrap/ config/ middleware/ migrate/ model/
-    modules/               agent、character、conversation、memory、sceneassets、settings、speech、desktop
-    pkg/ router/ tests/ webui/
-scripts/                   PowerShell 开发与构建脚本
+live2d-studio/
+├── main.go                    唯一入口，调用 server/app
+├── go.mod / go.sum            根模块，通过 replace 引用 server 与 agentcore
+├── Taskfile.yml               wails3 dev 的编译、Vite 与启动任务
+├── build/config.yml           wails3 dev 的文件监视与执行配置
+├── Dockerfile                 浏览器版（headless）镜像
+├── docker-compose.yml         容器编排（仅发布到宿主机回环地址）
+├── frontend/                  React 19 + Vite + TypeScript 前端
+│   ├── public/                favicon、Cubism Core 与模型授权说明
+│   ├── src/
+│   │   ├── api/               axios / fetch 封装与 SSE 流式请求
+│   │   ├── assets/            全局样式与页面级 CSS
+│   │   ├── components/        按功能域分目录（stage、canvas、coding 等）与 ui/ 基础组件
+│   │   ├── hooks/             对话、语音、摄像头、直播与快捷键等 Hooks
+│   │   ├── layouts/           页面布局壳
+│   │   ├── lib/               通用工具
+│   │   ├── pages/             路由页面，每页一个目录
+│   │   ├── router/            react-router 路由表
+│   │   ├── store/             Zustand 状态与草稿持久化
+│   │   ├── types/             与后端接口对应的 TS 类型
+│   │   └── utils/             Live2D 参数适配、SSE 解码、格式化等
+│   ├── tests/                 前端单元测试
+│   ├── package.json
+│   └── vite.config.ts
+├── server/                    Go 后端（module: server）
+│   ├── app/                   启动装配：Gin 服务 + Wails 桌面窗口；headless 用构建标签隔离
+│   ├── agentcore/             本地 Go 模块：ADK 智能体、记忆、工具与模型适配
+│   ├── configs/               YAML 配置模板（config.example.yaml）
+│   ├── docs/                  OpenAPI 接口定义
+│   ├── internal/
+│   │   ├── bootstrap/         数据库、迁移、服务实例、中间件与路由装配
+│   │   ├── config/            配置结构、默认值、环境变量覆盖与校验
+│   │   ├── middleware/        Host / Origin 与本机客户端标识校验
+│   │   ├── migrate/           Gorm 自动迁移
+│   │   ├── model/             Gorm 数据模型，一表一个文件
+│   │   ├── modules/           业务模块（agent、character、coding、livemode 等）
+│   │   ├── pkg/               统一响应等内部工具
+│   │   ├── router/            Module 接口与 /api/v1 分组
+│   │   ├── tests/             接口集成测试
+│   │   ├── tts/               本地 TTS 模型发现与推理调用
+│   │   └── webui/             go:embed 打包前端产物
+│   └── go.mod
+├── scripts/                   build.ps1、dev.ps1、install-tts.ps1
+├── docs/                      需求、实现说明、标准格式与截图
+└── bin/                       构建产物与分发的 configs/
 ```
 
 桌面单用户场景使用 SQLite，不依赖 MySQL、Redis、租户或用户登录。`service` 直接操作 Gorm 模型，无 repository 层。
@@ -264,15 +324,38 @@ scripts/                   PowerShell 开发与构建脚本
 docker compose up --build -d
 ```
 
-打开 `http://127.0.0.1:12393`。容器使用 `headless` 构建与 SQLite 卷，并仅将端口发布到宿主机回环地址。容器内的 `localhost` 指容器自身；连接宿主机模型可使用 Docker Desktop 的 `host.docker.internal`。桌宠和原生窗口控制仅桌面版可用。Docker 配置已提供，本轮未在 Docker 引擎中执行验证。
+打开 `http://127.0.0.1:12393`。容器使用 `headless` 构建与 SQLite 卷，并仅将端口发布到宿主机回环地址。容器内的 `localhost` 指容器自身；连接宿主机模型可使用 Docker Desktop 的 `host.docker.internal`。桌宠和原生窗口控制仅桌面版可用。Docker 配置已提供，尚未在 Docker 引擎中实测。
 
-## 接口与测试覆盖
+## 接口与测试
 
 接口前缀 `/api/v1`，普通返回 `{ code, message, data }`，写操作带 `X-Studio-Client: 1`。详见 [OpenAPI](server/docs/openapi.yaml)。
 
-已有后端集成测试使用真实 Gin / Gorm / Eino 和本地 HTTP 模型服务器，覆盖流式回复、工具调用、GPT-5 参数适配、失败原因持久化、桌面流传输、配置路径、素材上传 / 删除 / 类型 / 大小及视频 Range。前端测试覆盖 SSE 分块解码、两种 Live2D 参数命名、实际模型动作和表情枚举。本次 agentcore ADK 接入已通过前端类型检查、生产构建、Windows 桌面构建和后端 headless 编译，尚未重跑运行时集成测试；此前使用本机模型配置验证过真实文本回复。麦克风与语音 API 需在对应环境验证。
+后端集成测试使用真实 Gin / Gorm / Eino 和本地 HTTP 模型服务器，覆盖流式回复、工具调用、GPT-5 参数适配、失败原因持久化、桌面流传输、配置路径、素材上传 / 删除 / 类型 / 大小及视频 Range。前端测试覆盖 SSE 分块解码、两种 Live2D 参数命名、实际模型动作和表情枚举。
 
-“保存并测试连接”走与聊天相同的 agentcore ADK 流式链路。GPT-5 / o 系列自动适配生成参数；发生错误时，消息旁显示认证、参数、模型、限流、网络等脱敏原因，可直接重新发送。
+“保存并测试连接”走与聊天相同的 agentcore ADK 流式链路。GPT-5 / o 系列自动适配生成参数；发生错误时，消息旁显示认证、参数、模型、限流、网络等脱敏原因，可直接重新发送。麦克风与语音 API 需在对应环境验证。
+
+## 常见问题
+
+**启动后没有窗口或白屏**
+安装 Windows WebView2 Runtime 后重新打开。源码构建请确认前端已构建，并查看控制台日志中的端口与错误信息。
+
+**端口 12393 被占用**
+修改 `config.yaml` 的 `port`，或设为 `0` 使用随机空闲端口；也可通过 `STUDIO_PORT` 覆盖。
+
+**编码模式提示运行时未就绪**
+安装 Node.js 22.19 或更高版本，在仓库根目录运行 `npm --prefix server/pi-runtime ci --ignore-scripts`，然后在编码模式中重新检查运行时。发行版可在程序同级目录补装 `pi-runtime`。
+
+**本地 TTS 不可用**
+确认已安装 Python 3.10–3.14、PowerShell 7 与 `tar`，并执行 `pwsh -File scripts/install-tts.ps1`。发布版模型目录应与 `configs/` 同级，或通过 `tts_dir` / `STUDIO_TTS_DIR` 指定。
+
+**导入的 Live2D 模型没有出现**
+确认 ZIP 内包含 `.model3.json` 及其引用的纹理、动作文件，导入后在角色列表刷新；缺失文件会被跳过并在舞台提示。
+
+**云端模型调用失败**
+检查服务地址、模型名称与密钥，并留意消息旁的错误原因（认证、参数、限流或网络）。本地 Ollama 需先启动服务并拉取模型。
+
+**如何备份数据**
+退出应用后备份整个数据目录（默认 `server/data/` 或发行版旁的 `data/`），其中包含数据库、模型、素材与插件状态。
 
 ## 第三方资源
 

@@ -1,3 +1,7 @@
+/**
+ * CodingPluginRuntime 负责运行已授权的插件命令与视图：以 iframe srcDoc 隔离渲染插件面板，
+ * 通过 postMessage 桥接插件调用后端 API，并提供插件设置编辑与工作面板停靠视图。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Boxes, Play, Settings2 } from 'lucide-react'
 import {
@@ -16,6 +20,7 @@ import {
 } from '../ui/select'
 import '../../assets/piplugins.css'
 
+/** PluginFrame 当前打开的插件视图：html 由后端生成，key 变化时重建 iframe。 */
 interface PluginFrame {
   key: string
   plugin: string
@@ -24,10 +29,16 @@ interface PluginFrame {
   workspace?: PiPluginWorkspace
 }
 
+/** failure 将未知异常转换为可展示的中文错误文案。 */
 function failure(cause: unknown) {
   return cause instanceof Error ? cause.message : '插件操作失败'
 }
 
+/**
+ * PluginView 以 sandbox iframe 渲染插件界面并处理其消息桥。
+ * 仅接收来自该 iframe、origin 为 "null" 且 token 匹配的调用消息，
+ * 并将每次调用转交后端校验权限。
+ */
 function PluginView({
   frame,
   onClose,
@@ -38,7 +49,9 @@ function PluginView({
   onToast: (text: string) => void
 }) {
   const element = useRef<HTMLIFrameElement>(null)
+  // 每次挂载生成随机 token，防止同窗口下其他脚本伪造插件调用消息。
   const [token] = useState(() => crypto.randomUUID())
+  // 用 ref 保存最新回调，避免 message 监听随 props 变化反复重建。
   const handlers = useRef({ onClose, onToast })
   handlers.current = { onClose, onToast }
 
@@ -48,6 +61,7 @@ function PluginView({
     let disposed = false
     const receive = async (event: MessageEvent) => {
       const source = element.current?.contentWindow
+      // sandbox 未开放 allow-same-origin，iframe 的 origin 为 "null"，需按此校验来源。
       if (!source || event.source !== source || event.origin !== 'null') return
       const message = event.data
       if (
@@ -57,6 +71,7 @@ function PluginView({
         !Number.isSafeInteger(message.id) ||
         typeof message.method !== 'string' ||
         message.method.length > 90 ||
+        // 限制并发调用数量，防止插件用消息洪泛压垮桥接层。
         pending >= 8
       )
         return
@@ -66,6 +81,7 @@ function PluginView({
       }
       pending++
       try {
+        // 限制单条消息体积，避免插件向宿主传输超大载荷。
         if ((JSON.stringify(message.payload)?.length ?? 0) > 32_768) throw new Error('插件消息过大')
         if (localMethods.has(message.method)) {
           if (message.method === 'ui.closePanel') {
@@ -104,6 +120,8 @@ function PluginView({
   }, [frame, token])
 
   return (
+    // sandbox 只开放脚本而不开放同源，使插件无法直接读取 Studio 的 DOM/存储；
+    // 文档加载完成后再下发 token，插件侧以此初始化消息桥。
     <iframe
       className="pi-plugin-runtime-frame"
       ref={element}
@@ -118,6 +136,7 @@ function PluginView({
   )
 }
 
+/** RuntimeSetting 渲染插件声明的一项设置（布尔、枚举、数字、密码或文本）。 */
 function RuntimeSetting({
   setting,
   value,
@@ -178,11 +197,14 @@ function RuntimeSetting({
   )
 }
 
+/** CodingPluginDock 工作面板中的插件视图停靠区，按插件视图 id 打开对应面板。 */
 export function CodingPluginDock({
   plugins,
   workspace,
 }: {
+  /** 当前可用的宿主插件。 */
   plugins: PiHostPlugin[]
+  /** 传给插件的项目/会话上下文。 */
   workspace?: PiPluginWorkspace
 }) {
   const [frame, setFrame] = useState<PluginFrame>()
@@ -207,6 +229,7 @@ export function CodingPluginDock({
                   setNotice('')
                   try {
                     const next = await piPluginsAPI.pluginView(plugin.id, entry.id)
+                    // key 使用随机值，确保每次打开都重建 iframe，不残留上次插件状态。
                     setFrame({ ...next, plugin: plugin.id, key: crypto.randomUUID(), workspace })
                   } catch (cause) {
                     setError(failure(cause))
@@ -242,6 +265,7 @@ export function CodingPluginDock({
   )
 }
 
+/** CodingPluginRuntime 插件命令与面板对话框，可运行命令、打开视图并编辑插件设置。 */
 export default function CodingPluginRuntime({
   plugins,
   initialPlugin,
@@ -249,10 +273,15 @@ export default function CodingPluginRuntime({
   workspace,
   onOpenChange,
 }: {
+  /** 当前可用的宿主插件。 */
   plugins: PiHostPlugin[]
+  /** 初始选中的插件 ID。 */
   initialPlugin?: string
+  /** 对话框是否打开。 */
   open: boolean
+  /** 传给插件的项目/会话上下文。 */
   workspace?: PiPluginWorkspace
+  /** 对话框开关回调。 */
   onOpenChange: (open: boolean) => void
 }) {
   const [selected, setSelected] = useState(initialPlugin || '')
@@ -266,6 +295,7 @@ export default function CodingPluginRuntime({
   useEffect(() => {
     alive.current = true
     return () => {
+      // 对话框卸载后异步命令仍可能返回，用标记避免对已卸载组件 setState。
       alive.current = false
     }
   }, [])
@@ -283,6 +313,7 @@ export default function CodingPluginRuntime({
     if (!alive.current) return
     for (const event of response.events ?? []) {
       if (event.type === 'toast' && event.text) setNotice(event.text.slice(0, 300))
+      // 命令可以要求宿主打开某个面板视图，按事件指定的视图 id 加载。
       if (event.type === 'panel') await view(event.id || 'panel')
     }
     if (response.result !== undefined && !response.events?.length) {
@@ -293,6 +324,7 @@ export default function CodingPluginRuntime({
   }
 
   async function perform(action: () => Promise<void>) {
+    // 同一时间只允许一个插件操作，避免设置保存与视图加载交叉覆盖状态。
     if (busy) return
     setBusy(true)
     setError('')

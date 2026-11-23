@@ -1,3 +1,4 @@
+// terminal.go 负责交互终端会话的进程管理、输出缓冲与事件分发。
 package coding
 
 import (
@@ -37,13 +38,14 @@ type pseudoTerminal interface {
 	stop()
 }
 
-// TerminalService owns interactive shell processes for the application's lifetime.
+// TerminalService 管理应用生命周期内的交互式 shell 进程。
 type TerminalService struct {
 	mu       sync.Mutex
 	sessions map[string]*terminalSession
 	closed   bool
 }
 
+// NewTerminalService 创建一个空的终端服务。
 func NewTerminalService() *TerminalService {
 	return &TerminalService{sessions: make(map[string]*terminalSession)}
 }
@@ -72,6 +74,7 @@ type terminalEvent struct {
 	Code   *int   `json:"code,omitempty"`
 }
 
+// start 在指定项目目录下创建终端；锁内统计活跃数量并清理已退出的会话，避免超出平台资源上限。
 func (s *TerminalService) start(project, directory string, size terminalSize) (*terminalSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -127,6 +130,7 @@ func (s *TerminalService) terminal(project, id string) *terminalSession {
 	return session
 }
 
+// Close 停止所有终端会话并关闭服务，之后不再接受新的终端。
 func (s *TerminalService) Close() {
 	if s == nil {
 		return
@@ -141,6 +145,7 @@ func (s *TerminalService) Close() {
 	}
 }
 
+// notify 关闭旧信号并换上新通道，唤醒当前所有等待输出的读取端。
 func (s *terminalSession) notify() {
 	close(s.changed)
 	s.changed = make(chan struct{})
@@ -182,8 +187,7 @@ func (s *terminalSession) run(onExit func()) {
 		}
 	}()
 	code := s.device.wait()
-	// Give a normally exiting shell time to drain its final output. Detached descendants
-	// on Unix can keep the PTY open beyond the shell's exit.
+	// 给正常退出的 shell 留出排空最后输出的时间；Unix 上脱离的子进程可能继续持有 PTY。
 	select {
 	case <-readDone:
 	case <-time.After(500 * time.Millisecond):
@@ -245,6 +249,7 @@ func (s *terminalSession) stop() {
 	s.device.stop()
 }
 
+// next 按游标返回增量输出；游标落后于保留窗口时要求客户端重置，避免读到错位数据。
 func (s *terminalSession) next(cursor uint64) (terminalEvent, <-chan struct{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -1,3 +1,4 @@
+// enhancements.go 负责提示词增强、标题生成、后续消息建议与编码记忆。
 package coding
 
 import (
@@ -56,6 +57,7 @@ func (m *Module) putEnhancements(c *gin.Context) {
 	pkg.OK(c, input)
 }
 
+// completeEnhancement 使用全局语言模型完成一次限时、限长的辅助生成，失败统一给用户可读提示。
 func (m *Module) completeEnhancement(ctx context.Context, instruction, text string, maxTokens int, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -222,6 +224,7 @@ func validCodingMemory(text string) bool {
 	return strings.TrimSpace(text) != "" && utf8.RuneCountInString(text) <= 2000
 }
 
+// codingMemoryTool 处理模型发起的内存召回与保存；写入仅在代理模式且用户开启记忆写入时允许。
 func (m *Module) codingMemoryTool(project, mode, action, scope, query, content string, enabled model.CodingEnhancements) (any, error) {
 	if m.PluginEnabled == nil || !m.PluginEnabled(enhancementPlugin) || !enabled.Recall {
 		return nil, errors.New("编码记忆已关闭")

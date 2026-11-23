@@ -1,3 +1,4 @@
+// runtime.go 负责启动 Pi 运行时子进程、转发事件并处理文件读写工具调用。
 package coding
 
 import (
@@ -23,6 +24,7 @@ type runtimeEvent struct {
 	Path string `json:"path,omitempty"`
 }
 
+// runtimePaths 定位 Node.js 与已安装的 Pi 运行时目录，缺失时返回可操作的提示。
 func (m *Module) runtimePaths() (string, string, error) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -40,6 +42,8 @@ func (m *Module) runtimePaths() (string, string, error) {
 	return node, dir, nil
 }
 
+// runPi 启动 Pi Worker 并双向转发事件与工具调用。所有文件与编排工具都由 Go 侧执行，
+// Worker 只负责模型交互，因此权限校验统一留在宿主进程中。
 func (m *Module) runPi(ctx context.Context, root *os.Root, cfg config.LLM, projectID, sessionID, mode, prompt string, enhancements model.CodingEnhancements, emit func(runtimeEvent) error) error {
 	node, dir, err := m.runtimePaths()
 	if err != nil {
@@ -90,7 +94,7 @@ func (m *Module) runPi(ctx context.Context, root *os.Root, cfg config.LLM, proje
 	if err != nil {
 		return err
 	}
-	// EOF gives Pi time to stop any stdio MCP process before Go kills the worker.
+	// 先关闭 stdin 让 Pi 有机会收尾 stdio MCP 进程，再等待 5 秒后由 Go 强制结束。
 	cmd.Cancel = input.Close
 	cmd.WaitDelay = 5 * time.Second
 	defer input.Close()
@@ -124,6 +128,7 @@ func (m *Module) runPi(ctx context.Context, root *os.Root, cfg config.LLM, proje
 		return err
 	}
 	scanner := bufio.NewScanner(output)
+	// 单个事件可能包含较长的文件内容，放宽单行上限避免被 Scanner 截断。
 	scanner.Buffer(make([]byte, 32<<10), 2<<20)
 	toolCount := 0
 	for scanner.Scan() {
@@ -149,6 +154,7 @@ func (m *Module) runPi(ctx context.Context, root *os.Root, cfg config.LLM, proje
 			}
 		case "tool":
 			toolCount++
+			// 限制单轮工具调用次数，防止模型在单个请求内无限循环读写文件。
 			if toolCount > 40 {
 				return errors.New("本轮文件操作已达上限，请分步继续")
 			}

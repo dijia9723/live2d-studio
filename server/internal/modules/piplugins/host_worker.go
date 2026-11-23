@@ -1,3 +1,4 @@
+// host_worker.go 是插件子进程侧入口：在 goja 沙箱中执行 JavaScript 并通过 JSON 行协议通信。
 package piplugins
 
 import (
@@ -56,6 +57,7 @@ type hostResponse struct {
 	Completion *hostCompletionRequest `json:"completion,omitempty"`
 }
 
+// workerRuntime 封装 goja 运行时与预置的调度函数，所有插件调用都经由 prepare/settle/tick 进入沙箱。
 type workerRuntime struct {
 	vm              *goja.Runtime
 	prepare         goja.Callable
@@ -67,6 +69,7 @@ type workerRuntime struct {
 	modelPermission bool
 }
 
+// newWorkerRuntime 装载预置桥接脚本并取得内部调度函数，限制调用栈深度以防深递归耗尽内存。
 func newWorkerRuntime() (*workerRuntime, error) {
 	vm := goja.New()
 	vm.SetMaxCallStackSize(1024)
@@ -83,6 +86,7 @@ func newWorkerRuntime() (*workerRuntime, error) {
 	return &workerRuntime{vm: vm, prepare: prepare, settle: settle, tick: tick, drain: drain}, nil
 }
 
+// budget 用中断机制为单次执行设定时间上限，返回的函数负责停止计时并清除中断标记。
 func (w *workerRuntime) budget(duration time.Duration) func() {
 	finished := make(chan struct{})
 	timer := time.AfterFunc(duration, func() {
@@ -97,6 +101,8 @@ func (w *workerRuntime) budget(duration time.Duration) func() {
 	}
 }
 
+// run 在沙箱内执行一次调用：先处理 load 注入入口源码，再等待返回的 Promise 在预算内落定。
+// 参数与结果都走 JSON，避免向 JS 暴露任意 Go 对象。
 func (w *workerRuntime) run(request hostRequest) hostResponse {
 	duration := 3500 * time.Millisecond
 	if w.modelPermission && completionOperation(request.Operation) {
@@ -159,6 +165,7 @@ func (w *workerRuntime) run(request hostRequest) hostResponse {
 	return hostResponse{Result: result, Events: w.events()}
 }
 
+// events 取出并清空沙箱积压的事件，超出大小或格式错误时整体丢弃以免污染后续调用。
 func (w *workerRuntime) events() []hostEvent {
 	raw, err := w.drain(goja.Undefined())
 	if err != nil {
@@ -175,6 +182,7 @@ func (w *workerRuntime) events() []hostEvent {
 	return events
 }
 
+// timerEvents 驱动插件注册的定时器并回收其产生的事件，使常驻服务可以主动推送。
 func (w *workerRuntime) timerEvents() []hostEvent {
 	unbudget := w.budget(3500 * time.Millisecond)
 	defer unbudget()
@@ -184,6 +192,7 @@ func (w *workerRuntime) timerEvents() []hostEvent {
 	return w.events()
 }
 
+// runTimer 标记当前处于定时器回调内，补全等主动请求在该阶段会被拒绝。
 func (w *workerRuntime) runTimer() error {
 	w.inTimer = true
 	defer func() { w.inTimer = false }()
@@ -191,8 +200,8 @@ func (w *workerRuntime) runTimer() error {
 	return err
 }
 
-// RunPluginWorker is the JSON-only child entry point. It deliberately does not initialize the
-// Studio, inherit its model configuration, or expose operating-system and network APIs to JS.
+// RunPluginWorker 是插件子进程的 JSON-only 入口。它刻意不初始化 Studio、不继承模型配置，
+// 也不向 JS 暴露操作系统与网络接口，插件只能通过消息通道请求宿主能力。
 func RunPluginWorker(input io.Reader, output io.Writer) int {
 	runtime, err := newWorkerRuntime()
 	if err != nil {

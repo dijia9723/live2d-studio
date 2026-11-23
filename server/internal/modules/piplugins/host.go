@@ -1,3 +1,4 @@
+// host.go 负责桌面宿主侧的插件注册、生命周期与授权状态管理。
 package piplugins
 
 import (
@@ -19,6 +20,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// pluginHost 持有宿主进程所需的可执行文件路径、活跃 worker 与异步事件队列。
+// workers 以插件 ID 为键，保证同一插件不会并发启动多个独立进程。
 type pluginHost struct {
 	workspace    hostWorkspaceCall
 	executable   string
@@ -34,6 +37,7 @@ type pluginHost struct {
 	usage        map[string][]time.Time
 }
 
+// hostNotification 是推送给前端的异步事件，附带来源插件 ID 以便窗口路由。
 type hostNotification struct {
 	PluginID string `json:"plugin_id"`
 	hostEvent
@@ -44,6 +48,7 @@ type hostData struct {
 	Storage  map[string]json.RawMessage `json:"storage"`
 }
 
+// ConfigureHost 记录当前可执行文件路径并初始化宿主状态；重复调用保持幂等。
 func (m *Module) ConfigureHost() {
 	if m.host != nil {
 		return
@@ -59,6 +64,7 @@ func (m *Module) hostAvailable() bool {
 	return m.host != nil && m.desktopAvailable != nil && m.desktopAvailable()
 }
 
+// RegisterHost 挂载宿主运行时查询、命令调用、视图加载与面板桥接接口。
 func (m *Module) RegisterHost(g *gin.RouterGroup) {
 	g.GET("/runtime", m.hostList)
 	g.GET("/runtime/events", m.hostEvents)
@@ -69,6 +75,8 @@ func (m *Module) RegisterHost(g *gin.RouterGroup) {
 	g.POST("/:id/runtime/bridge", m.hostBridge)
 }
 
+// hostInstallations 只返回已启用、已获执行授权且确实声明了宿主能力的插件，
+// 避免前端看到当前浏览器版本无法运行的条目。
 func (m *Module) hostInstallations() []Installation {
 	if !m.hostAvailable() {
 		return nil
@@ -91,6 +99,8 @@ func (m *Module) hostInstallations() []Installation {
 	return resolved
 }
 
+// hostInstallation 加载指定插件并要求启用与执行授权同时成立。
+// 宿主进程只随桌面客户端启动，因此非桌面环境统一拒绝。
 func (m *Module) hostInstallation(id string) (Installation, error) {
 	if !m.hostAvailable() || !validPluginID(id) {
 		return Installation{}, errors.New("插件执行宿主仅在桌面版可用")
@@ -137,6 +147,7 @@ func nonNil[T any](items []T) []T {
 	return items
 }
 
+// StartHost 在应用启动时拉起已声明常驻服务的插件后台进程。
 func (m *Module) StartHost() {
 	for _, item := range m.hostInstallations() {
 		if len(item.Manifest.hostSpec().Services) > 0 {
@@ -145,8 +156,8 @@ func (m *Module) StartHost() {
 	}
 }
 
-// RefreshHost runs after the registry update has committed. It stops a revoked/replaced
-// worker and starts advertised resident services only when the explicit execution grant holds.
+// RefreshHost 在注册表更新提交后同步运行状态：撤销或替换版本时停止旧进程，
+// 仅在用户显式授予执行权限时启动插件声明的常驻服务。
 func (m *Module) RefreshHost(id string) {
 	if m.host == nil {
 		return
@@ -173,6 +184,7 @@ func (m *Module) RefreshHost(id string) {
 	}
 }
 
+// CloseHost 在应用退出时通知所有 worker 关闭并回收进程，避免残留子进程。
 func (m *Module) CloseHost() {
 	if m.host == nil {
 		return
@@ -194,6 +206,8 @@ func (m *Module) CloseHost() {
 	group.Wait()
 }
 
+// hostWorker 按插件目录复用已启动的独立进程，并在清单根目录变化时替换旧实例。
+// 同时限制全局进程数量，防止大量插件耗尽系统资源。
 func (m *Module) hostWorker(ctx context.Context, item Installation) (*hostedWorker, error) {
 	h := m.host
 	h.mu.Lock()
@@ -243,7 +257,7 @@ func (m *Module) hostWorker(ctx context.Context, item Installation) (*hostedWork
 			}()
 			return
 		}
-		// The scanner must remain available for command replies while asynchronous effects route.
+		// 异步效果通过独立 goroutine 路由，扫描器必须继续读取命令回复，避免阻塞消息通道。
 		select {
 		case h.dispatch <- struct{}{}:
 			go func() {
@@ -283,13 +297,14 @@ func (m *Module) hostWorker(ctx context.Context, item Installation) (*hostedWork
 		return nil, errors.New("加载插件执行入口超时")
 	}
 	h.workers[item.Manifest.ID] = worker
-	// Startup effects can route to other workers after the map lock is released.
+	// 启动阶段的事件可能继续调用其他插件，放到锁外异步路由以免死锁。
 	if len(first.Events) > 0 {
 		go m.applyHostEffects(context.Background(), item, first.Events, 0)
 	}
 	return worker, nil
 }
 
+// readHostEntry 通过 os.Root 读取插件目录内的文件，把路径限制在安装根目录内。
 func readHostEntry(root, name string, max int64) ([]byte, error) {
 	local, err := packagePath(name)
 	if err != nil {
@@ -352,6 +367,7 @@ func (m *Module) readHostData(item Installation) hostData {
 	return value
 }
 
+// validHostSetting 按清单声明的类型校验设置值，拒绝越权写入未声明字段或超大值。
 func validHostSetting(field hostSetting, value json.RawMessage) bool {
 	if len(value) == 0 || len(value) > 16<<10 {
 		return false
@@ -401,6 +417,7 @@ func validHostSetting(field hostSetting, value json.RawMessage) bool {
 	return false
 }
 
+// storeHostSettings 合并并持久化设置，只接受清单中已声明且类型匹配的字段。
 func (m *Module) storeHostSettings(item Installation, update map[string]json.RawMessage) (map[string]json.RawMessage, error) {
 	if len(update) == 0 {
 		return nil, errors.New("请提供要保存的插件设置")
@@ -452,11 +469,12 @@ func (m *Module) updateHostSettings(c *gin.Context) {
 	pkg.OK(c, settings)
 }
 
+// syncHostSettings 重启进程让新设置生效：上游插件可能在 onLoad 时缓存了 getSettings()。
 func (m *Module) syncHostSettings(ctx context.Context, item Installation, settings map[string]json.RawMessage) {
 	m.host.mu.Lock()
 	worker := m.host.workers[item.Manifest.ID]
 	if worker != nil && worker.installation.Root == item.Root {
-		// Upstream plugins can capture getSettings() during onLoad.
+		// 上游插件可能在 onLoad 时缓存 getSettings()，因此先摘除旧实例再重启。
 		delete(m.host.workers, item.Manifest.ID)
 	}
 	m.host.mu.Unlock()
@@ -493,6 +511,8 @@ func (m *Module) hostCommand(c *gin.Context) {
 	pkg.OK(c, result)
 }
 
+// executeHost 统一执行一次宿主调用，并在返回前把事件路由给其他插件。
+// 调用参数与结果共享消息通道，因此这里先拦截超限负载，避免撑大管道。
 func (m *Module) executeHost(ctx context.Context, item Installation, request hostRequest, depth int) (hostResponse, error) {
 	if len(request.Payload) > workerDataLimit {
 		return hostResponse{}, errors.New("插件调用参数超出大小限制")

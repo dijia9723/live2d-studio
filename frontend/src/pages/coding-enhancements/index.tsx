@@ -1,3 +1,7 @@
+/**
+ * CodingEnhancementsPage 是官方增强插件的配置页：展示并切换提示词增强、
+ * 后续建议与记忆功能，同时展示记忆库内容与清理入口。
+ */
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Pencil, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -17,6 +21,7 @@ import {
 import { Textarea } from '../../components/ui/textarea'
 import '../../assets/coding.css'
 
+/** options 增强开关的字段、名称与说明，顺序即页面展示顺序。 */
 const options = [
   { field: 'titles', label: '自动会话标题', detail: '根据首条消息生成会话名称。' },
   {
@@ -46,10 +51,12 @@ const options = [
   },
 ] as const
 
+/** message 把未知异常转换为可展示的中文错误。 */
 function message(cause: unknown) {
   return cause instanceof Error ? cause.message : '操作失败'
 }
 
+/** CodingEnhancementsPage 官方增强插件设置页面。 */
 export default function CodingEnhancementsPage() {
   const [settings, setSettings] = useState<CodingEnhancements>()
   const [saved, setSaved] = useState<CodingEnhancements>()
@@ -61,6 +68,7 @@ export default function CodingEnhancementsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
+  // 与服务端已保存值比较，决定「保存设置」是否可用。
   const changed = JSON.stringify(settings) !== JSON.stringify(saved)
 
   useEffect(() => {
@@ -88,6 +96,7 @@ export default function CodingEnhancementsPage() {
 
   useEffect(() => {
     if (!settings) return
+    // 记忆范围切换后重新拉取；project 为空字符串时代表个人记忆。
     const controller = new AbortController()
     setMemoryLoading(true)
     codingAPI
@@ -147,6 +156,7 @@ export default function CodingEnhancementsPage() {
         <>
           <section className="coding-enhancements-card" aria-label="对话增强">
             {options.map(({ field, label, detail }) => {
+              // 子开关依赖父开关：未启用自动标题不能启用模型润色，未启用记忆查询不能写入记忆。
               const disabled =
                 busy ||
                 (field === 'model_titles' && !settings.titles) ||
@@ -192,6 +202,7 @@ export default function CodingEnhancementsPage() {
                   value={project || '__personal__'}
                   disabled={busy}
                   onValueChange={(value) => {
+                    // 切换范围时清空列表与正在编辑的记忆，避免把上一次范围的内容带到新范围。
                     setMemories([])
                     setMemory(undefined)
                     setProject(value === '__personal__' ? '' : value)
@@ -229,6 +240,7 @@ export default function CodingEnhancementsPage() {
                     const item = await codingAPI.saveMemory(
                       memory.content,
                       memory.project_id,
+                      // 有 id 表示更新，无 id 才是新建。
                       memory.id || undefined,
                     )
                     setMemories((items) => [item, ...items.filter((other) => other.id !== item.id)])

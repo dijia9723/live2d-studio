@@ -1,5 +1,6 @@
 //go:build windows
 
+// host_process_windows.go 负责 Windows 下隐藏子进程窗口，并用 Job Object 限制内存与生命周期。
 package piplugins
 
 import (
@@ -10,10 +11,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// setupHostedProcess 隐藏子进程窗口，避免插件进程在桌面上闪现控制台。
 func setupHostedProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
+// limitHostedProcess 将子进程加入 Job Object：限制 192 MiB 内存，并在句柄关闭时强制结束进程，
+// 确保宿主异常退出后不会遗留插件进程。
 func limitHostedProcess(cmd *exec.Cmd) (func(), error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {

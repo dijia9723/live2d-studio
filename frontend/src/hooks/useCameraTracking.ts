@@ -1,3 +1,8 @@
+/**
+ * 文件职责：摄像头跟随 Hook。
+ * 负责申请摄像头、动态加载 MediaPipe 面部/身体模型、按帧率节流检测，
+ * 并把归一化关键点和参数样本暴露给预览与角色渲染；画面只在本机处理。
+ */
 import { useEffect, useRef, useState } from 'react'
 import type { FaceLandmarkerResult } from '@mediapipe/tasks-vision'
 import type { openCameraLandmarkers } from '../utils/cameraLandmarkers'
@@ -9,6 +14,7 @@ import {
   type CameraSample,
 } from '../utils/cameraTracking'
 
+// 各状态对应的提示文案，error 优先于这里的 message。
 const cameraMessages = {
   off: '',
   opening: '正在等待摄像头授权…',
@@ -17,6 +23,7 @@ const cameraMessages = {
   tracking: '正在跟随 · 摄像头画面不上传',
 }
 
+// 浏览器抛出的 DOMException 名称对用户不友好，统一映射为可操作的提示。
 function cameraError(error: unknown, fallback: string) {
   if (error instanceof DOMException) {
     switch (error.name) {
@@ -35,8 +42,15 @@ function cameraError(error: unknown, fallback: string) {
   return fallback
 }
 
+// 无论停止原因如何，都停掉轨道，避免摄像头指示灯常亮。
 const stopStream = (stream: MediaStream) => stream.getTracks().forEach((track) => track.stop())
 
+/**
+ * 管理摄像头跟随的开关与运行态。
+ * @param available 舞台是否允许使用摄像头（如当前角色/页面支持）
+ * @returns enabled：是否开启；message：当前提示；previewStream：预览流；
+ *          landmarks/sample：供预览与参数驱动的实时引用；toggle：切换开关
+ */
 export function useCameraTracking(available: boolean) {
   const [enabled, setEnabled] = useState(false)
   const [status, setStatus] = useState<keyof typeof cameraMessages>('off')
@@ -57,6 +71,7 @@ export function useCameraTracking(available: boolean) {
     let stream: MediaStream | undefined
     let video: HTMLVideoElement | undefined
     let tracker: Awaited<ReturnType<typeof openCameraLandmarkers>> | undefined
+    // release 必须可重复调用：出错、页面隐藏、effect 清理都会走到这里。
     const release = () => {
       if (signal.aborted) return
       controller.abort()
@@ -76,6 +91,7 @@ export function useCameraTracking(available: boolean) {
       setError(message)
       setEnabled(false)
     }
+    // 桌面端切到后台/关闭时浏览器不一定触发卸载，用 pagehide 主动释放设备。
     window.addEventListener(
       'pagehide',
       () => {
@@ -86,6 +102,7 @@ export function useCameraTracking(available: boolean) {
     )
 
     const start = async () => {
+      // getUserMedia 只在安全上下文可用；WebView 需由桌面端注入或走 localhost。
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         fail('当前环境无法访问摄像头，请使用桌面应用或从 HTTPS / localhost 打开工作台')
         return
@@ -107,6 +124,7 @@ export function useCameraTracking(available: boolean) {
           return
         }
         stream = media
+        // 设备在授权后仍可能被拔掉或被占用，靠轨道的 ended 事件收敛状态。
         const tracks = media.getVideoTracks()
         const lostDevice = () => fail('摄像头已断开，请检查设备后重新开启')
         if (!tracks.some((track) => track.readyState === 'live')) {
@@ -124,6 +142,7 @@ export function useCameraTracking(available: boolean) {
 
         setStatus('loading')
         fallback = '本机识别模型加载失败，请检查应用资源或更新浏览器后重试'
+        // MediaPipe 体积较大，按需动态加载，未开启摄像头时不占用首屏资源。
         const { openCameraLandmarkers } = await import('../utils/cameraLandmarkers')
         const ready = await openCameraLandmarkers(signal)
         if (signal.aborted) {
@@ -144,6 +163,7 @@ export function useCameraTracking(available: boolean) {
 
         const detect = (now: number) => {
           let updates: CameraSample['values'] | undefined
+          // 同一帧视频只检测一次，避免高刷屏重复跑推理。
           if (
             source.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
             source.currentTime !== lastVideoTime
@@ -152,6 +172,7 @@ export function useCameraTracking(available: boolean) {
               lastVideoTime = source.currentTime
               preview.width = source.videoWidth
               preview.height = source.videoHeight
+              // 身体姿态更新较慢（~8fps），面部更频繁（~22fps），用时间片交替执行以控制 CPU 占用。
               if (now - lastPose >= 125) {
                 lastPose = now
                 const pose = ready.pose.detectForVideo(source, now)
@@ -170,6 +191,7 @@ export function useCameraTracking(available: boolean) {
               return
             }
           }
+          // 样本缓冲会保留短暂缺席的通道，避免某一帧漏检导致参数瞬间回弹。
           sample.current = retainSample(now, updates)
           const found = !!sample.current
           if (found !== detecting) {
@@ -187,6 +209,7 @@ export function useCameraTracking(available: boolean) {
     return release
   }, [available, enabled])
 
+  // 切换时先清空上一轮错误，关闭则立即给出“已关闭”状态。
   const toggle = () => {
     setError('')
     setStatus(enabled ? 'off' : 'opening')

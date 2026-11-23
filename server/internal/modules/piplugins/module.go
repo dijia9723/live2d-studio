@@ -1,3 +1,6 @@
+// Package piplugins 负责 PI 编码插件：清单解析、安装校验、市场下载、宿主进程与工作区、
+// 主题、stdio MCP 以及可信扩展授权。所有外部输入都在此层完成大小、路径与权限校验，
+// 再交给隔离子进程或受限文件视图执行。
 package piplugins
 
 import (
@@ -21,6 +24,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Plugin 是返回给前端的插件摘要，合并清单元数据与当前的启用、来源和授权状态。
 type Plugin struct {
 	ID            string     `json:"id"`
 	Name          string     `json:"name"`
@@ -40,12 +44,15 @@ type Plugin struct {
 	Error         string     `json:"error,omitempty"`
 }
 
+// Installation 表示一个已解包并通过校验的插件实例，Root 指向只允许相对访问的隔离目录。
 type Installation struct {
 	Manifest Manifest
 	Root     string
 	Plugin   Plugin
 }
 
+// storedPlugin 是注册表中持久化的插件记录，额外保存目录名、清单哈希与各类授权。
+// 清单哈希用于检测安装后文件被替换，授权字段则记录用户显式同意的执行范围。
 type storedPlugin struct {
 	Plugin
 	Directory       string                 `json:"directory"`
@@ -61,6 +68,7 @@ type storage struct {
 	Local  map[string]storedPlugin `json:"local"`
 }
 
+// Module 管理插件注册表、市场目录缓存以及桌面宿主运行实例。
 type Module struct {
 	root             string
 	desktopAvailable func() bool
@@ -71,10 +79,13 @@ type Module struct {
 	host             *pluginHost
 }
 
+// New 创建插件模块；desktopAvailable 用于判断当前环境是否允许启动独立插件进程。
 func New(root string, desktopAvailable func() bool) *Module {
 	return &Module{root: root, desktopAvailable: desktopAvailable, client: marketClient()}
 }
 
+// Register 挂载插件管理、市场、主题、stdio MCP 与宿主运行时接口。
+// 整个路由组都要求工作区请求头，避免浏览器页面直接访问本地插件管理面。
 func (m *Module) Register(r *gin.RouterGroup) {
 	g := r.Group("/coding/plugins", middleware.WorkspaceOnly(m.desktopAvailable))
 	g.GET("", m.list)
@@ -146,6 +157,7 @@ func (m *Module) readStorage() (storage, error) {
 	return s, nil
 }
 
+// atomicWrite 先写临时文件再重命名，避免进程中断时留下半截的注册表或缓存文件。
 func atomicWrite(dir, name string, content []byte) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -170,11 +182,13 @@ func (m *Module) writeStorage(s storage) error {
 	return atomicWrite(m.root, "registry.json", data)
 }
 
+// packageDirectory 只接受 package-<UUID> 形式的目录名，确保删除或打开时不会越出插件根目录。
 func packageDirectory(name string) bool {
 	value, ok := strings.CutPrefix(name, "package-")
 	return ok && uuid.Validate(value) == nil && len(value) == 36
 }
 
+// Enabled 报告指定插件是否启用；内置插件默认启用，本地插件以注册表记录为准。
 func (m *Module) Enabled(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -188,6 +202,7 @@ func (m *Module) Enabled(id string) bool {
 	return s.Local[id].Enabled
 }
 
+// openInstalled 重新读取磁盘上的清单并与注册表记录的哈希比对，防止安装后被篡改。
 func (m *Module) openInstalled(record storedPlugin) (Installation, error) {
 	if !packageDirectory(record.Directory) {
 		return Installation{}, errors.New("已安装插件的目录无效")
@@ -213,6 +228,7 @@ func (m *Module) openInstalled(record storedPlugin) (Installation, error) {
 	return Installation{Manifest: manifest, Root: directory, Plugin: record.Plugin}, nil
 }
 
+// EnabledInstallations 返回所有已启用且清单仍与安装记录一致的插件实例。
 func (m *Module) EnabledInstallations() ([]Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

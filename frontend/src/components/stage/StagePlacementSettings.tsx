@@ -1,3 +1,7 @@
+/**
+ * 文件职责：舞台模型缩放与拖拽范围设置。
+ * 两个表单都用字符串草稿保存输入，提交时才校验并写回 store。
+ */
 import { useState } from 'react'
 import { Move, PanelsTopLeft } from 'lucide-react'
 import { useStudio } from '../../store/studio'
@@ -10,6 +14,7 @@ import {
   type ModelDragLimits,
 } from '../../types/stage'
 
+/** 舞台范围设置，包含缩放与拖拽两组。 */
 export default function StagePlacementSettings() {
   return (
     <>
@@ -19,15 +24,18 @@ export default function StagePlacementSettings() {
   )
 }
 
+/** 模型缩放范围设置。 */
 function ModelZoomRange() {
   const limits = useStudio((s) => s.modelZoomLimits)
   const setLimits = useStudio((s) => s.setModelZoomLimits)
+  // 用字符串保存输入，允许用户先输入 "-" 或空值等中间态而不被数字输入框吞掉。
   const [minimum, setMinimum] = useState(String(limits.min))
   const [maximum, setMaximum] = useState(String(limits.max))
   const [feedback, setFeedback] = useState<'invalid' | 'saved' | null>(null)
   const min = Number(minimum)
   const max = Number(maximum)
   const allowed = modelZoomPercentBounds
+  // 与已保存值不同才允许提交，避免无意义的写入。
   const changed = min !== limits.min || max !== limits.max
 
   return (
@@ -122,11 +130,13 @@ const dragFields = [
   { id: 'bottom', label: '下边界（%）' },
 ] as const
 
+/** 模型拖拽边界设置。 */
 function ModelDragRange() {
   const limits = useStudio((s) => s.modelDragLimits)
   const setLimits = useStudio((s) => s.setModelDragLimits)
   const [draft, setDraft] = useState<Partial<Record<keyof ModelDragLimits, string>>>({})
   const [feedback, setFeedback] = useState<'invalid' | 'saved' | null>(null)
+  // 草稿字段优先，未编辑过的字段回落到已保存值。
   const value = (id: keyof ModelDragLimits) => draft[id] ?? String(limits[id])
   const changed = dragFields.some(({ id }) => value(id) !== String(limits[id]))
 

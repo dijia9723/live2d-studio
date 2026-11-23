@@ -1,3 +1,5 @@
+// archive_summary.go 负责调用大模型为已结束的直播生成复盘总结。
+
 package livemode
 
 import (
@@ -12,9 +14,16 @@ import (
 	"server/internal/modules/agent"
 )
 
+// errRecording 表示直播尚未结束，此时统计仍在变化，不适合生成总结。
 var errRecording = errors.New("直播记录结束后可以生成 AI 总结")
+
+// errNoArchiveData 表示这场直播没有任何互动数据可总结。
 var errNoArchiveData = errors.New("这场直播没有可总结的互动")
 
+// summarizeArchive 生成并保存单场直播的复盘总结。
+// 只抽取有限数量的早/晚弹幕与最近台词，控制提示词长度；
+// 标题、弹幕和礼物名都视为资料而非指令，防止观众通过弹幕注入提示词。
+// 已有总结时直接返回，避免重复消耗模型调用。
 func (s *Service) summarizeArchive(ctx context.Context, id string) (archiveDetails, error) {
 	detail, err := s.archiveDetails(ctx, id)
 	if err != nil || detail.Summary != "" {
@@ -60,6 +69,7 @@ func (s *Service) summarizeArchive(ctx context.Context, id string) (archiveDetai
 		return detail, err
 	}
 	settings.LLM.Temperature, settings.LLM.MaxTokens, settings.LLM.ToolsEnabled = 0.3, 700, false
+	// 复盘是一次性分析，单独设置超时，避免模型无响应时请求一直挂起。
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	var summary strings.Builder

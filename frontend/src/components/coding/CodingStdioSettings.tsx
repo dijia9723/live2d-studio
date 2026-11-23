@@ -1,15 +1,26 @@
+/**
+ * CodingStdioSettings 管理插件声明的本地 MCP（stdio）服务：展示启动命令、
+ * 环境变量与可用性，并让用户在桌面端授权启动或撤销授权。
+ */
 import { useEffect, useState } from 'react'
 import { piPluginsAPI, type PiStdioServer } from '../../api/piplugins'
 
+/** formatError 将未知异常统一转换为可展示的中文错误文案。 */
 function formatError(cause: unknown) {
   return cause instanceof Error ? cause.message : '无法保存 MCP 设置'
 }
 
+/**
+ * CodingStdioSettings 本地 MCP 服务授权列表。
+ * 浏览器环境不允许启动本地进程，因此除撤销外的操作均要求 desktop 为 true。
+ */
 export default function CodingStdioSettings({
   plugin,
   desktop,
 }: {
+  /** 插件 ID。 */
   plugin: string
+  /** 是否运行在桌面客户端。 */
   desktop: boolean
 }) {
   const [servers, setServers] = useState<PiStdioServer[]>()
@@ -34,6 +45,7 @@ export default function CodingStdioSettings({
     setBusy(true)
     setError('')
     try {
+      // 仅提交本次编辑过的环境变量，留空表示沿用后端已保存的值。
       await piPluginsAPI.setStdio(plugin, server.id, approved, draft[server.id])
       setDraft((current) => ({ ...current, [server.id]: {} }))
       setServers(await piPluginsAPI.stdio(plugin))

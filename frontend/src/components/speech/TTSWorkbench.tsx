@@ -1,3 +1,7 @@
+/**
+ * 文件职责：本地 TTS 试听工作台。
+ * 选择本地模型与音色、输入试听文本并合成音频，支持取消、试听与下载 WAV。
+ */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Download, Play, RefreshCw, Square } from 'lucide-react'
 import { api } from '../../api/client'
@@ -12,14 +16,17 @@ import {
 } from '../ui/select'
 import { Textarea } from '../ui/textarea'
 
+/** 试听工作台属性。 */
 interface Props {
   options: LocalTTSOptions | undefined
+  /** 是否为当前展开的角色，收起时取消合成并暂停播放 */
   active: boolean
   text: string
   onTextChange: (text: string) => void
   onChange: (options: LocalTTSOptions) => void
 }
 
+/** 本地 TTS 试听工作台。 */
 export default function TTSWorkbench({ options, active, text, onTextChange, onChange }: Props) {
   const titleID = useId()
   const textID = useId()
@@ -41,6 +48,7 @@ export default function TTSWorkbench({ options, active, text, onTextChange, onCh
   }, [])
 
   useEffect(() => {
+    // 角色收起后继续合成/播放会浪费算力，也会在后台突然发声。
     if (active) return
     cancel()
     player.current?.pause()
@@ -66,20 +74,24 @@ export default function TTSWorkbench({ options, active, text, onTextChange, onCh
     return () => controller.abort()
   }, [revision])
 
+  // 卸载时中止未完成的合成，避免请求结束后再去 setState。
   useEffect(() => () => request.current?.abort(), [])
   useEffect(() => {
     if (!result) return
     resultArea.current?.scrollIntoView({ block: 'nearest' })
+    // 每次结果替换或卸载都要回收旧的 Blob URL，否则内存会持续增长。
     return () => URL.revokeObjectURL(result.url)
   }, [result])
 
   const model = catalog?.models.find((item) => item.id === options?.model)
+  // 只有推理环境与所选模型都已安装才能合成。
   const ready = !!(catalog?.runtime_installed && model?.installed)
   const needsInstall =
     catalog &&
     (!catalog.runtime_installed ||
       !catalog.models.some((item) => item.installed) ||
       (options && !model?.installed))
+  // 按码点计数，与后端长度限制保持一致（emoji 不会被算成两个字符）。
   const length = Array.from(text).length
   const maxLength = catalog?.max_text_length ?? 1000
 
@@ -90,6 +102,7 @@ export default function TTSWorkbench({ options, active, text, onTextChange, onCh
   }
 
   const synthesize = async () => {
+    // request.current 存在表示已有合成在跑，避免重复点击产生并发请求。
     if (!options || !ready || request.current || !text.trim() || length > maxLength) return
     const controller = new AbortController()
     request.current = controller
@@ -100,6 +113,7 @@ export default function TTSWorkbench({ options, active, text, onTextChange, onCh
     try {
       const audio = await api.synthesizeLocal(text, options, controller.signal)
       if (!controller.signal.aborted) {
+        // 合成返回 Blob，需转成对象 URL 才能交给 audio 播放与下载。
         setResult({
           url: URL.createObjectURL(audio),
           seconds: (performance.now() - start) / 1000,

@@ -1,3 +1,5 @@
+// reply.go 负责挑选待回复事件、控制回复节奏，并在独立协程中生成 AI 回应。
+
 package livemode
 
 import (
@@ -12,11 +14,15 @@ import (
 	"server/internal/modules/agent"
 )
 
+// eligible 判断一条事件是否值得自动回应：必须晚于上次处理的游标、尚未回复、
+// 在近期时间窗内且属于配置允许自动回复的类型。
 func (s *Service) eligible(run *session, event Event, now time.Time) bool {
 	return event.ID > run.cursor && !run.replied[event.ID] && now.Sub(event.At) <= 2*time.Minute &&
 		slices.Contains(s.config.ReplyEvents, event.Kind)
 }
 
+// eventPriority 给事件排优先级：带问号的弹幕 > 礼物 > 普通弹幕 > 关注 > 进场，
+// 让有限的每批回复优先覆盖更需要回应的互动。
 func eventPriority(event Event) int {
 	switch event.Kind {
 	case Chat:
@@ -35,7 +41,8 @@ func eventPriority(event Event) int {
 	}
 }
 
-// RequestReply accepts one bounded batch. Zero eventID requests automatic selection.
+// RequestReply 接受一批有上限的回复请求；eventID 为 0 时按优先级自动挑选。
+// 同一时间只允许一条回复在生成，只有自动模式且已过回复间隔才接受自动请求。
 func (s *Service) RequestReply(sessionID string, eventID int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,6 +94,7 @@ func (s *Service) RequestReply(sessionID string, eventID int) (bool, error) {
 	run.lastReplyAt = now
 	run.nextReply++
 	run.draft = ""
+	// 单次回复设置超时，避免模型或网络异常时一直占用“正在回复”状态。
 	ctx, cancel := context.WithTimeout(run.ctx, 45*time.Second)
 	run.stopReply = cancel
 	input := run.replyContext(selected)
@@ -94,6 +102,8 @@ func (s *Service) RequestReply(sessionID string, eventID int) (bool, error) {
 	return true, nil
 }
 
+// generate 在独立协程中流式生成回复。增量文本只短暂写入 draft 供前端展示，
+// 完成后先确认会话仍是同一个再落库，防止旧会话的结果写进新直播的归档。
 func (s *Service) generate(ctx context.Context, cancel context.CancelFunc, run *session, config Config, archiveID string, replyID int, events []Event, input replyContext) {
 	defer cancel()
 	reply := Reply{ID: replyID, At: time.Now()}

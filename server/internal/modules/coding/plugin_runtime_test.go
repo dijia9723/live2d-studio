@@ -1,3 +1,4 @@
+// plugin_runtime_test.go 覆盖插件技能文档解析与 MCP 传输授权校验。
 package coding
 
 import (

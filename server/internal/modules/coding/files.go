@@ -1,3 +1,4 @@
+// files.go 负责项目内文本文件的列举、读取、带版本校验的写入与路径安全校验。
 package coding
 
 import (
@@ -33,6 +34,7 @@ func ignoredName(name string) bool {
 	return name == ".git" || name == "node_modules" || name == ".venv" || name == ".env" || strings.HasPrefix(name, ".env.") && name != ".env.example"
 }
 
+// localPath 把请求路径转换为项目内相对路径，拒绝绝对路径、盘符、符号链接与受保护文件名，防止路径穿越。
 func localPath(path string, allowRoot bool) (string, error) {
 	if (path == "" || path == ".") && allowRoot {
 		return ".", nil
@@ -108,6 +110,7 @@ func readFile(root *os.Root, path string) (fileContent, error) {
 	return readLocalFile(root, local)
 }
 
+// checkFilePath 逐级检查路径上的符号链接，避免经由链接逃逸出项目根目录。
 func checkFilePath(root *os.Root, local string) error {
 	for path := local; path != "."; path = filepath.Dir(path) {
 		info, err := root.Lstat(path)
@@ -121,7 +124,7 @@ func checkFilePath(root *os.Root, local string) error {
 	return nil
 }
 
-// writeFile uses an optimistic revision and a sibling temporary file so readers see whole versions.
+// writeFile 先校验乐观版本号，再写入同目录临时文件并原子改名，保证读取方只会看到完整版本。
 func (m *Module) writeFile(root *os.Root, path string, content fileContent) (fileContent, error) {
 	local, err := localPath(path, false)
 	if err != nil {

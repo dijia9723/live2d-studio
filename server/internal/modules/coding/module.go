@@ -1,3 +1,5 @@
+// Package coding 提供 PI 编码工作台的后端能力：项目与文件读写、编码会话、交互终端、浏览器调试、
+// Goal 与子 Agent 编排，以及插件工作区等。
 package coding
 
 import (
@@ -24,6 +26,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Module 是编码工作台的模块入口，聚合数据库、设置、运行时目录以及终端与浏览器调试服务。
 type Module struct {
 	DB                *gorm.DB
 	Settings          *settings.Service
@@ -35,10 +38,10 @@ type Module struct {
 	Plugins           *piplugins.Module
 	Terminal          *TerminalService
 	BrowserDebug      *BrowserDebugService
-	active            sync.Map
-	filesMu           sync.Mutex
-	sessionsMu        sync.Mutex
-	orchestrationJobs sync.Map
+	active            sync.Map   // 以项目 ID 记录前台生成任务，保证同一项目同时只有一次写入。
+	filesMu           sync.Mutex // 串行化文件写入与文件条目变更，避免共享临时文件或目录状态被并发修改。
+	sessionsMu        sync.Mutex // 串行化会话变更与任务受理，避免前台和后台争抢同一会话。
+	orchestrationJobs sync.Map   // 以会话 ID 记录后台 Goal/子 Agent 任务，用于并发限额与取消。
 }
 
 type runningTask struct {
@@ -46,6 +49,7 @@ type runningTask struct {
 	cancel    context.CancelFunc
 }
 
+// Register 在给定路由组上注册编码工作台的全部 HTTP 接口，并统一挂载工作区校验中间件。
 func (m *Module) Register(r *gin.RouterGroup) {
 	group := r.Group("/coding", middleware.WorkspaceOnly(m.DesktopAvailable))
 	group.GET("/runtime", m.runtimeStatus)
@@ -292,6 +296,7 @@ func (m *Module) stop(c *gin.Context) {
 	pkg.OK(c, nil)
 }
 
+// reservePrompt 在会话锁内完成校验与占位，确保同一项目不会并行启动前台生成。
 func (m *Module) reservePrompt(c *gin.Context, cancel context.CancelFunc) (model.CodingSession, bool) {
 	m.sessionsMu.Lock()
 	defer m.sessionsMu.Unlock()
@@ -383,6 +388,7 @@ func (m *Module) prompt(c *gin.Context) {
 		pkg.Fail(c, 500, "保存编码对话失败")
 		return
 	}
+	// 用 SSE 逐段推送生成内容；禁用代理缓冲，避免增量被攒批而前端迟迟看不到输出。
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("X-Accel-Buffering", "no")
 	write := func(event any) error {

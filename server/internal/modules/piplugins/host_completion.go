@@ -1,3 +1,4 @@
+// host_completion.go 负责桥接插件对宿主模型补全与工作区调用的受限请求。
 package piplugins
 
 import (
@@ -9,12 +10,14 @@ import (
 	"time"
 )
 
+// HostCompletionModel 描述可暴露给插件的宿主机型，IsDefault 标记清单权限匹配的默认项。
 type HostCompletionModel struct {
 	Key       string `json:"key"`
 	Name      string `json:"name"`
 	IsDefault bool   `json:"isDefault"`
 }
 
+// HostCompletionRequest 是规范化后的模型补全请求，宿主只接收提示文本而非会话对象。
 type HostCompletionRequest struct {
 	System    string
 	Prompt    string
@@ -33,6 +36,7 @@ type hostCompletionResponse struct {
 	Error string          `json:"error,omitempty"`
 }
 
+// ConfigureHostCompletion 注入宿主模型列表与补全实现，使插件进程不必直接持有模型配置。
 func (m *Module) ConfigureHostCompletion(model func() (HostCompletionModel, error), complete func(context.Context, HostCompletionRequest) (string, error)) {
 	if m.host != nil {
 		m.host.model = model
@@ -40,6 +44,8 @@ func (m *Module) ConfigureHostCompletion(model func() (HostCompletionModel, erro
 	}
 }
 
+// hostCompletionInput 校验并扁平化插件消息：拒绝会话上下文、超长提示和非法角色，
+// 因为插件不应读取用户当前会话内容。
 func hostCompletionInput(options json.RawMessage) (HostCompletionRequest, error) {
 	input := struct {
 		ModelKey              string `json:"modelKey"`
@@ -82,6 +88,8 @@ func hostCompletionInput(options json.RawMessage) (HostCompletionRequest, error)
 	}, nil
 }
 
+// completeForWorker 处理来自 worker 的异步补全请求：先区分工作区方法，
+// 再校验权限、调用窗口与频率后转发给宿主补全实现。
 func (m *Module) completeForWorker(worker *hostedWorker, request hostCompletionRequest) hostCompletionResponse {
 	var call struct {
 		Method  string `json:"workspaceMethod"`
@@ -115,6 +123,7 @@ func (m *Module) completeForWorker(worker *hostedWorker, request hostCompletionR
 	return hostCompletionResponse{Text: clipHostText(text, 3000)}
 }
 
+// chargeCompletion 按插件统计每分钟的补全次数，限制插件占用宿主模型额度。
 func (h *pluginHost) chargeCompletion(id string) bool {
 	h.completionMu.Lock()
 	defer h.completionMu.Unlock()

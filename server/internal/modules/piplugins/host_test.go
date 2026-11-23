@@ -1,3 +1,4 @@
+// host_test.go 覆盖独立插件进程的生命周期、命令、面板隔离与模型补全桥接。
 package piplugins
 
 import (

@@ -1,3 +1,4 @@
+// host_process.go 负责启动独立的插件子进程，并维护 JSON 行协议的消息通道。
 package piplugins
 
 import (
@@ -11,6 +12,8 @@ import (
 	"time"
 )
 
+// hostedWorker 代表一个插件子进程：gate 保证同一时刻只有一个同步调用，
+// active 记录当前调用的截止时间，用于限制该调用内可发起的补全与工作区请求。
 type hostedWorker struct {
 	installation   Installation
 	cmd            *exec.Cmd
@@ -26,6 +29,8 @@ type hostedWorker struct {
 	workspaceCalls int
 }
 
+// spawnHostWorker 以自身可执行文件加 -pi-plugin-host 参数拉起隔离子进程。
+// 子进程只共享 stdin/stdout 管道，不继承宿主环境变量与数据库连接。
 func spawnHostWorker(executable string, installation Installation, async func(*hostedWorker, hostResponse)) (*hostedWorker, error) {
 	cmd := exec.Command(executable, "-pi-plugin-host")
 	cmd.Env = []string{"GOMEMLIMIT=96MiB", "GOMAXPROCS=2"}
@@ -80,6 +85,7 @@ func spawnHostWorker(executable string, installation Installation, async func(*h
 	return worker, nil
 }
 
+// call 发送一次请求并等待回复；超时后直接终止进程，避免半读写的管道状态被继续使用。
 func (w *hostedWorker) call(ctx context.Context, request hostRequest) (hostResponse, error) {
 	timeout := 5 * time.Second
 	if completionOperation(request.Operation) {
@@ -134,6 +140,7 @@ func (w *hostedWorker) call(ctx context.Context, request hostRequest) (hostRespo
 	}
 }
 
+// completionOperation 标记可触发模型补全的调用类型，只有这些调用会开启较长的执行预算。
 func completionOperation(operation string) bool {
 	return operation == "command" || operation == "tool" || operation == "panel"
 }
@@ -144,6 +151,7 @@ func (w *hostedWorker) write(request hostRequest) error {
 	return json.NewEncoder(w.input).Encode(request)
 }
 
+// claimCompletion 限定单次调用内最多两次补全，返回调用自身的截止上下文。
 func (w *hostedWorker) claimCompletion() (context.Context, bool) {
 	w.activeMu.Lock()
 	defer w.activeMu.Unlock()
@@ -154,6 +162,7 @@ func (w *hostedWorker) claimCompletion() (context.Context, bool) {
 	return w.active, true
 }
 
+// claimWorkspace 限定单次调用内的工作区访问次数，防止插件反复读取项目数据。
 func (w *hostedWorker) claimWorkspace() (context.Context, bool) {
 	w.activeMu.Lock()
 	defer w.activeMu.Unlock()
@@ -164,6 +173,7 @@ func (w *hostedWorker) claimWorkspace() (context.Context, bool) {
 	return w.active, true
 }
 
+// terminate 幂等关闭管道并杀死子进程；sync.Once 保证多路清理不会重复执行。
 func (w *hostedWorker) terminate() {
 	w.stop.Do(func() {
 		_ = w.input.Close()

@@ -1,3 +1,4 @@
+// host_effects.go 负责校验并路由插件产生的界面事件、存储写入与插件间总线消息。
 package piplugins
 
 import (
@@ -9,6 +10,7 @@ import (
 	"time"
 )
 
+// hostTopicMatch 支持精确段匹配、单段通配 * 与后缀通配 **，用于限定总线话题范围。
 func hostTopicMatch(pattern, topic string) bool {
 	if prefix, ok := strings.CutSuffix(pattern, ".**"); ok {
 		return topic == prefix || strings.HasPrefix(topic, prefix+".")
@@ -25,12 +27,15 @@ func hostTopicMatch(pattern, topic string) bool {
 	return true
 }
 
+// topicIn 在匹配前先校验话题标识，避免通配模式被异常字符绕过。
 func topicIn(patterns []string, topic string) bool {
 	return hostMemberID.MatchString(topic) && slices.ContainsFunc(patterns, func(pattern string) bool {
 		return hostTopicMatch(pattern, topic)
 	})
 }
 
+// applyHostEffects 逐条校验事件类型与权限后再落地，限制事件数量与转发深度，
+// 防止插件通过事件链形成无限递归或刷屏。
 func (m *Module) applyHostEffects(ctx context.Context, item Installation, events []hostEvent, depth int) []hostEvent {
 	out := []hostEvent{}
 	if len(events) == 0 || m.host == nil || depth >= 4 {
@@ -77,6 +82,7 @@ func (m *Module) applyHostEffects(ctx context.Context, item Installation, events
 	return out[:min(len(out), 24)]
 }
 
+// routeHostMessage 把总线消息投递给已订阅的其他插件，并设置总超时避免互相等待。
 func (m *Module) routeHostMessage(ctx context.Context, from string, event hostEvent, depth int) []hostEvent {
 	ctx, cancel := context.WithTimeout(ctx, 1800*time.Millisecond)
 	defer cancel()
@@ -98,7 +104,7 @@ func (m *Module) routeHostMessage(ctx context.Context, from string, event hostEv
 	return out
 }
 
-// HostAgentTool is a manifest-declared tool from an enabled executable plugin.
+// HostAgentTool 是已获执行授权的插件在清单中声明的编码工具。
 type HostAgentTool struct {
 	PluginID    string          `json:"plugin_id"`
 	Name        string          `json:"name"`
@@ -107,6 +113,7 @@ type HostAgentTool struct {
 	Schema      json.RawMessage `json:"schema"`
 }
 
+// HostAgentTools 汇总当前可执行插件声明的工具，供编码代理注册。
 func (m *Module) HostAgentTools(ctx context.Context) []HostAgentTool {
 	list := make([]HostAgentTool, 0)
 	for _, installed := range m.hostInstallations() {
@@ -122,6 +129,7 @@ func (m *Module) HostAgentTools(ctx context.Context) []HostAgentTool {
 	return list[:min(len(list), 32)]
 }
 
+// CallHostAgentTool 调用指定插件的编码工具；只允许清单中声明过的工具名。
 func (m *Module) CallHostAgentTool(ctx context.Context, pluginID, name string, args json.RawMessage) (json.RawMessage, error) {
 	item, err := m.hostInstallation(pluginID)
 	if err != nil {

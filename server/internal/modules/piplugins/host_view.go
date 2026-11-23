@@ -1,3 +1,4 @@
+// host_view.go 负责把插件面板 HTML 重写为内联资源并注入 CSP 的隔离视图。
 package piplugins
 
 import (
@@ -22,6 +23,8 @@ import (
 //go:embed host_bridge.js
 var hostFrameBridge string
 
+// hostFrameCSP 禁止面板发起网络请求、加载子框架或提交表单，只允许内联脚本与 data: 资源，
+// 从而把插件界面限制在完全离线的沙箱中。
 const hostFrameCSP = "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data:; " +
 	"img-src data:; media-src data:; font-src data:; connect-src 'none'; object-src 'none'; " +
 	"frame-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'"
@@ -53,6 +56,8 @@ func (m *Module) hostView(c *gin.Context) {
 	pkg.OK(c, gin.H{"html": result, "title": firstText(string(view.Title), spec.Name)})
 }
 
+// isolatedHostHTML 解析插件页面，移除 iframe、外部链接与内联元信息，
+// 把同包资源改写为 data: URI 后注入桥接脚本与 CSP，形成可安全预览的离线文档。
 func isolatedHostHTML(item Installation, entry string) (string, error) {
 	source, err := readHostEntry(item.Root, entry, 512<<10)
 	if err != nil {
@@ -152,6 +157,8 @@ func attribute(node *html.Node, name string) string {
 	return ""
 }
 
+// hostAsset 只内联包内相对路径的允许类型资源，拒绝绝对 URL、上级路径与协议外链，
+// 并按剩余预算递减，避免单个面板耗尽内存。
 func hostAsset(root, page, raw, kind string, remaining *int64) string {
 	if *remaining <= 0 {
 		return ""
@@ -191,6 +198,8 @@ func hostAsset(root, page, raw, kind string, remaining *int64) string {
 	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(content)
 }
 
+// hostBridge 处理隔离面板发来的桥接调用：内置方法在此直接响应，
+// 其余方法作为 panel 操作转发给插件进程。
 func (m *Module) hostBridge(c *gin.Context) {
 	item, ok := m.hostRequire(c)
 	if !ok {

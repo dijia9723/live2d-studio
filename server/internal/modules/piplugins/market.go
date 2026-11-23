@@ -1,3 +1,4 @@
+// market.go 负责插件市场目录的下载缓存、可信地址校验与安装包校验下载。
 package piplugins
 
 import (
@@ -20,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 市场只访问固定官方源与两个镜像，依次回退以减少单点故障对安装的影响。
 const (
 	officialCatalog = "https://plugins.aiuo.net/catalog.json"
 	githubMirror    = "https://raw.githubusercontent.com/AIUO-Net/pi-desktop-plugins/main/catalog.json"
@@ -27,6 +29,7 @@ const (
 	maxCatalogSize  = 12 << 20
 )
 
+// marketCatalog 是解析后的市场目录，同时记录来源与抓取时间用于缓存判断。
 type marketCatalog struct {
 	SchemaVersion int           `json:"schemaVersion"`
 	ArtifactBase  string        `json:"artifactBaseUrl"`
@@ -35,12 +38,14 @@ type marketCatalog struct {
 	updatedAt     time.Time
 }
 
+// marketCache 是落盘的目录快照，离线时仍可展示上次成功拉取的插件列表。
 type marketCache struct {
 	Source  string          `json:"source"`
 	Fetched time.Time       `json:"fetched"`
 	Catalog json.RawMessage `json:"catalog"`
 }
 
+// marketEntry 是目录中的一个插件条目，Versions 可能包含已撤回版本，需再过滤。
 type marketEntry struct {
 	ID          string                       `json:"id"`
 	Name        string                       `json:"name"`
@@ -56,6 +61,7 @@ type marketEntry struct {
 	Versions    []marketVersion              `json:"versions"`
 }
 
+// marketVersion 描述可下载版本及其完整性信息；只有校验字段齐全才会参与安装。
 type marketVersion struct {
 	Version     string   `json:"version"`
 	SHA256      string   `json:"shasum"`
@@ -65,6 +71,7 @@ type marketVersion struct {
 	Yanked      bool     `json:"yanked"`
 }
 
+// marketplacePlugin 是市场列表项的对外结构，Versions 只包含可校验安装的版本。
 type marketplacePlugin struct {
 	Plugin
 	Versions   []string `json:"versions"`
@@ -73,6 +80,8 @@ type marketplacePlugin struct {
 	Readme     string   `json:"readme_markdown,omitempty"`
 }
 
+// marketURLAllowed 使用主机白名单而非任意 URL，降低供应链投毒与内网请求风险；
+// 同时要求 https、无用户信息且端口为默认 443。
 func marketURLAllowed(u *url.URL) bool {
 	if u == nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
 		return false
@@ -86,6 +95,7 @@ func marketURLAllowed(u *url.URL) bool {
 	}
 }
 
+// marketClient 创建带超时的客户端，并在每次重定向时重新校验目标主机。
 func marketClient() *http.Client {
 	return &http.Client{
 		Timeout: 22 * time.Second,
@@ -98,6 +108,7 @@ func marketClient() *http.Client {
 	}
 }
 
+// fetchMarket 校验地址后读取响应，并把声明长度与读取上限都限制在调用方给定的范围内。
 func (m *Module) fetchMarket(ctx context.Context, destination *url.URL, limit int64) ([]byte, error) {
 	if !marketURLAllowed(destination) {
 		return nil, errors.New("插件市场地址不受信任")
@@ -117,6 +128,7 @@ func (m *Module) fetchMarket(ctx context.Context, destination *url.URL, limit in
 	return readLimited(resp.Body, limit)
 }
 
+// parseCatalog 校验目录版本与条目数量，拒绝结构异常或过大的市场响应。
 func parseCatalog(data []byte, source string, updatedAt time.Time) (*marketCatalog, error) {
 	out := &marketCatalog{source: source, updatedAt: updatedAt}
 	if err := json.Unmarshal(data, out); err != nil || (out.SchemaVersion != 1 && out.SchemaVersion != 2) ||
@@ -126,6 +138,8 @@ func parseCatalog(data []byte, source string, updatedAt time.Time) (*marketCatal
 	return out, nil
 }
 
+// market 返回目录：5 分钟内的缓存直接复用，否则按官方源到镜像依次拉取，
+// 全部失败时回退到上次成功缓存，保证离线也能浏览已安装市场信息。
 func (m *Module) market(ctx context.Context, refresh bool) (*marketCatalog, error) {
 	m.marketMu.Lock()
 	defer m.marketMu.Unlock()
@@ -163,6 +177,7 @@ func (m *Module) market(ctx context.Context, refresh bool) (*marketCatalog, erro
 	return nil, errors.New("无法连接 PI-Desktop 官方插件市场")
 }
 
+// readCachedMarket 读取本地缓存，但只信任已知市场源，避免被篡改的缓存注入目录。
 func (m *Module) readCachedMarket() *marketCatalog {
 	file, err := os.Open(filepath.Join(m.root, "market.json"))
 	if err != nil {
@@ -182,6 +197,7 @@ func (m *Module) readCachedMarket() *marketCatalog {
 	return catalog
 }
 
+// releases 过滤撤回与非语义化版本，按版本号降序去重后返回，首个即可作为推荐版本。
 func (entry marketEntry) releases() []marketVersion {
 	type parsedRelease struct {
 		value   marketVersion
@@ -206,11 +222,13 @@ func (entry marketEntry) releases() []marketVersion {
 	return versions
 }
 
+// installable 要求版本提供合法 SHA-256、下载地址与不超过上限的声明大小。
 func (v marketVersion) installable() bool {
 	hash, err := hex.DecodeString(v.SHA256)
 	return err == nil && len(hash) == sha256.Size && v.URL != "" && v.Size > 0 && v.Size <= maxPackageSize
 }
 
+// packageURLs 生成候选下载地址：优先目录声明的包地址，相对路径再补充镜像回退。
 func (catalog *marketCatalog) packageURLs(version marketVersion) []*url.URL {
 	location, _ := url.Parse(catalog.source)
 	base := location
@@ -234,6 +252,7 @@ func (catalog *marketCatalog) packageURLs(version marketVersion) []*url.URL {
 	return result
 }
 
+// marketplace 列出市场插件，仅展示存在可校验安装包的版本，避免前端给出必然失败的安装入口。
 func (m *Module) marketplace(c *gin.Context) {
 	catalog, err := m.market(c.Request.Context(), c.Query("refresh") == "true")
 	if err != nil {
@@ -266,6 +285,8 @@ func (m *Module) marketplace(c *gin.Context) {
 	pkg.OK(c, out)
 }
 
+// installMarket 下载指定版本并核对大小与 SHA-256，任一候选地址不匹配则继续尝试下一个镜像；
+// 只有完全一致的包才交给 install，并再次绑定市场记录的 ID 与版本。
 func (m *Module) installMarket(c *gin.Context) {
 	id := c.Param("id")
 	body := struct {

@@ -1,3 +1,7 @@
+/**
+ * CodingSQLitePreview 以只读方式分页展示项目内 SQLite 数据库的表数据，
+ * 用于在不启动数据库客户端的情况下快速核对表内容。
+ */
 import { useEffect, useState } from 'react'
 import { codingAPI, type CodingSQLitePage } from '../../api/coding'
 import {
@@ -8,6 +12,7 @@ import {
   SelectValue,
 } from '../ui/select'
 
+/** CodingSQLitePreview SQLite 只读预览组件。 */
 export default function CodingSQLitePreview({ project, path }: { project: string; path: string }) {
   const [table, setTable] = useState('')
   const [page, setPage] = useState(1)
@@ -17,6 +22,7 @@ export default function CodingSQLitePreview({ project, path }: { project: string
 
   useEffect(() => {
     const controller = new AbortController()
+    // 表或页码变化时重新请求；abort 防止旧响应覆盖新状态。
     setLoading(true)
     setError('')
     codingAPI
@@ -48,6 +54,7 @@ export default function CodingSQLitePreview({ project, path }: { project: string
         </p>
       )}
       {preview.stale_wal && (
+        // 只读预览直接读主库文件，WAL 中尚未 checkpoint 的数据不可见，需明确提示避免误判。
         <p className="coding-muted">当前预览来自数据库文件，未包含 WAL 中尚未写回的数据。</p>
       )}
       {preview.tables_truncated && <p className="coding-muted">已达到可显示的表数量上限。</p>}
@@ -60,6 +67,7 @@ export default function CodingSQLitePreview({ project, path }: { project: string
               disabled={loading}
               onValueChange={(name) => {
                 setTable(name)
+                // 切换表后页码归零，避免沿用上一张表的页码导致越界。
                 setPage(1)
               }}
             >

@@ -1,3 +1,8 @@
+/**
+ * 文件职责：角色缩略预览的共享渲染器。
+ * 多个角色卡片共用一个 WebGL 渲染器与 Ticker，逐帧把结果复制到各自的 2D 画布，
+ * 并在卡片卸载时回收模型与纹理缓存。
+ */
 import { BaseTexture, Renderer, Texture, Ticker, utils } from 'pixi.js'
 import type { IRenderingContext } from 'pixi.js'
 import type { Live2DModel } from 'pixi-live2d-display'
@@ -8,7 +13,10 @@ interface Preview {
   onError: (error: unknown) => void
 }
 
-// Cubism 的着色器在同一模块内共享。用一个 WebGL 画布渲染，再复制到各卡片的 2D 画布。
+/**
+ * 创建共享的角色预览渲染器。
+ * @returns attach：把模型挂到指定画布；release：释放模型及其纹理
+ */
 export function createCharacterPreviewRenderer() {
   const previews = new Set<Preview>()
   let renderer: Renderer | undefined
@@ -27,6 +35,7 @@ export function createCharacterPreviewRenderer() {
 
     if (!renderer) {
       const view = document.createElement('canvas')
+      // Cubism 的着色器在同一模块内共享。用一个 WebGL 画布渲染，再复制到各卡片的 2D 画布。
       // Cubism 2 需要 WebGL 1，同一个画布也可以渲染 Cubism 4 模型。
       const context = view.getContext('webgl', { alpha: true, stencil: true, antialias: true })
       if (!context) throw new Error('角色预览需要 WebGL 支持')
@@ -39,6 +48,7 @@ export function createCharacterPreviewRenderer() {
       })
       const sharedRenderer = renderer
       const sharedTicker = new Ticker()
+      // 预览不需要高帧率，限制 30fps 以降低多个卡片同时渲染的负担。
       sharedTicker.maxFPS = 30
       sharedTicker.add(() => {
         for (const preview of previews) {
@@ -88,6 +98,7 @@ export function createCharacterPreviewRenderer() {
     return () => {
       previews.delete(preview)
       release(model)
+      // 最后一个预览卸载后销毁共享渲染器，释放 WebGL 上下文。
       if (!previews.size) {
         ticker?.destroy()
         renderer?.destroy(true)
@@ -116,4 +127,5 @@ export function createCharacterPreviewRenderer() {
   return { attach, release }
 }
 
+/** 共享预览渲染器的实例类型，供组件通过 props 传递。 */
 export type CharacterPreviewRenderer = ReturnType<typeof createCharacterPreviewRenderer>

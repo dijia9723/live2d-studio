@@ -1,3 +1,4 @@
+// orchestration.go 负责 Goal 与子 Agent 任务的并发名额、生命周期与后台对话执行。
 package coding
 
 import (
@@ -39,6 +40,7 @@ func delegated(ctx context.Context) context.Context {
 	return context.WithValue(ctx, delegationContextKey{}, true)
 }
 
+// MigrateOrchestration 迁移 Goal、工作会话与子 Agent 表，并把上次退出时仍标记为运行中的任务改为可继续的中断状态。
 func MigrateOrchestration(db *gorm.DB) error {
 	if err := db.AutoMigrate(&codingGoal{}, &codingWorker{}, &codingSubagent{}); err != nil {
 		return err
@@ -72,9 +74,8 @@ func (m *Module) orchestrationBusy(session string) bool {
 	return exists
 }
 
-// claimOrchestration runs under sessionsMu, the same lock used by foreground
-// prompt admission. Read-only tasks can coexist, while all coding tasks acquire
-// the existing project writer slot.
+// claimOrchestration 在 sessionsMu 保护下申请一个编排任务名额；它与前台提问共用同一把锁，
+// 只读任务可以并行，而所有可写任务必须先占用项目的写入槽。
 func (m *Module) claimOrchestration(ctx context.Context, project, session, target, kind, mode string, timeout time.Duration) (context.Context, *orchestrationJob, error) {
 	if m.orchestrationBusy(session) {
 		return nil, nil, errors.New("此会话已有任务正在运行")
@@ -127,6 +128,7 @@ func (m *Module) orchestrationJob(session, target string) *orchestrationJob {
 	return nil
 }
 
+// StopOrchestration 取消所有后台编排任务，并最多等待 4 秒让其收尾，避免退出时挂起。
 func (m *Module) StopOrchestration() {
 	var running []*orchestrationJob
 	m.sessionsMu.Lock()
@@ -162,9 +164,8 @@ func (m *Module) orchestrationConfig(selection modelSelection) (config.LLM, erro
 	return llm, nil
 }
 
-// backgroundTurn uses an independent, durable Pi history for each session.
-// Goal rounds retain only the user's actual request and assistant replies in
-// Studio's transcript. The worker runtime sees the internal continuation text.
+// backgroundTurn 为每个会话使用独立且持久化的 Pi 历史。Goal 轮次只在 Studio 的对话记录中
+// 保留用户真实请求和助手回复，内部的续跑提示只传给 Worker 运行时。
 func (m *Module) backgroundTurn(ctx context.Context, root *os.Root, cfg config.LLM, project, session, mode, prompt, visibleUser string) (model.CodingMessage, error) {
 	if visibleUser != "" {
 		if err := m.DB.Create(&model.CodingMessage{SessionID: session, Role: "user", Status: "complete", Content: visibleUser}).Error; err != nil {

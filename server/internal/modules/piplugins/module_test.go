@@ -1,3 +1,4 @@
+// module_test.go 覆盖插件安装、启用、卸载、市场校验与可信扩展授权的端到端行为。
 package piplugins
 
 import (

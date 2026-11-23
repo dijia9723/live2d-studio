@@ -1,3 +1,4 @@
+// plugin_runtime.go 负责汇总已启用插件提供的技能、MCP 服务与 stdio 配置。
 package coding
 
 import (
@@ -30,8 +31,8 @@ const (
 var pluginMCPID = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 
 type pluginRuntimeConfig struct {
-	Skills []pluginSkill     `json:"skills,omitempty"`
-	MCP    []pluginMCPServer `json:"mcp,omitempty"`
+	Skills []pluginSkill           `json:"skills,omitempty"`
+	MCP    []pluginMCPServer       `json:"mcp,omitempty"`
 	Stdio  []piplugins.StdioConfig `json:"stdio,omitempty"`
 }
 
@@ -50,6 +51,7 @@ type pluginMCPServer struct {
 	Local   bool              `json:"local,omitempty"`
 }
 
+// loadPluginRuntime 汇总已启用插件的技能与 MCP 服务，并受数量与体积预算限制，避免撑爆模型上下文。
 func loadPluginRuntime(ctx context.Context, registry *piplugins.Module) (pluginRuntimeConfig, error) {
 	var config pluginRuntimeConfig
 	if registry == nil {
@@ -179,6 +181,8 @@ func boundedPluginText(value string, maxRunes int) string {
 	return string(runes[:min(len(runes), maxRunes)])
 }
 
+// readPluginMCP 校验插件声明的远程 MCP 服务：只允许 HTTPS（本地回环需显式授权），
+// 域名必须命中清单，并拒绝可篡改请求语义的敏感请求头。
 func readPluginMCP(pluginID string, domains []string, localGrant bool, raw json.RawMessage) (pluginMCPServer, bool) {
 	var entry struct {
 		ID, Label, Transport, URL string

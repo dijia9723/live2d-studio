@@ -1,3 +1,4 @@
+// stdio.go 负责插件声明的本地 stdio MCP 服务：声明校验、桌面授权与环境参数绑定。
 package piplugins
 
 import (
@@ -23,16 +24,19 @@ var (
 	bareCommand  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+-]{0,99}$`)
 )
 
+// stdioDeclaration 是清单中一个 stdio MCP 服务的声明，Env 的值可以是字面量或设置项引用。
 type stdioDeclaration struct {
 	ID, Label, Command string
 	Args               []string
 	Env                map[string]json.RawMessage
 }
 
+// stdioGrant 记录用户为该服务填写的敏感参数，只在桌面授权后随进程注入。
 type stdioGrant struct {
 	Environment map[string]string `json:"environment,omitempty"`
 }
 
+// stdioView 是返回前端的服务状态，只暴露环境变量名与就绪状态，不包含任何密钥值。
 type stdioView struct {
 	ID          string   `json:"id"`
 	Label       string   `json:"label"`
@@ -44,6 +48,7 @@ type stdioView struct {
 	Ready       bool     `json:"ready"`
 }
 
+// StdioConfig 是交给宿主实际启动 MCP 进程的配置；Redact 列出需要在日志中脱敏的值。
 type StdioConfig struct {
 	ID      string            `json:"id"`
 	Label   string            `json:"label"`
@@ -54,6 +59,8 @@ type StdioConfig struct {
 	Redact  []string          `json:"redact,omitempty"`
 }
 
+// stdioDeclarations 解析并过滤 stdio 服务声明：要求 mcp.server.local 权限，
+// 并校验 ID、命令、参数与环境变量，非法条目直接丢弃而不是让整个清单失败。
 func (m Manifest) stdioDeclarations() []stdioDeclaration {
 	if !slices.Contains(m.Permissions, "mcp.server.local") {
 		return nil
@@ -95,6 +102,7 @@ func (m Manifest) stdioDeclarations() []stdioDeclaration {
 	return result
 }
 
+// validStdioCommand 允许裸命令名或包内相对路径，拒绝绝对路径、盘符与空字节。
 func validStdioCommand(s string) bool {
 	if bareCommand.MatchString(s) {
 		return true
@@ -104,6 +112,8 @@ func validStdioCommand(s string) bool {
 	return err == nil && relative != "." && strings.Contains(s, "/") && !strings.ContainsAny(s, "\\:\x00")
 }
 
+// stdioEnvValue 区分环境变量的字面量值与设置项引用：字面量随清单固定，
+// 引用值必须由用户在桌面端填写后再注入。
 func stdioEnvValue(raw json.RawMessage) (string, string, bool) {
 	var value string
 	if len(raw) != 0 && raw[0] == '"' && json.Unmarshal(raw, &value) == nil {
@@ -116,6 +126,7 @@ func stdioEnvValue(raw json.RawMessage) (string, string, bool) {
 	return "", setting.Setting, true
 }
 
+// stdioExecutable 解析可执行文件：裸命令走 PATH，包内路径逐级确认没有符号链接。
 func stdioExecutable(root string, command string) (string, error) {
 	if bareCommand.MatchString(command) {
 		return exec.LookPath(command)
@@ -138,6 +149,7 @@ func stdioExecutable(root string, command string) (string, error) {
 	return filepath.Abs(filepath.Join(root, relative))
 }
 
+// stdioRequiredSettings 汇总服务依赖的设置项名，用于授权时强制填写。
 func stdioRequiredSettings(d stdioDeclaration) []string {
 	names := make([]string, 0)
 	for _, value := range d.Env {
@@ -150,6 +162,7 @@ func stdioRequiredSettings(d stdioDeclaration) []string {
 	return slices.Compact(names)
 }
 
+// stdioServers 返回插件的 stdio 服务列表及授权、可执行文件检查结果。
 func (m *Module) stdioServers(c *gin.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -185,6 +198,7 @@ func (m *Module) stdioServers(c *gin.Context) {
 	pkg.OK(c, servers)
 }
 
+// updateStdioGrant 授予或撤销单个 stdio 服务：授权必须在桌面端完成，且敏感参数只能写入已声明的设置项。
 func (m *Module) updateStdioGrant(c *gin.Context) {
 	var body struct {
 		Approved    *bool             `json:"approved"`
@@ -256,7 +270,8 @@ func (m *Module) updateStdioGrant(c *gin.Context) {
 	pkg.OK(c, nil)
 }
 
-// ApprovedStdio returns only the exact installed commands that the desktop user enabled.
+// ApprovedStdio 只返回桌面用户逐项授权、且插件仍启用的确切已安装命令，
+// 环境变量在白名单基础上再叠加授权值，并把敏感值记录到 Redact 供日志脱敏。
 func (m *Module) ApprovedStdio() []StdioConfig {
 	if m.desktopAvailable == nil || !m.desktopAvailable() {
 		return nil

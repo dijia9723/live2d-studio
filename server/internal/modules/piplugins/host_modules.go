@@ -1,3 +1,4 @@
+// host_modules.go 负责为插件进程收集包内的 JavaScript/JSON 模块快照。
 package piplugins
 
 import (
@@ -10,8 +11,8 @@ import (
 	"unicode/utf8"
 )
 
-// packageModules supplies only small, already-installed JavaScript/JSON modules. The worker
-// resolves relative imports against this map and remains blind to the real filesystem.
+// packageModules 只收集已安装包内的小型 JavaScript/JSON 模块。
+// worker 依据该映射解析相对导入，因此始终看不到真实文件系统，也无法自行读取包外文件。
 func packageModules(item Installation) map[string]string {
 	const limit = 512 << 10
 	exhausted := errors.New("package module collection limit reached")

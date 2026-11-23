@@ -1,3 +1,4 @@
+// orchestration_workers.go 负责工作会话与子 Agent 的创建、续跑、取消和结果采纳。
 package coding
 
 import (
@@ -49,7 +50,7 @@ func isWorkerSession(db *gorm.DB, session string) bool {
 	return db.Model(&codingWorker{}).Where("id = ?", session).Count(&count).Error == nil && count > 0
 }
 
-// Prevent a foreground prompt from widening a persisted read-only worker.
+// workerEditAllowed 防止前台提问把已持久化的只读工作会话提升为可编辑。
 func (m *Module) workerEditAllowed(session string) (bool, error) {
 	var worker codingWorker
 	err := m.DB.First(&worker, "id = ?", session).Error
@@ -211,6 +212,7 @@ func (m *Module) workerRoot(projectID string) (*os.Root, error) {
 	return root, nil
 }
 
+// spawnWorker 在锁内完成名额申请、会话与工作记录创建，再异步启动后台轮次。
 func (m *Module) spawnWorker(ctx context.Context, parent model.CodingSession, selection modelSelection, kind, role, mode, task string) (codingWorker, *orchestrationJob, error) {
 	m.sessionsMu.Lock()
 	defer m.sessionsMu.Unlock()
@@ -245,6 +247,7 @@ func (m *Module) spawnWorker(ctx context.Context, parent model.CodingSession, se
 	worker := codingWorker{ID: uuid.NewString(), ParentID: parent.ID, ProjectID: parent.ProjectID,
 		Kind: kind, Role: role, Instructions: definition.Instructions, Mode: mode, Task: task, Status: "running",
 		ModelProvider: selection.Provider, ModelName: selection.Name}
+	// 此处已持有 sessionsMu，名额检查与占位不会被并发的创建请求打断。
 	ctx, job, err := m.claimOrchestration(ctx, parent.ProjectID, worker.ID, worker.ID, kind, mode, 4*time.Minute)
 	if err != nil {
 		_ = root.Close()
@@ -399,6 +402,7 @@ func (m *Module) runOrchestrationTool(ctx context.Context, project, session, too
 	}
 }
 
+// waitWorker 等待工作会话结束；短等待用于模型工具调用，超时返回仍在运行的状态而不是取消任务。
 func (m *Module) waitWorker(ctx context.Context, worker codingWorker, job *orchestrationJob, short bool) (any, error) {
 	if job != nil {
 		if short {

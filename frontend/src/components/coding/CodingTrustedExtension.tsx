@@ -1,11 +1,21 @@
+/**
+ * CodingTrustedExtension 展示插件声明的可信 Pi 扩展入口，
+ * 并负责在桌面端展示风险说明、授权或撤销该版本的扩展授权。
+ */
 import { useEffect, useState } from 'react'
 import { piPluginsAPI, type PiTrustedExtension } from '../../api/piplugins'
 
+/**
+ * CodingTrustedExtension 可信扩展授权面板。
+ * 授权按插件版本生效，因此请求和提交都需要携带当前版本号。
+ */
 export default function CodingTrustedExtension({
   plugin,
   desktop,
 }: {
+  /** 插件 ID。 */
   plugin: string
+  /** 是否运行在桌面客户端；浏览器中不允许授权原生扩展。 */
   desktop: boolean
 }) {
   const [status, setStatus] = useState<PiTrustedExtension>()
@@ -30,6 +40,7 @@ export default function CodingTrustedExtension({
     setBusy(true)
     setError('')
     try {
+      // 后端要求带上已确认的版本号，确保授权只对当前包内容生效。
       setStatus(await piPluginsAPI.grantExtension(plugin, status.version, approved))
       setConsent(false)
     } catch (cause) {

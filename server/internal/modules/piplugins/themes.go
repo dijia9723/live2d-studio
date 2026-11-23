@@ -1,3 +1,4 @@
+// themes.go 负责把插件贡献的限白名单 CSS 调色板转换为工作台主题令牌。
 package piplugins
 
 import (
@@ -14,8 +15,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 单个主题 CSS 的上限，避免插件用超大文件拖慢主题接口。
 const maxThemeSize = 256 << 10
 
+// themeContribution 是清单中一条主题声明，Path 指向包内 CSS 文件。
 type themeContribution struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
@@ -23,12 +26,14 @@ type themeContribution struct {
 	Base  string `json:"base"`
 }
 
+// valid 校验主题 ID、标签、CSS 扩展名与底色，避免明显非法的声明进入渲染流程。
 func (t themeContribution) valid() bool {
 	return themeContributionID.MatchString(t.ID) && strings.TrimSpace(t.Label) != "" &&
 		utf8.RuneCountInString(t.Label) <= 100 && strings.EqualFold(path.Ext(t.Path), ".css") &&
 		(t.Base == "" || t.Base == "light" || t.Base == "dark")
 }
 
+// codingTheme 是前端直接消费的主题对象，Tokens 已经过白名单提炼与默认值补全。
 type codingTheme struct {
 	ID       string            `json:"id"`
 	PluginID string            `json:"plugin_id"`
@@ -43,6 +48,8 @@ var (
 	validThemeColor     = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 )
 
+// themeTokens 把插件可写的 --ds-* 变量映射到工作台内部令牌，
+// 未列出的声明一律忽略，插件无法借此注入任意 CSS。
 var themeTokens = map[string]string{
 	"--ds-bg-primary":     "--code-surface",
 	"--ds-bg-secondary":   "--code-rail",
@@ -55,6 +62,8 @@ var themeTokens = map[string]string{
 	"--ds-accent":         "--code-accent",
 }
 
+// allowedThemeTokens 先剥离注释与字符串，再只提取白名单变量且值为十六进制颜色的声明，
+// 从而既忽略 @import 等语句，也避免把 content 中的伪声明当成主题颜色。
 func allowedThemeTokens(css string) map[string]string {
 	values := make(map[string]string)
 	css = cssNonDeclarations.ReplaceAllString(css, " ")
@@ -70,6 +79,7 @@ func allowedThemeTokens(css string) map[string]string {
 	return values
 }
 
+// themeDefaults 提供亮/暗两套兜底令牌，插件只需覆盖关心的颜色。
 func themeDefaults(base string) map[string]string {
 	if base == "light" {
 		return map[string]string{
@@ -85,6 +95,7 @@ func themeDefaults(base string) map[string]string {
 	}
 }
 
+// readCodingTheme 读取包内 CSS 并要求至少解析出一个白名单颜色，否则视为无效主题。
 func readCodingTheme(root *os.Root, pluginID string, item themeContribution) (codingTheme, bool) {
 	local, err := packagePath(item.Path)
 	if err != nil || !item.valid() {
@@ -120,6 +131,7 @@ func readCodingTheme(root *os.Root, pluginID string, item themeContribution) (co
 	}, true
 }
 
+// installationThemes 收集单个插件声明的主题；缺少 ui.theme 权限时不返回任何内容。
 func installationThemes(installation Installation, available int) []codingTheme {
 	manifest := installation.Manifest
 	if !slices.Contains(manifest.Permissions, "ui.theme") {
@@ -148,6 +160,7 @@ func installationThemes(installation Installation, available int) []codingTheme 
 	return found
 }
 
+// themes 汇总所有已启用插件的主题，并限制总数防止前端加载过多样式。
 func (m *Module) themes(c *gin.Context) {
 	installations, err := m.EnabledInstallations()
 	if installations == nil && err != nil {

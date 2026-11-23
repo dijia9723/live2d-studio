@@ -1,9 +1,18 @@
+/**
+ * 文件职责：角色卡片/详情中的 Live2D 静态预览。
+ * 加载模型并挂到共享渲染器上，处理加载中、失败重试与卸载回收。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, LoaderCircle, RotateCcw } from 'lucide-react'
 import type { Live2DModel } from 'pixi-live2d-display'
 import type { CharacterPreviewRenderer } from '../../utils/characterPreviewRenderer'
 import { loadLive2DRuntime } from '../../utils/live2dRuntime'
 
+/**
+ * 角色预览。
+ * @param modelPath 模型清单或 ZIP 的地址
+ * @param renderer 多个卡片共享的预览渲染器
+ */
 export default function CharacterPreview({
   modelPath,
   renderer,
@@ -26,6 +35,7 @@ export default function CharacterPreview({
     setError('')
 
     const release = () => {
+      // 已挂到渲染器时由 detach 负责移除；尚未挂载则直接交给渲染器回收。
       if (detach) detach()
       else if (model) renderer.release(model)
       detach = undefined
@@ -39,6 +49,7 @@ export default function CharacterPreview({
     const load = async () => {
       try {
         const { Live2DModel } = await loadLive2DRuntime(modelPath)
+        // 加载是异步的，期间组件可能已卸载或模型路径已切换，必须丢弃结果。
         if (cancelled) return
         model = await Live2DModel.from(modelPath, { autoInteract: false, autoUpdate: false })
         if (cancelled) {

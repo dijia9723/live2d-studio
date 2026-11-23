@@ -1,3 +1,4 @@
+// browser_debug_test.go 覆盖隔离浏览器的启动、页面检查、截图与清理。
 package coding
 
 import (

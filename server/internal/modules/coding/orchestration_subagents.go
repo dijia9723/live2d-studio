@@ -1,3 +1,4 @@
+// orchestration_subagents.go 负责子 Agent 定义的读取、保存与重置。
 package coding
 
 import (
@@ -80,8 +81,7 @@ type orchestrationToolCatalog struct {
 	Agents []string `json:"agents"`
 }
 
-// Worker sessions never get these tools, even when the user opens an editable
-// worker directly. Agent mode chooses from the currently enabled definitions.
+// orchestrationCatalog 为代理模式生成可委派的子 Agent 列表；工作会话即使被用户直接打开也不会拿到这些工具。
 func (m *Module) orchestrationCatalog(ctx context.Context, session string) *orchestrationToolCatalog {
 	if delegatedContext(ctx) || isWorkerSession(m.DB, session) {
 		return nil
@@ -111,9 +111,9 @@ func (m *Module) listSubagents(c *gin.Context) {
 func (m *Module) putSubagent(c *gin.Context) {
 	name := c.Param("name")
 	var input struct {
-		Label        string `json:"label"`
-		Instructions string `json:"instructions"`
-		Enabled      *bool  `json:"enabled"`
+		Label         string `json:"label"`
+		Instructions  string `json:"instructions"`
+		Enabled       *bool  `json:"enabled"`
 		ModelProvider string `json:"model_provider"`
 		ModelName     string `json:"model_name"`
 	}

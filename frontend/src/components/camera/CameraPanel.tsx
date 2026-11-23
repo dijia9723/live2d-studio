@@ -1,8 +1,13 @@
+/**
+ * 文件职责：摄像头预览面板。
+ * 提供摄像头开关与「骨骼/实时视频」两种预览模式，并把运行提示与隐私说明展示给用户。
+ */
 import { useEffect, useRef, type RefObject } from 'react'
 import { Video, VideoOff } from 'lucide-react'
 import CameraSkeleton from './CameraSkeleton'
 import type { CameraLandmarks } from '../../utils/cameraTracking'
 
+/** 预览模式：skeleton 绘制关键点骨骼，video 直接显示摄像头画面。 */
 export type CameraPreviewMode = 'skeleton' | 'video'
 
 const previewModes = [
@@ -10,8 +15,10 @@ const previewModes = [
   { id: 'video', label: '实时视频' },
 ] as const
 
+/** 摄像头面板的展示与交互属性。 */
 interface Props {
   stream: MediaStream | null
+  /** 最新的关键点数据，骨骼模式据此绘制 */
   landmarks: RefObject<CameraLandmarks | null>
   mode: CameraPreviewMode
   onModeChange: (mode: CameraPreviewMode) => void
@@ -21,6 +28,7 @@ interface Props {
   onToggle: () => void
 }
 
+/** 摄像头预览面板。 */
 export default function CameraPanel({
   stream,
   landmarks,
@@ -36,6 +44,7 @@ export default function CameraPanel({
   useEffect(() => {
     const preview = video.current
     if (!preview || !stream) return
+    // 切换模式会重建 video 元素，需要重新绑定流；清理时解绑以释放引用。
     preview.srcObject = stream
     return () => {
       preview.srcObject = null

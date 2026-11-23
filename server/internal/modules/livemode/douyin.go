@@ -1,3 +1,5 @@
+// douyin.go 负责连接抖音直播间，解析弹幕、礼物、点赞、进场与关注事件，并维护连接状态。
+
 package livemode
 
 import (
@@ -13,6 +15,7 @@ import (
 	protobuf "google.golang.org/protobuf/proto"
 )
 
+// connection 描述对外的连接状态；offline 表示已确认主播下播，而不是普通的网络重试。
 type connection struct {
 	Phase   string `json:"phase"`
 	Title   string `json:"title,omitempty"`
@@ -20,10 +23,14 @@ type connection struct {
 	offline bool
 }
 
+// 第三方抖音库会输出大量调试日志，这里丢弃，避免干扰应用自身的日志。
 var listenerLog = slog.New(slog.NewTextHandler(io.Discard, nil))
 
+// liveEndedAction 是抖音控制消息中表示直播结束的 action 值。
 const liveEndedAction = 3
 
+// douyinSource 持续监听直播间：断线或未开播时按配置的轮询周期重试，
+// 直到会话被取消，保证一次 Start 就能覆盖整场直播中的网络波动。
 func douyinSource(ctx context.Context, config Config, emit func(Event), update func(connection)) {
 	for ctx.Err() == nil {
 		update(connection{Phase: "checking"})
@@ -46,6 +53,8 @@ func douyinSource(ctx context.Context, config Config, emit func(Event), update f
 	}
 }
 
+// listenDouyin 建立一次直播间连接并阻塞到连接结束。
+// 通过 context.AfterFunc 在会话取消时主动关闭客户端，确保底层 WebSocket 和协程不会泄漏。
 func listenDouyin(ctx context.Context, room string, emit func(Event), update func(connection)) error {
 	client, err := douyin.NewDouyinLiveWithSlog(room, listenerLog, "")
 	if err != nil {
@@ -90,6 +99,8 @@ func listenDouyin(ctx context.Context, room string, emit func(Event), update fun
 	return client.Start()
 }
 
+// decodeMessage 把抖音原始消息转换为内部事件。
+// 连击礼物只在连击结束时记一次，避免每颗礼物都触发回应；分享等非互动消息直接忽略。
 func decodeMessage(message *douyin.LiveMessage) (Event, bool) {
 	if message == nil {
 		return Event{}, false
@@ -135,11 +146,13 @@ func decodeMessage(message *douyin.LiveMessage) (Event, bool) {
 	return event, true
 }
 
+// decodePayload 取出消息载荷。douyinLive 部分版本不会填充 Parsed 字段，
+// 因此这里按 Method 回退到原始 Protobuf 解析。
 func decodePayload(message *douyin.LiveMessage) protobuf.Message {
 	if message.Parsed != nil {
 		return message.Parsed
 	}
-	// douyinLive v2.0.25 leaves interaction messages in the raw Protobuf envelope.
+	// douyinLive v2.0.25 会把互动消息留在原始 Protobuf 信封中，需要手动解码。
 	var decoded protobuf.Message
 	switch message.GetMethod() {
 	case douyin.WebcastChatMessage:

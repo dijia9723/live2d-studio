@@ -1,10 +1,16 @@
+/**
+ * 文件职责：直播历史记录与单场 AI 复盘。
+ * 分页拉取历史场次、展示互动统计与礼物排行，并按需生成复盘总结。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { liveAPI, liveKinds } from '../../api/live'
 import type { LiveKind, LiveSession, LiveSessionDetails } from '../../api/live'
 
 const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
+/** 历史记录状态文案。 */
 const states = { recording: '记录中', ended: '已结束', interrupted: '记录中断' }
 
+/** 计算监听时长；未结束的场次不显示时长。 */
 function duration(session: LiveSession) {
   if (!session.ended_at) return ''
   const seconds = Math.max(
@@ -16,11 +22,14 @@ function duration(session: LiveSession) {
   return `${hours ? `${hours} 小时 ` : ''}${minutes ? `${minutes} 分 ` : ''}${seconds % 60} 秒`
 }
 
+/** 直播历史属性。 */
 interface Props {
   labels: Record<LiveKind, string>
+  /** 正在记录中的场次 ID，变化时刷新列表 */
   recordingID?: string
 }
 
+/** 直播历史与复盘面板。 */
 export default function LiveModeHistory({ labels, recordingID }: Props) {
   const [page, setPage] = useState(0)
   const [records, setRecords] = useState<Awaited<ReturnType<typeof liveAPI.sessions>>>()
@@ -38,8 +47,10 @@ export default function LiveModeHistory({ labels, recordingID }: Props) {
     setRecords(undefined)
     void liveAPI.sessions(page, abort.signal).then(
       (result) => {
+        // 翻页后旧请求可能晚到，丢弃已中止的结果。
         if (abort.signal.aborted) return
         setRecords(result)
+        // 当前选中场次仍在新一页中则保持选中，否则回到最新一场。
         setSelected((id) =>
           result.sessions.some((session) => session.id === id)
             ? id
@@ -70,12 +81,14 @@ export default function LiveModeHistory({ labels, recordingID }: Props) {
     }
     return () => {
       abort.abort()
+      // 切换场次/刷新时同时取消进行中的复盘生成，避免结果写回别的场次。
       generation.current?.abort()
       generation.current = null
     }
   }, [recordingID, refresh, selected])
 
   async function summarize(id: string) {
+    // 复盘生成耗时且会写入后端，同一时间只允许一个请求。
     if (generation.current) return
     const abort = new AbortController()
     generation.current = abort
@@ -96,6 +109,7 @@ export default function LiveModeHistory({ labels, recordingID }: Props) {
   }
 
   const current = detail?.id === selected ? detail : undefined
+  // 没有任何互动数据时生成复盘没有意义，隐藏入口。
   const hasData = current && (Object.keys(current.counts).length > 0 || current.reply_count > 0)
   const elapsed = current ? duration(current) : ''
 

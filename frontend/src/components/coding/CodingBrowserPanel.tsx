@@ -1,7 +1,12 @@
+/**
+ * CodingBrowserPanel 是编码工作台的轻量浏览器：用 iframe 预览本地开发服务或网页，
+ * 并可在同一面板中切换到独立的浏览器调试视图。
+ */
 import { useState } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, RotateCw } from 'lucide-react'
 import CodingBrowserDebug from './CodingBrowserDebug'
 
+/** CodingBrowserPanel 网页预览与调试面板。 */
 export default function CodingBrowserPanel() {
   const [address, setAddress] = useState('')
   const [pages, setPages] = useState<string[]>([])
@@ -9,6 +14,7 @@ export default function CodingBrowserPanel() {
   const [refresh, setRefresh] = useState(0)
   const [error, setError] = useState('')
   const [debug, setDebug] = useState(false)
+  // 首次切到调试模式后才挂载组件，避免提前启动外部浏览器进程。
   const [debugMounted, setDebugMounted] = useState(false)
   const current = pages[index]
 
@@ -23,10 +29,12 @@ export default function CodingBrowserPanel() {
     if (!text) return
     try {
       const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`)
+      // 只允许 http/https 且不接受带账号密码的 URL，防止把凭据带进 iframe 或触发危险协议。
       if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
         throw new Error()
       }
       setAddress(url.href)
+      // 从当前位置截断历史再追加，行为与普通浏览器的前进/后退栈一致。
       setPages([...pages.slice(0, index + 1), url.href])
       setIndex(index + 1)
       setError('')
@@ -59,6 +67,7 @@ export default function CodingBrowserPanel() {
         </button>
       </div>
       {debugMounted && (
+        // 调试组件挂载后保持存在，仅用 hidden 切换可见性，以便切回预览时不中断调试会话。
         <div className="coding-browser-debug-host" hidden={!debug}>
           <CodingBrowserDebug visible={debug} />
         </div>
@@ -123,6 +132,7 @@ export default function CodingBrowserPanel() {
         )}
         {current ? (
           <>
+            {/* key 绑定索引与刷新计数以强制重建 iframe；sandbox 不含 allow-same-origin，避免嵌入页访问 Studio 上下文。 */}
             <iframe
               title="网页预览"
               key={`${index}-${refresh}`}

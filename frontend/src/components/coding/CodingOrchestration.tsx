@@ -1,3 +1,7 @@
+/**
+ * CodingOrchestration 展示并控制编码会话的编排能力：目标的提案/审批/继续/终止，
+ * 子 Agent 定义管理，以及工作会话的创建、报告采纳与追加任务。
+ */
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Flag, RefreshCw, UsersRound } from 'lucide-react'
 import type { CodingSession } from '../../api/coding'
@@ -34,10 +38,12 @@ const statuses: Record<CodingGoal['status'], string> = {
   superseded: '已有新提案',
 }
 
+/** errorMessage 将未知异常转换为可展示的中文错误。 */
 function errorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : '编码编排操作失败'
 }
 
+/** RunMode 选择运行权限：只读核查或允许编辑项目文件。 */
 function RunMode({
   value,
   disabled,
@@ -64,14 +70,21 @@ function RunMode({
   )
 }
 
+/** Props 编排面板的入参。 */
 interface Props {
+  /** 当前会话。 */
   session: CodingSession
+  /** 主会话是否正在处理消息，用于禁用会产生冲突的操作。 */
   busy?: boolean
+  /** 打开某个工作会话。 */
   onOpenSession: (id: string) => void
+  /** 目标或工作会话结束时回调，用于刷新消息与工作面板。 */
   onSettled?: () => void
+  /** 运行时忙碌状态变化回调，供父组件禁用发送。 */
   onBusyChange?: (busy: boolean) => void
 }
 
+/** CodingOrchestration 编码会话的 Goal 与子 Agent 编排面板。 */
 export default function CodingOrchestration({
   session,
   busy,
@@ -130,6 +143,7 @@ export default function CodingOrchestration({
   }
 
   const refresh = async () => {
+    // 同一时间只保留最新一次刷新，避免并发响应乱序覆盖状态。
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
@@ -140,6 +154,8 @@ export default function CodingOrchestration({
         orchestrationAPI.status(session.id, controller.signal),
       ])
       if (controller.signal.aborted) return
+      // 对比上一轮记录判断是否有目标/工作会话刚刚从 running 结束，
+      // 以便在完成瞬间通知父组件刷新消息，而不必等待前端轮询感知。
       const finished =
         (activeRecord.current && !nextActivity.active) ||
         nextGoals.some(
@@ -196,6 +212,7 @@ export default function CodingOrchestration({
 
   useEffect(() => {
     if (!running && !workerCount && !busy) return
+    // 编排执行期间每 1.5 秒轮询一次状态；空闲时完全不轮询。
     const timer = window.setInterval(() => {
       if (!request.current) void refresh()
     }, 1500)
@@ -203,6 +220,7 @@ export default function CodingOrchestration({
   }, [session.id, running, workerCount, busy])
 
   useEffect(() => {
+    // 把编排运行状态上报给父组件，用于禁用输入框与其它冲突操作；卸载时复位。
     busyChange.current?.(running)
     return () => busyChange.current?.(false)
   }, [running])
@@ -244,6 +262,8 @@ export default function CodingOrchestration({
   }
 
   if (workerSession) {
+    // 当前打开的是工作会话时，只展示身份、状态和返回父会话入口，
+    // 避免在子会话里继续嵌套创建编排。
     return (
       <div className="coding-orchestration">
         <header className="coding-actions">

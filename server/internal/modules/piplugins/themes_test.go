@@ -1,3 +1,4 @@
+// themes_test.go 覆盖插件主题白名单令牌的解析与权限校验。
 package piplugins
 
 import (

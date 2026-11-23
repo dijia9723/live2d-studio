@@ -1,3 +1,4 @@
+// session_model.go 负责编码会话的模型选择、服务商解析与模型配置接口。
 package coding
 
 import (
@@ -35,6 +36,7 @@ func sessionSelection(session model.CodingSession) modelSelection {
 	return modelSelection{Provider: session.ModelProvider, Name: session.ModelName}
 }
 
+// normalizeModelSelection 校验用户选择的模型服务与名称，空选择表示沿用全局默认。
 func normalizeModelSelection(selection modelSelection) (modelSelection, error) {
 	selection.Provider, selection.Name = strings.TrimSpace(selection.Provider), strings.TrimSpace(selection.Name)
 	if selection.Provider == "" && selection.Name == "" {
@@ -83,8 +85,8 @@ func (m *Module) resolveSelectedLLM(selection modelSelection) (config.LLM, error
 	return profile, nil
 }
 
-// Environment overrides describe the effective default service. Alternate
-// profiles keep their own settings, especially their endpoint and credentials.
+// effectiveCodingProfile 返回指定服务商的实际配置。环境变量覆盖只描述默认服务，
+// 其他备选服务保留自己的端点与凭据，避免混用默认配置。
 func (m *Module) effectiveCodingProfile(provider, defaultProvider string) (config.LLM, error) {
 	profile, _, err := m.Settings.Profile(provider)
 	if err != nil {

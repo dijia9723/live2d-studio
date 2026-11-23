@@ -1,3 +1,4 @@
+// terminal_http.go 负责交互终端的 HTTP 路由、鉴权与 SSE 输出流。
 package coding
 
 import (
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// registerTerminal 注册终端路由，并限制只有本机桌面客户端才能访问，避免远程用户拿到 shell。
 func (m *Module) registerTerminal(group *gin.RouterGroup) {
 	routes := group.Group("/projects/:project/terminals", func(c *gin.Context) {
 		host, _, _ := net.SplitHostPort(c.Request.RemoteAddr)
@@ -90,6 +92,7 @@ func (m *Module) terminalEvents(c *gin.Context) {
 	c.Writer.Flush()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
+	// 每 15 秒发送一次注释帧作为心跳，防止空闲连接被代理或浏览器判定超时断开。
 	for {
 		select {
 		case <-c.Request.Context().Done():

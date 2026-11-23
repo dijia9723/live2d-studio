@@ -1,5 +1,6 @@
 //go:build windows
 
+// terminal_windows.go 基于 ConPTY 实现 Windows 交互终端。
 package coding
 
 import (
@@ -82,6 +83,7 @@ func openPseudoTerminal(directory string, size terminalSize) (pseudoTerminal, er
 		return nil, err
 	}
 	limits := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+	// 把子进程放入 job 并设置随 job 关闭而终止，确保 Studio 退出时不会遗留 shell 进程树。
 	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 	if _, err := windows.SetInformationJobObject(t.job, windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
@@ -92,8 +94,7 @@ func openPseudoTerminal(directory string, size terminalSize) (pseudoTerminal, er
 		return nil, err
 	}
 	defer attributes.Delete()
-	// This one process attribute takes the console handle as its value, unlike
-	// the ordinary attributes that take an address to pointed-to storage.
+	// 该属性的值直接是控制台句柄本身，而不是指向存储的地址，与其他进程属性不同。
 	setAttribute := terminalKernel.NewProc("UpdateProcThreadAttribute")
 	result, _, callErr := setAttribute.Call(uintptr(unsafe.Pointer(attributes.List())), 0,
 		windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, uintptr(t.console), unsafe.Sizeof(t.console), 0, 0)
@@ -103,7 +104,7 @@ func openPseudoTerminal(directory string, size terminalSize) (pseudoTerminal, er
 	info := windows.StartupInfoEx{
 		StartupInfo: windows.StartupInfo{
 			Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
-			// Do not copy the host process's redirected standard handles into this console.
+			// 不要把宿主进程重定向后的标准句柄复制进这个新控制台。
 			Flags: windows.STARTF_USESTDHANDLES,
 		},
 		ProcThreadAttributeList: attributes.List(),
@@ -129,9 +130,14 @@ func openPseudoTerminal(directory string, size terminalSize) (pseudoTerminal, er
 	return t, nil
 }
 
-func (t *windowsTerminal) Read(data []byte) (int, error)  { return t.output.Read(data) }
+// Read 从 ConPTY 的输出管道读取终端输出。
+func (t *windowsTerminal) Read(data []byte) (int, error) { return t.output.Read(data) }
+
+// Write 把用户输入写入 ConPTY 的输入管道。
 func (t *windowsTerminal) Write(data []byte) (int, error) { return t.input.Write(data) }
-func (t *windowsTerminal) Close() error                   { return errors.Join(t.input.Close(), t.output.Close()) }
+
+// Close 关闭伪终端的输入与输出管道。
+func (t *windowsTerminal) Close() error { return errors.Join(t.input.Close(), t.output.Close()) }
 
 func (t *windowsTerminal) resize(size terminalSize) error {
 	t.mu.Lock()
@@ -177,7 +183,7 @@ func (t *windowsTerminal) release() {
 		_ = windows.CloseHandle(process)
 	}
 	if console != 0 {
-		// The terminal service drains the output independently through teardown.
+		// 终端服务已在拆除流程中独立排空输出，这里只负责释放控制台句柄。
 		windows.ClosePseudoConsole(console)
 	}
 }

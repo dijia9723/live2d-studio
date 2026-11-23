@@ -1,3 +1,4 @@
+// orchestration_test.go 覆盖 Goal 验收判定、写入串行化以及真实的 Pi 编排流程。
 package coding
 
 import (

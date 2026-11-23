@@ -1,3 +1,7 @@
+/**
+ * 文件职责：角色详情中的朗读配置表单。
+ * 支持跟随全局、系统语音、语音 API、本地 TTS 四种方式，并按方式切换对应字段。
+ */
 import { useEffect, useRef, useState } from 'react'
 import type { CharacterSpeech } from '../../types/api'
 import TTSWorkbench from '../speech/TTSWorkbench'
@@ -9,13 +13,16 @@ import {
   SelectValue,
 } from '../ui/select'
 
+/** 角色朗读表单属性。 */
 interface Props {
   value: CharacterSpeech | undefined
+  /** 是否为当前展开的角色，避免后台角色监听音色列表 */
   active: boolean
   disabled: boolean
   onChange: (value: CharacterSpeech) => void
 }
 
+/** 角色朗读配置表单。 */
 export default function CharacterSpeechFields({ value, active, disabled, onChange }: Props) {
   const mode = value?.mode ?? 'inherit'
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -23,6 +30,7 @@ export default function CharacterSpeechFields({ value, active, disabled, onChang
   const voiceDrafts = useRef<Partial<Record<CharacterSpeech['mode'], CharacterSpeech>>>({})
 
   useEffect(() => {
+    // 只有展开且选择系统语音时才需要音色列表；voiceschanged 由浏览器异步触发。
     if (!active || mode !== 'browser' || !window.speechSynthesis) return
     const synth = window.speechSynthesis
     const update = () => setVoices(synth.getVoices())
@@ -39,6 +47,7 @@ export default function CharacterSpeechFields({ value, active, disabled, onChang
           value={mode}
           onValueChange={(next) => {
             const nextMode = next as CharacterSpeech['mode']
+            // 切换方式时记住当前方式的配置，切回时无需重新填写。
             if (value) voiceDrafts.current[value.mode] = value
             onChange(voiceDrafts.current[nextMode] ?? { mode: nextMode })
           }}

@@ -1,5 +1,6 @@
 //go:build windows || linux || darwin
 
+// terminal_test.go 覆盖交互终端的命令执行、尺寸调整与凭据过滤。
 package coding
 
 import (

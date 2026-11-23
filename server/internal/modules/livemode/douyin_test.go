@@ -1,3 +1,5 @@
+// douyin_test.go 覆盖抖音消息解码与非法载荷拒绝逻辑。
+
 package livemode
 
 import (
