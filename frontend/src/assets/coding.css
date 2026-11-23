@@ -225,13 +225,17 @@
   display: flex;
   justify-content: flex-end;
 }
-.coding-page :is(input, textarea, select) {
+.coding-page :is(input, textarea, select),
+.coding-page [data-slot='select-trigger'] {
   min-width: 0;
+  height: auto;
   border: 1px solid var(--code-line);
   border-radius: 6px;
   padding: 7px 9px;
   background: var(--code-surface);
   color: var(--code-text);
+  font-size: 12px;
+  box-shadow: none;
 }
 
 .coding-conversation-bar {
@@ -394,7 +398,8 @@
 .coding-composer-actions {
   margin-top: 8px;
 }
-.coding-composer-actions select {
+.coding-composer-actions select,
+.coding-composer-actions [data-slot='select-trigger'] {
   max-width: 70%;
   font-size: 12px;
 }
@@ -549,11 +554,14 @@
 .coding-enhancements button:disabled {
   opacity: 0.5;
 }
-.coding-enhancements-card :is(select, textarea) {
+.coding-enhancements-card :is(select, textarea),
+.coding-enhancements-card [data-slot='select-trigger'] {
+  height: auto;
   padding: 6px;
   border: 1px solid var(--code-line);
   border-radius: 5px;
   background: var(--code-surface);
+  box-shadow: none;
 }
 .coding-enhancements-card textarea {
   width: 100%;
@@ -681,10 +689,13 @@
   display: grid;
   gap: 8px;
 }
-.coding-model-dialog .coding-model-field :is(input, select) {
+.coding-model-dialog .coding-model-field :is(input, select),
+.coding-model-dialog .coding-model-field [data-slot='select-trigger'] {
+  height: auto;
   padding: 6px 8px;
   border: 1px solid #494052;
   border-radius: 5px;
   background: #22202a;
   color: inherit;
+  box-shadow: none;
 }

@@ -27,7 +27,8 @@
   gap: 7px;
 }
 
-.coding-orchestration-body :is(select, input, textarea) {
+.coding-orchestration-body :is(select, input, textarea),
+.coding-orchestration-body [data-slot='select-trigger'] {
   max-width: 100%;
   font-size: 12px;
 }

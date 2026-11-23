@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import type { Live2DStageHandle } from '../components/Live2DStage'
+import type { Live2DStageHandle } from '../components/stage/Live2DStage'
 import { useHotkeys } from '../store/hotkeys'
 import { hotkeyKey, matchesModifiers, type HotkeyAction, type HotkeyChord } from '../utils/hotkeys'
 

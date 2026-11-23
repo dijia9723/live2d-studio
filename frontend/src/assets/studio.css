@@ -32,12 +32,29 @@
 }
 
 .studio-scene {
+  --stage-column: minmax(0, 1fr);
+  --dock-column: minmax(330px, 40%);
   flex: 1;
   min-height: 530px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 40%);
+  grid-template-columns: var(--stage-column) var(--dock-column);
   gap: clamp(14px, 1.8vw, 26px);
   padding: 0 var(--studio-gutter) 24px;
+  /* 比例切换时两栏一起过渡，避免舞台与右侧面板瞬间跳变。 */
+  transition: grid-template-columns 0.28s ease;
+}
+
+/* 画布比例决定两栏配比：宽画布把空间让给舞台，竖画布把空间让给右侧面板。 */
+.studio-scene[data-aspect-shape='landscape'] {
+  --dock-column: minmax(330px, 30%);
+}
+
+.studio-scene[data-aspect-shape='square'] {
+  --dock-column: minmax(330px, 36%);
+}
+
+.studio-scene[data-aspect-shape='portrait'] {
+  --dock-column: minmax(330px, 54%);
 }
 
 .studio-workbench .stage-column {
@@ -881,6 +898,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .studio-scene {
+    transition: none;
+  }
   .studio-workbench .pulse,
   .studio-workbench .panel-busy-dot,
   .studio-workbench .typing-dots i,

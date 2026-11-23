@@ -5,8 +5,8 @@
 import { useEffect } from 'react'
 import { Flower2, LoaderCircle, RefreshCw } from 'lucide-react'
 import Router from './router'
-import PetPage from './pages/PetPage'
-import StudioNotice from './components/StudioNotice'
+import PetPage from './pages/pet'
+import StudioNotice from './components/common/StudioNotice'
 import { useStudio } from './store/studio'
 
 export default function App({ mode }: { mode: 'studio' | 'pet' | 'coding' }) {

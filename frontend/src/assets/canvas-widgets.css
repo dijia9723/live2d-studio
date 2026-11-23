@@ -326,10 +326,12 @@
 }
 .canvas-widget-manager input:not([type='checkbox']):not([type='range']),
 .canvas-widget-manager select,
-.canvas-widget-manager textarea {
+.canvas-widget-manager textarea,
+.canvas-widget-manager [data-slot='select-trigger'] {
   min-width: 0;
   width: 100%;
   max-width: 100%;
+  height: auto;
   border: 1px solid #e4dbea;
   border-radius: 7px;
   padding: 8px 9px;
@@ -339,6 +341,7 @@
   background: white;
   color: #64516f;
   outline: none;
+  box-shadow: none;
 }
 .canvas-widget-manager input:focus,
 .canvas-widget-manager select:focus,
@@ -402,9 +405,11 @@
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
-.canvas-template-tools select {
+.canvas-template-tools select,
+.canvas-template-tools [data-slot='select-trigger'] {
   flex: 1;
   width: auto;
+  min-width: 0;
 }
 .canvas-binding-row {
   display: grid;

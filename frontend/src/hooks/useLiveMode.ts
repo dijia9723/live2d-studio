@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { liveAPI } from '../api/live'
 import type { LiveConfig, LiveMode, LiveState } from '../api/live'
-import type { Live2DStageHandle } from '../components/Live2DStage'
+import type { Live2DStageHandle } from '../components/stage/Live2DStage'
 import type { Character } from '../types/api'
 
 interface Options {

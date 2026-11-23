@@ -5,6 +5,7 @@ import { stageAspectPresets, type StageAspect } from '../types/stage'
 export function useStageFrame(aspect: StageAspect, ready = true) {
   const ref = useRef<HTMLDivElement>(null)
   const [bounds, setBounds] = useState({ width: 0, height: 0 })
+  // 切换比例会同时改变工作台两栏宽度，这里重新测量一次，保证舞台立刻按新空间排版。
   useLayoutEffect(() => {
     const node = ref.current
     if (!node) return
@@ -18,7 +19,7 @@ export function useStageFrame(aspect: StageAspect, ready = true) {
     const observer = new ResizeObserver(measure)
     observer.observe(node)
     return () => observer.disconnect()
-  }, [ready])
+  }, [ready, aspect])
   const ratio = stageAspectPresets.find((preset) => preset.id === aspect)?.ratio ?? 0
   const width = ratio ? Math.min(bounds.width, bounds.height * ratio) : bounds.width
   const height = ratio ? width / ratio : bounds.height

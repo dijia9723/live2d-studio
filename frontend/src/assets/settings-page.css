@@ -245,15 +245,18 @@
 }
 
 .settings-page .form-field input:not([type='range']),
-.settings-page .form-field select {
+.settings-page .form-field select,
+.settings-page .form-field [data-slot='select-trigger'] {
   min-width: 0;
   min-height: 42px;
+  height: auto;
   padding: 9px 12px;
   background: #fdfcff;
   border-color: #dbd2e8;
   color: var(--ink);
   font-size: 14px;
   font-weight: 400;
+  box-shadow: none;
 }
 
 .settings-page .form-field input:focus,
@@ -628,7 +631,8 @@
   gap: 5px;
 }
 .screen-watch-settings input,
-.screen-watch-settings select {
+.screen-watch-settings select,
+.screen-watch-settings [data-slot='select-trigger'] {
   width: 100%;
   min-width: 0;
   height: 33px;
@@ -636,6 +640,7 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   background: #fff;
+  box-shadow: none;
 }
 .screen-watch-settings button + span {
   margin-inline-start: 9px;

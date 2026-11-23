@@ -1280,8 +1280,10 @@ select:focus {
 }
 .form-field input:not([type='range']),
 .form-field select,
-.form-field textarea {
+.form-field textarea,
+.form-field [data-slot='select-trigger'] {
   width: 100%;
+  height: auto;
   border: 1px solid #e8e0ef;
   border-radius: 7px;
   padding: 11px 13px;
@@ -1289,6 +1291,7 @@ select:focus {
   color: #8c739a;
   transition: border-color 0.15s;
   font-size: 12px;
+  box-shadow: none;
 }
 .form-field textarea {
   resize: vertical;

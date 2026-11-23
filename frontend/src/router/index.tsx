@@ -6,13 +6,13 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import StudioLayout from '../layouts/StudioLayout'
 import CodingLayout from '../layouts/CodingLayout'
-import StudioPage from '../pages/StudioPage'
-import CharactersPage from '../pages/CharactersPage'
-import SettingsPage from '../pages/SettingsPage'
+import StudioPage from '../pages/studio'
+import CharactersPage from '../pages/characters'
+import SettingsPage from '../pages/settings'
 
-const CodingPage = lazy(() => import('../pages/CodingPage'))
-const CodingPluginsPage = lazy(() => import('../pages/CodingPluginsPage'))
-const CodingEnhancementsPage = lazy(() => import('../pages/CodingEnhancementsPage'))
+const CodingPage = lazy(() => import('../pages/coding'))
+const CodingPluginsPage = lazy(() => import('../pages/coding-plugins'))
+const CodingEnhancementsPage = lazy(() => import('../pages/coding-enhancements'))
 
 export default function Router({
   codingWindow,

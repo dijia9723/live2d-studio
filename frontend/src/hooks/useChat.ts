@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
-import type { Live2DStageHandle } from '../components/Live2DStage'
+import type { Live2DStageHandle } from '../components/stage/Live2DStage'
 import { streamMessage } from '../api/client'
 import { notify, useStudio } from '../store/studio'
 import type { Message, ScreenContext, StreamEvent } from '../types/api'

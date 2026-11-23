@@ -411,12 +411,16 @@
   gap: 9px;
 }
 
-.pi-plugin-version-select select {
+.pi-plugin-version-select select,
+.pi-plugin-version-select [data-slot='select-trigger'] {
+  width: auto;
+  height: 32px;
   min-height: 32px;
   border: 1px solid var(--pi-line);
   border-radius: 6px;
   background: var(--pi-card);
   padding-inline: 8px;
+  box-shadow: none;
 }
 
 .pi-plugin-dialog-actions {
@@ -459,14 +463,17 @@
   gap: 7px;
 }
 .pi-plugin-runtime-settings input:not([type='checkbox']),
-.pi-plugin-runtime-settings select {
+.pi-plugin-runtime-settings select,
+.pi-plugin-runtime-settings [data-slot='select-trigger'] {
   width: 100%;
   min-width: 0;
+  height: auto;
   padding: 6px 9px;
   color: inherit;
   border: 1px solid #494052;
   border-radius: 5px;
   background: #22202a;
+  box-shadow: none;
 }
 .pi-plugin-runtime-setting code {
   word-break: break-all;

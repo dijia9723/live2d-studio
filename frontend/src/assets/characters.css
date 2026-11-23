@@ -307,19 +307,25 @@
   gap: 10px;
   margin-bottom: 14px;
 }
-.character-voice-mode select {
+.character-voice-mode select,
+.character-voice-mode [data-slot='select-trigger'] {
   width: min(100%, 220px);
+  height: auto;
+  box-shadow: none;
 }
 .character-speech-fields > .form-field,
 .tts-workbench .form-field {
   margin-bottom: 10px;
 }
-.character-editor .form-field select {
+.character-editor .form-field select,
+.character-editor .form-field [data-slot='select-trigger'] {
+  height: auto;
   padding: 7px 10px;
   background: #faf9fc;
   border-color: var(--border);
   color: var(--ink);
   font-size: 14px;
+  box-shadow: none;
 }
 .tts-workbench {
   display: grid;
