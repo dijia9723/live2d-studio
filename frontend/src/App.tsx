@@ -1,14 +1,15 @@
 /**
  * 文件职责：应用根组件。
- * 负责启动时初始化全局状态、渲染启动/错误界面，并根据 ?pet=1 决定进入桌宠模式还是主应用路由。
+ * 初始化全局状态并加载对应窗口的界面。
  */
 import { useEffect } from 'react'
 import { Flower2, LoaderCircle, RefreshCw } from 'lucide-react'
 import Router from './router'
 import PetPage from './pages/PetPage'
+import StudioNotice from './components/StudioNotice'
 import { useStudio } from './store/studio'
 
-export default function App({ pet }: { pet: boolean }) {
+export default function App({ mode }: { mode: 'studio' | 'pet' | 'coding' }) {
   const s = useStudio()
   useEffect(() => {
     void s.initialize()
@@ -35,7 +36,11 @@ export default function App({ pet }: { pet: boolean }) {
         )}
       </div>
     )
-  // 桌宠窗口通过查询参数区分，复用同一份全局状态。
-  if (pet) return <PetPage />
-  return <Router />
+  if (mode === 'pet') return <PetPage />
+  return (
+    <>
+      <Router codingWindow={mode === 'coding'} desktop={s.desktop} />
+      <StudioNotice />
+    </>
+  )
 }

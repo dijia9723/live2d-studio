@@ -1,13 +1,11 @@
 /**
- * 文件职责：主应用外壳布局，包含导航、内容区、帮助弹窗与全局提示。
+ * 文件职责：主应用外壳布局，包含导航、内容区和帮助弹窗。
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  AudioLines,
   ArrowUpRight,
   CircleHelp,
-  Code2,
   Flower2,
   LayoutGrid,
   Settings2,
@@ -15,24 +13,15 @@ import {
   X,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../components/ui/dialog'
-import { notify, useStudio } from '../store/studio'
 
 const navigation = [
   { path: '/', label: '工作台', Icon: LayoutGrid },
-  { path: '/coding', label: '编码模式', Icon: Code2 },
   { path: '/characters', label: '角色', Icon: Users },
   { path: '/settings', label: '设置', Icon: Settings2 },
 ]
 
 export default function StudioLayout() {
-  const notice = useStudio((s) => s.notice)
   const [helpOpen, setHelpOpen] = useState(false)
-
-  useEffect(() => {
-    if (!notice) return
-    const timer = setTimeout(() => notify(''), 5000)
-    return () => clearTimeout(timer)
-  }, [notice])
 
   return (
     <div className="app-shell">
@@ -96,15 +85,6 @@ export default function StudioLayout() {
         </DialogContent>
       </Dialog>
 
-      {notice && (
-        <div className="toast" role="status">
-          <AudioLines size={18} />
-          <span>{notice}</span>
-          <button aria-label="关闭提示" onClick={() => notify('')}>
-            <X size={15} />
-          </button>
-        </div>
-      )}
     </div>
   )
 }

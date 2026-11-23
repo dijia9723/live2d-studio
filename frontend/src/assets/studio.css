@@ -19,7 +19,14 @@
   letter-spacing: 0;
 }
 
-.studio-workbench .studio-pet-button {
+.studio-mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.studio-mode-actions .button {
   font-size: 13px;
   padding: 8px 13px;
 }

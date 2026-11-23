@@ -736,7 +736,7 @@ export default function CodingPage() {
                 disabled={working || sessionBusy || orchestrationBusy || session.archived}
               />
             ) : (
-              <Link to="/settings" className="coding-model" title="配置语言模型">
+              <Link to="/coding/settings" className="coding-model" title="配置语言模型">
                 {model || '配置模型'}
               </Link>
             )}

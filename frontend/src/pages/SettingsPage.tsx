@@ -95,10 +95,11 @@ const tools = [
   },
 ]
 
-export default function SettingsPage() {
+export default function SettingsPage({ modelOnly = false }: { modelOnly?: boolean }) {
   const s = useStudio()
   const [params] = useSearchParams()
-  const currentSection = sections.find(({ id }) => params.get('section') === id) ?? sections[0]
+  const visibleSections = modelOnly ? sections.slice(0, 1) : sections
+  const currentSection = visibleSections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
   const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch'
   const page = useRef<HTMLDivElement>(null)
@@ -203,14 +204,14 @@ export default function SettingsPage() {
       )}
     </>
   )
-  if (params.get('section') === 'tts') return <Navigate replace to={characterVoicePath} />
+  if (!modelOnly && params.get('section') === 'tts') return <Navigate replace to={characterVoicePath} />
 
   return (
     <div className="settings-page" ref={page}>
       <header className="page-header">
         <div>
-          <h1>设置</h1>
-          <p>配置模型连接、语音和智能体工具。</p>
+          <h1>{modelOnly ? '语言模型' : '设置'}</h1>
+          <p>{modelOnly ? '配置工作台使用的语言模型服务。' : '配置模型连接、语音和智能体工具。'}</p>
         </div>
         <div className="settings-save-actions" hidden={localSection}>
           <span className="settings-save-state" role="status">
@@ -244,15 +245,17 @@ export default function SettingsPage() {
       </header>
       <div className="settings-layout">
         <aside className="settings-sidebar">
-          <nav className="settings-section-nav" aria-label="设置分类">
-            {sections.map(({ id, name, icon: Icon }) => (
-              <Link key={id} to={`?section=${id}`} aria-current={tab === id ? 'page' : undefined}>
-                <Icon size={17} />
-                {name}
-                <ChevronRight size={15} className="settings-section-arrow" />
-              </Link>
-            ))}
-          </nav>
+          {!modelOnly && (
+            <nav className="settings-section-nav" aria-label="设置分类">
+              {sections.map(({ id, name, icon: Icon }) => (
+                <Link key={id} to={`?section=${id}`} aria-current={tab === id ? 'page' : undefined}>
+                  <Icon size={17} />
+                  {name}
+                  <ChevronRight size={15} className="settings-section-arrow" />
+                </Link>
+              ))}
+            </nav>
+          )}
           <p className="settings-privacy">
             <ShieldCheck size={16} />
             <span>对话和记忆保存在本机。生成回复时，所用内容会发给配置的模型服务。</span>

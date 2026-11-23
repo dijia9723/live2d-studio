@@ -45,8 +45,11 @@ func (s *ScreenCapture) Snip(ctx context.Context, handoff desktop.PetHandoff) (*
 	}
 	defer func() {
 		if restore {
-			owner.Show()
-			owner.Focus()
+			if s.windows != nil {
+				s.windows.restoreWindow(owner)
+			} else {
+				showWindow(owner)
+			}
 		}
 	}()
 	selection, err := selectDesktopRegion(ctx)

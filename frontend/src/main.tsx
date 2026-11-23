@@ -7,11 +7,12 @@ import App from './App'
 // Tailwind/shadcn 入口同时按 legacy 层引入原有样式，统一保证层叠顺序。
 import './assets/tailwind.css'
 
-const pet = new URLSearchParams(window.location.search).get('pet') === '1'
-document.documentElement.classList.toggle('pet-document', pet)
+const params = new URLSearchParams(window.location.search)
+const mode = params.get('pet') === '1' ? 'pet' : params.get('coding') === '1' ? 'coding' : 'studio'
+document.documentElement.classList.toggle('pet-document', mode === 'pet')
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App pet={pet} />
+    <App mode={mode} />
   </React.StrictMode>,
 )

@@ -15,6 +15,7 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  Code2,
   Copy,
   Cpu,
   Eye,
@@ -124,7 +125,7 @@ export default function StudioPage() {
   const [stageCategory, setStageCategory] = useState('character')
   const [screenSnipRequest, setScreenSnipRequest] = useState<{ id: string; reason: string } | null>(null)
   const desktopSnip = useDesktopSnip(s.desktop)
-  const petPending = useRef(false)
+  const modePending = useRef(false)
   const captureHotkey = useHotkeys((state) => state.bindings.captureScreen)
   const visibleScreenRequest = screenSnipRequest?.id === s.conversationID ? screenSnipRequest : null
   const inspectCanvas = useCallback(() => {
@@ -301,7 +302,6 @@ export default function StudioPage() {
         .join('\n\n---\n\n'),
     )
   }
-  // 置顶 / 桌宠 / 全屏均依赖桌面客户端能力，失败时给出提示。
   const togglePin = async () => {
     try {
       await api.window('pin', !pinned)
@@ -310,19 +310,25 @@ export default function StudioPage() {
       notify('窗口置顶需要在桌面客户端使用')
     }
   }
-  const pet = async (chooseWindow = false) => {
+  const openMode = async (mode: 'pet' | 'coding', chooseWindow = false) => {
     const owner = useStudio.getState()
-    if (owner.busy || desktopSnip.capturing || petPending.current) return
-    petPending.current = true
+    if (owner.busy || desktopSnip.capturing || modePending.current) return
     voice.stopSpeaking()
+    if (mode === 'coding' && !owner.desktop) {
+      navigate('/coding')
+      return
+    }
+    modePending.current = true
     try {
-      await api.window('pet', true, {
-        character_id: owner.characterID, conversation_id: owner.conversationID, choose_window: chooseWindow,
-      })
-    } catch {
-      notify('请使用桌面客户端打开透明桌宠')
+      await api.window(mode, true, mode === 'pet' ? {
+        character_id: owner.characterID,
+        conversation_id: owner.conversationID,
+        choose_window: chooseWindow,
+      } : undefined)
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : '无法切换窗口')
     } finally {
-      petPending.current = false
+      modePending.current = false
     }
   }
   const fullscreen = () => {
@@ -360,18 +366,28 @@ export default function StudioPage() {
     setRightPanel(next)
     document.getElementById(`workspace-tab-${next}`)?.focus()
   }
-  if (!character) return null
-  return (
-    <div className="studio-workbench">
-      <header className="page-header studio-page-header">
-        <h1>工作台</h1>
+  const switchingUnavailable = s.busy || desktopSnip.capturing
+  const header = (
+    <header className="page-header studio-page-header">
+      <h1>工作台</h1>
+      <div className="studio-mode-actions" aria-label="切换模式" role="group">
+        <button type="button" className="button ghost" disabled={switchingUnavailable} onClick={() => void openMode('coding')}>
+          <Code2 size={16} />
+          编码模式
+        </button>
         {s.desktop && (
-          <button className="button ghost studio-pet-button" disabled={s.busy || desktopSnip.capturing} onClick={() => void pet()}>
+          <button type="button" className="button ghost" disabled={switchingUnavailable} onClick={() => void openMode('pet')}>
             <Maximize2 size={16} />
             桌宠模式
           </button>
         )}
-      </header>
+      </div>
+    </header>
+  )
+  if (!character) return <div className="studio-workbench">{header}</div>
+  return (
+    <div className="studio-workbench">
+      {header}
       <div className="studio-scene">
         <section
           className={`stage-column ${s.controlsVisible ? '' : 'is-clean-preview'}`}
@@ -954,7 +970,7 @@ export default function StudioPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" side="top">
                           {typeof navigator.mediaDevices?.getDisplayMedia === 'function' && (
-                            <DropdownMenuItem onSelect={() => void pet(true)}>选择观看窗口</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => void openMode('pet', true)}>选择观看窗口</DropdownMenuItem>
                           )}
                           <DropdownMenuItem onSelect={() => void captureScreen()}>框选区域，在截图工具栏点「一起看」</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => navigate('/settings?section=screen-watch')}>配置观看模型</DropdownMenuItem>

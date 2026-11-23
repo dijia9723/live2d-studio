@@ -132,8 +132,7 @@ export const api = {
     (await http.post('/settings/ollama/models', { base_url }, { signal, timeout: 12000 })).data.data
       .models,
   desktop: () => get<{ available: boolean }>('/desktop'),
-  // 控制桌面端窗口行为：pet 开关桌宠窗口，pin 切换置顶。
-  window: (action: 'pet' | 'pin', enabled: boolean, handoff?: DesktopHandoff) =>
+  window: (action: 'pet' | 'coding' | 'pin', enabled: boolean, handoff?: DesktopHandoff) =>
     http.post(`/desktop/${action}`, { enabled, handoff }),
   // 上传录音并返回转写文本。
   transcribe: async (blob: Blob): Promise<string> => {

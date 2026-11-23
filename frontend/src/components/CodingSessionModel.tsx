@@ -177,7 +177,7 @@ export default function CodingSessionModel({
               </p>
             )}
             <div className="coding-actions">
-              <Link className="coding-button" to="/settings">
+              <Link className="coding-button" to="/coding/settings">
                 配置模型服务
               </Link>
               <button

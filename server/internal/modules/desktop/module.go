@@ -1,17 +1,19 @@
-// Package desktop 暴露桌面壳层的窗口能力（桌面宠物模式与窗口置顶），
+// Package desktop 暴露桌面壳层的模式切换与窗口置顶能力，
 // 路由前缀为 /api/v1/desktop。
 package desktop
 
 import (
 	"errors"
-	"github.com/gin-gonic/gin"
 	"server/internal/pkg"
 	"sync"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Controller 由桌面壳层实现；在 headless 构建中不会被注入。
 type Controller interface {
 	Pet(bool, *PetHandoff)
+	Coding(bool)
 	Pin(bool)
 }
 
@@ -74,6 +76,8 @@ func (m *Module) Register(r *gin.RouterGroup) {
 		switch c.Param("action") {
 		case "pet":
 			m.controller.Pet(req.Enabled, req.Handoff)
+		case "coding":
+			m.controller.Coding(req.Enabled)
 		case "pin":
 			m.controller.Pin(req.Enabled)
 		default:

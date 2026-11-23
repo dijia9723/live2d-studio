@@ -1,5 +1,6 @@
 .coding-page,
-.coding-enhancements {
+.coding-enhancements,
+.coding-window {
   --code-surface: #1b1920;
   --code-rail: #221f29;
   --code-line: #38333f;
@@ -12,6 +13,29 @@
   color: var(--code-text);
   color-scheme: dark;
   font-size: 14px;
+}
+.coding-window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+}
+.coding-window-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--code-line);
+  background: var(--code-rail);
+}
+.coding-window-content {
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.coding-window-content:has(.settings-page) {
+  background: var(--page);
+  color: var(--ink);
+  color-scheme: light;
 }
 .coding-page {
   display: grid;
