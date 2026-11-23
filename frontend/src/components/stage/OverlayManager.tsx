@@ -3,10 +3,12 @@
  * 负责素材导入与校验、选择/清除叠加素材、强度与混合模式调节。
  */
 import { useEffect, useRef, useState } from 'react'
-import { Check, Film, Image, Layers, LoaderCircle, Upload, X } from 'lucide-react'
+import { Check, FileCode, Film, Image, Layers, LoaderCircle, Upload, X } from 'lucide-react'
 import { api } from '../../api/client'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { useStudio } from '../../store/studio'
+import StageHTMLPresetGrid from './StageHTMLPresetGrid'
+import { overlayHTMLPresets } from './stageHTMLPresets'
 
 // 允许的 MIME 类型；部分 WebView 不返回 type，因此同时按扩展名兜底判断。
 const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -50,6 +52,8 @@ export default function OverlayManager() {
   const [success, setSuccess] = useState('')
   const overlayAssets = s.sceneAssets.filter((asset) => asset.kind !== 'html')
   const selected = overlayAssets.find((asset) => asset.id === s.overlayAssetID)
+  const selectedPreset = overlayHTMLPresets.find((preset) => preset.id === s.overlayAssetID)
+  const selectedName = selectedPreset?.name ?? selected?.name
 
   useEffect(() => {
     mounted.current = true
@@ -102,13 +106,10 @@ export default function OverlayManager() {
   return (
     <section className="overlay-manager" aria-labelledby="overlay-manager-title">
       <div className="overlay-heading">
-        <div>
-          <h3 id="overlay-manager-title">
-            <Layers size={14} />
-            自定义叠加层
-          </h3>
-          <p>把你的图片或视频特效，轻轻叠在角色前方。</p>
-        </div>
+        <h3 id="overlay-manager-title">
+          <Layers size={14} />
+          前景叠加层
+        </h3>
         <button
           type="button"
           className="overlay-upload-button"
@@ -120,11 +121,18 @@ export default function OverlayManager() {
         </button>
       </div>
 
+      <StageHTMLPresetGrid
+        label="动态 HTML 特效"
+        presets={overlayHTMLPresets}
+        selectedID={s.overlayAssetID}
+        disabled={busy}
+        onSelect={choose}
+      />
       <div className="overlay-asset-row">
         <label className="overlay-select-label">
           <span>叠加素材</span>
           <Select
-            value={selected?.id || 'none'}
+            value={selectedPreset?.id ?? selected?.id ?? 'none'}
             disabled={busy}
             onValueChange={(value) => choose(value === 'none' ? '' : value)}
           >
@@ -133,6 +141,11 @@ export default function OverlayManager() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">不使用叠加素材</SelectItem>
+              {overlayHTMLPresets.map((preset) => (
+                <SelectItem value={preset.id} key={preset.id}>
+                  HTML · {preset.name}
+                </SelectItem>
+              ))}
               {overlayAssets.map((asset) => (
                 <SelectItem value={asset.id} key={asset.id}>
                   {asset.kind === 'video' ? '视频' : '图片'} · {asset.name}
@@ -154,21 +167,29 @@ export default function OverlayManager() {
         </button>
       </div>
 
-      {selected && (
+      {selectedName && (
         <div className="overlay-selected-asset">
           <span className="overlay-asset-icon">
-            {selected.kind === 'video' ? <Film size={15} /> : <Image size={15} />}
+            {selectedPreset ? (
+              <FileCode size={15} />
+            ) : selected?.kind === 'video' ? (
+              <Film size={15} />
+            ) : (
+              <Image size={15} />
+            )}
           </span>
-          <span className="overlay-asset-name" title={selected.name}>
-            {selected.name}
+          <span className="overlay-asset-name" title={selectedName}>
+            {selectedName}
           </span>
-          <span className="overlay-asset-size">
-            {selected.mime_type === 'image/gif' ? 'GIF · ' : ''}
-            {sizeLabel(selected.size)}
-          </span>
+          {selected && (
+            <span className="overlay-asset-size">
+              {selected.mime_type === 'image/gif' ? 'GIF · ' : ''}
+              {sizeLabel(selected.size)}
+            </span>
+          )}
         </div>
       )}
-      {!!s.overlayAssetID && !selected && !busy && (
+      {!!s.overlayAssetID && !selectedName && !busy && (
         <p className="overlay-status overlay-status-error" role="alert">
           找不到已选素材，请重新选择或导入。
         </p>
@@ -186,7 +207,7 @@ export default function OverlayManager() {
             max="1"
             step="0.01"
             value={s.overlayOpacity}
-            disabled={busy || !selected}
+            disabled={busy || !selectedName}
             onChange={(event) => s.patch({ overlayOpacity: Number(event.target.value) })}
           />
         </label>
@@ -194,7 +215,7 @@ export default function OverlayManager() {
           <span>混合模式</span>
           <Select
             value={s.overlayBlendMode}
-            disabled={busy || !selected}
+            disabled={busy || !selectedName}
             onValueChange={(value) => {
               if (value === 'normal' || value === 'screen' || value === 'lighten')
                 s.patch({ overlayBlendMode: value })

@@ -20,6 +20,8 @@ import { api, mediaURL } from '../../api/client'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { notify, useStudio } from '../../store/studio'
 import type { SceneAsset } from '../../types/api'
+import StageHTMLPresetGrid from './StageHTMLPresetGrid'
+import { backgroundHTMLPresets } from './stageHTMLPresets'
 
 const backgrounds = [
   { id: 'lavender', name: '暮紫花园' },
@@ -44,6 +46,7 @@ export default function BackgroundManager() {
   const [removing, setRemoving] = useState<SceneAsset | null>(null)
   const [deleting, setDeleting] = useState(false)
   const selected = s.sceneAssets.find((asset) => asset.id === s.backgroundAssetID)
+  const selectedPreset = backgroundHTMLPresets.find((preset) => preset.id === s.backgroundAssetID)
   // 进入面板时刷新素材库，兼容其他窗口新增的素材。
   useEffect(() => {
     void s
@@ -109,6 +112,12 @@ export default function BackgroundManager() {
         </div>
         <span className="subtle-count">{s.sceneAssets.length} 个素材</span>
       </div>
+      <StageHTMLPresetGrid
+        label="动态 HTML 背景"
+        presets={backgroundHTMLPresets}
+        selectedID={s.backgroundAssetID}
+        onSelect={(id) => s.patch({ backgroundAssetID: id })}
+      />
       <button
         className={`background-upload ${dragging ? 'dragging' : ''}`}
         disabled={uploading}
@@ -239,14 +248,14 @@ export default function BackgroundManager() {
           <p>{filter === 'all' ? '还没有导入素材' : '没有符合筛选的素材'}</p>
         </div>
       )}
-      {selected && (
+      {(selected || selectedPreset) && (
         <div className="background-adjustments">
           <div className="panel-label">背景显示</div>
-          {selected.kind === 'html' ? (
+          {selected?.kind === 'html' ? (
             <p className="media-html-hint">
               HTML 随画布大小调整，支持内联 CSS 动画和嵌入图片，不加载外部资源或运行脚本。
             </p>
-          ) : (
+          ) : selected ? (
             <label>
               画面适配
               <Select
@@ -262,7 +271,7 @@ export default function BackgroundManager() {
                 </SelectContent>
               </Select>
             </label>
-          )}
+          ) : null}
           <label>
             背景压暗<span>{Math.round(s.backgroundDim * 100)}%</span>
             <input
@@ -275,7 +284,7 @@ export default function BackgroundManager() {
               onChange={(e) => s.patch({ backgroundDim: Number(e.target.value) })}
             />
           </label>
-          {selected.kind === 'video' && (
+          {selected?.kind === 'video' && (
             <button
               className="button ghost video-playback"
               onClick={() => s.patch({ videoPlaying: !s.videoPlaying })}

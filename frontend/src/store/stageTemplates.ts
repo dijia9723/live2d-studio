@@ -5,6 +5,7 @@ import { defaultModelPosition, stageAspectPresets, type StageAppearance } from '
 import { counterValue } from '../utils/canvas'
 import { notify, useStudio } from './studio'
 import { useCanvas } from './canvas'
+import { backgroundHTMLPresets, overlayHTMLPresets } from '../components/stage/stageHTMLPresets'
 
 interface StageSnapshot {
   appearance: StageAppearance
@@ -90,8 +91,10 @@ function restoreStage(snapshot: StageSnapshot) {
   const assets = useStudio.getState().sceneAssets
   let missing = false
   for (const key of ['backgroundAssetID', 'overlayAssetID'] as const) {
+    const presets = key === 'backgroundAssetID' ? backgroundHTMLPresets : overlayHTMLPresets
     if (
       appearance[key] &&
+      !presets.some((preset) => preset.id === appearance[key]) &&
       !assets.some((asset) => asset.id === appearance[key] && (key !== 'overlayAssetID' || asset.kind !== 'html'))
     ) {
       appearance[key] = null

@@ -1,0 +1,39 @@
+<style>
+  .glow {
+    position: absolute;
+    top: var(--y);
+    left: var(--x);
+    width: clamp(3px, var(--size), 30px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffffef 5%, var(--color, #ffcf8b) 32%, transparent 72%);
+    box-shadow: 0 0 2.7vmin var(--color, #ffcf8b);
+    animation: rise var(--period, 9s) ease-in-out infinite;
+    animation-delay: var(--delay);
+  }
+
+  @keyframes rise {
+    0% { translate: -2vmin 12vmin; opacity: 0; scale: 0.55; }
+    35% { opacity: 0.9; scale: 1; }
+    70% { opacity: 0.63; }
+    100% { translate: 5vmin -14vmin; opacity: 0; scale: 0.7; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .glow { animation: none; opacity: 0.55; }
+  }
+</style>
+<i class="glow" style="--x:7%;--y:39%;--size:1.2vmin;--delay:-2s"></i>
+<i class="glow" style="--x:13%;--y:69%;--size:2.4vmin;--delay:-3s;--color:#ffb7e2"></i>
+<i class="glow" style="--x:20%;--y:81%;--size:0.8vmin;--delay:-1s;--period:6s"></i>
+<i class="glow" style="--x:24%;--y:24%;--size:0.9vmin;--delay:-4s"></i>
+<i class="glow" style="--x:29%;--y:56%;--size:0.65vmin;--delay:-3s;--color:#ffd5a0"></i>
+<i class="glow" style="--x:37%;--y:90%;--size:1.4vmin;--delay:-2s"></i>
+<i class="glow" style="--x:49%;--y:73%;--size:0.8vmin;--delay:-2s;--period:6s"></i>
+<i class="glow" style="--x:58%;--y:84%;--size:1.1vmin;--delay:-5s;--color:#ffb7e2"></i>
+<i class="glow" style="--x:65%;--y:48%;--size:0.8vmin;--delay:-3s"></i>
+<i class="glow" style="--x:72%;--y:61%;--size:1.2vmin;--delay:-1s;--period:8s"></i>
+<i class="glow" style="--x:77%;--y:85%;--size:2.2vmin;--delay:-4s"></i>
+<i class="glow" style="--x:82%;--y:30%;--size:1.3vmin;--delay:-2s;--color:#ffb7e2"></i>
+<i class="glow" style="--x:88%;--y:54%;--size:2.8vmin;--delay:-3s"></i>
+<i class="glow" style="--x:93%;--y:72%;--size:0.85vmin;--delay:-1s;--color:#ffb7e2"></i>

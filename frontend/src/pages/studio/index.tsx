@@ -49,6 +49,7 @@ import StageSettingsPanel from '../../components/stage/StageSettingsPanel'
 import StageBackground from '../../components/stage/StageBackground'
 import StageEffects from '../../components/stage/StageEffects'
 import StageOverlay from '../../components/stage/StageOverlay'
+import { backgroundHTMLPresets } from '../../components/stage/stageHTMLPresets'
 import CanvasLayer from '../../components/canvas/CanvasLayer'
 import CanvasToolbar from '../../components/canvas/CanvasToolbar'
 import StageViewToolbar from '../../components/stage/StageViewToolbar'
@@ -134,7 +135,9 @@ export default function StudioPage() {
     setRightPanel('stage')
     setStageCategory('widgets')
   }, [])
-  const background = s.sceneAssets.find((item) => item.id === s.backgroundAssetID)
+  const background =
+    backgroundHTMLPresets.find((item) => item.id === s.backgroundAssetID) ??
+    s.sceneAssets.find((item) => item.id === s.backgroundAssetID)
   // 两栏配比跟随画布比例：宽画布偏舞台，竖画布偏右侧面板。
   const aspectRatio = stageAspectPresets.find((preset) => preset.id === s.aspect)?.ratio ?? 0
   const aspectShape =

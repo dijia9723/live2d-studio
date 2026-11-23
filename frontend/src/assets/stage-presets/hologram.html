@@ -1,0 +1,53 @@
+<style>
+  .frame {
+    position: absolute;
+    inset: 5%;
+    color: #74f9ff;
+    filter: drop-shadow(0 0 5px #53c8ff96);
+  }
+
+  .frame i {
+    position: absolute;
+    width: 12%;
+    height: 13%;
+    border: max(1px, 0.27vmin) solid;
+  }
+
+  .frame i:nth-child(1) { inset: 0 auto auto 0; border-right: 0; border-bottom: 0; }
+  .frame i:nth-child(2) { inset: 0 0 auto auto; border-left: 0; border-bottom: 0; }
+  .frame i:nth-child(3) { inset: auto 0 0 auto; border-left: 0; border-top: 0; }
+  .frame i:nth-child(4) { inset: auto auto 0 0; border-right: 0; border-top: 0; }
+
+  .ticks {
+    position: absolute;
+    inset: 22% 0;
+    background:
+      repeating-linear-gradient(#83eeff80 0 1px, transparent 1px 10px) left / 1.5% 100% no-repeat,
+      repeating-linear-gradient(#83eeff80 0 1px, transparent 1px 10px) right / 1.5% 100% no-repeat;
+  }
+
+  .scan {
+    position: absolute;
+    inset: 5% 5% auto;
+    height: 20%;
+    border-bottom: 1px solid #76ecff94;
+    background:
+      linear-gradient(0deg, #46e9ff14, transparent),
+      repeating-linear-gradient(0deg, #63def014 0 1px, transparent 1px 0.9vmin);
+    mask-image: linear-gradient(0deg, #000, transparent 95%);
+    animation: scan 6s linear infinite;
+    animation-delay: -2.8s;
+  }
+
+  @keyframes scan {
+    0% { translate: 0 -15vh; opacity: 0; }
+    18%, 81% { opacity: 1; }
+    100% { translate: 0 70vh; opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scan { animation: none; top: 33%; }
+  }
+</style>
+<div class="frame"><i></i><i></i><i></i><i></i><div class="ticks"></div></div>
+<div class="scan"></div>

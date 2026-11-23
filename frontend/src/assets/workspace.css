@@ -477,15 +477,18 @@
   background: #2b2436;
 }
 .stage-media > img,
-.stage-media > video,
-.stage-media > iframe {
+.stage-media > video {
   position: absolute;
   width: 100%;
   height: 100%;
   inset: 0;
 }
-.stage-media > iframe {
+.stage-html-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
   border: 0;
+  pointer-events: none;
 }
 .stage-media-shade {
   position: absolute;
@@ -602,6 +605,63 @@
 .builtin-background.selected {
   border-color: #bd9ad7;
   box-shadow: 0 2px 8px #9b79b619;
+}
+.stage-html-presets {
+  margin-bottom: 14px;
+}
+.overlay-manager .stage-html-presets {
+  margin-bottom: 0;
+}
+.stage-html-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.stage-html-preset {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e7ddef;
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  text-align: left;
+}
+.stage-html-preset:hover:has(button:enabled),
+.stage-html-preset:has(button[aria-pressed='true']) {
+  border-color: #a781c9;
+}
+.stage-html-preset:has(button[aria-pressed='true']) {
+  background: #f3ecfa;
+  box-shadow: 0 0 0 1px #a781c9;
+}
+.stage-html-preset:has(button:focus-visible) {
+  outline: 2px solid #8254ad;
+  outline-offset: 2px;
+}
+.stage-html-preset-preview {
+  height: clamp(42px, 6vw, 67px);
+  background: radial-gradient(ellipse at 50% 75%, #31234b, #100e24 85%);
+}
+.stage-html-preset-name {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 6px;
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.stage-html-preset-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.stage-html-preset-name svg {
+  flex-shrink: 0;
+  color: #8254ad;
 }
 .media-library-heading {
   display: flex;
@@ -829,6 +889,9 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+.overlay-manager + .effects-heading {
+  margin-top: 16px;
 }
 .effects-heading .panel-label {
   margin: 0;

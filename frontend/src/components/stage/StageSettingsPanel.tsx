@@ -136,6 +136,7 @@ export default function StageSettingsPanel({
           aria-labelledby="stage-tab-effects"
           hidden={tab !== 'effects'}
         >
+          <OverlayManager />
           <div className="effects-heading">
             <span className="panel-label">氛围特效 · {activeEffects} 个已开启</span>
             <button
@@ -192,7 +193,6 @@ export default function StageSettingsPanel({
               )
             })}
           </div>
-          <OverlayManager />
         </div>
         <div
           role="tabpanel"

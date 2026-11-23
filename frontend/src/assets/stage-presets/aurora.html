@@ -1,0 +1,67 @@
+<style>
+  body {
+    background:
+      radial-gradient(ellipse at 62% 78%, #385486 0%, transparent 58%),
+      linear-gradient(164deg, #040a22 12%, #152e58 64%, #615f9a);
+  }
+
+  .stars {
+    position: absolute;
+    inset: 0 0 28%;
+    background-image:
+      radial-gradient(circle, #e4fff7 1px, transparent 1.5px),
+      radial-gradient(circle, #c6d6f6aa 0.6px, transparent 1.1px);
+    background-size: 89px 113px, 43px 61px;
+    background-position: 12px 21px, 5px 3px;
+  }
+
+  .curtain {
+    position: absolute;
+    top: -40%;
+    left: -22%;
+    width: 146%;
+    height: 92%;
+    border-radius: 31% 44% 49% 35%;
+    background:
+      repeating-linear-gradient(108deg, #afffc202 0 2%, #99ffe21c 3%, transparent 6%),
+      linear-gradient(162deg, transparent 38%, #3f7cb258 57%, #62f8c59c 70%, #90ffda9e 74%, #56efbe22 81%, transparent 87%);
+    filter: blur(1.5vmin);
+    transform: rotate(-11deg);
+    animation: drift 14s ease-in-out infinite alternate;
+  }
+
+  .curtain.far {
+    top: -43%;
+    left: 18%;
+    background: linear-gradient(174deg, transparent 47%, #8661fc22 60%, #b17dff94 72%, #57dceb65 75%, transparent 83%);
+    transform: rotate(13deg);
+    animation-delay: -9s;
+  }
+
+  .ridge {
+    position: absolute;
+    inset: auto 0 0;
+    height: 45%;
+    background: linear-gradient(172deg, #a9c7f4, #4f689e 45%, #20365e 72%);
+    clip-path: polygon(0 66%, 11% 30%, 21% 56%, 34% 15%, 43% 42%, 51% 63%, 62% 40%, 69% 51%, 82% 7%, 91% 45%, 100% 24%, 100% 100%, 0 100%);
+  }
+
+  .near {
+    height: 29%;
+    background: linear-gradient(155deg, #324778, #101a35 65%);
+    clip-path: polygon(0 29%, 13% 49%, 26% 28%, 39% 59%, 53% 75%, 67% 55%, 78% 63%, 92% 28%, 100% 34%, 100% 100%, 0 100%);
+  }
+
+  @keyframes drift {
+    to { translate: -6% 9%; scale: 1.09 0.86; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .curtain { animation: none; }
+  }
+</style>
+<div class="stars"></div>
+<div class="curtain far"></div>
+<div class="curtain"></div>
+<div class="ridge"></div>
+<div class="ridge near"></div>
