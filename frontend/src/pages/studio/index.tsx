@@ -73,6 +73,7 @@ import { useDesktopSnip } from '../../hooks/useDesktopSnip'
 import { useCameraTracking } from '../../hooks/useCameraTracking'
 import { useLiveMode } from '../../hooks/useLiveMode'
 import { useStageFrame } from '../../hooks/useStageFrame'
+import { useStageOutput } from '../../hooks/useStageOutput'
 import { useStageHotkeys } from '../../hooks/useStageHotkeys'
 import { useSpeech } from '../../hooks/useSpeech'
 import { api } from '../../api/client'
@@ -116,6 +117,9 @@ export default function StudioPage() {
   const imageReader = useRef<FileReader | null>(null)
   const stageFrame = useStageFrame(s.aspect, !!character)
   const container = stageFrame.ref
+  const outputTarget = useRef<HTMLDivElement>(null)
+  const stageOutput = useStageOutput(outputTarget)
+  const showStageControls = s.controlsVisible && stageOutput.state.phase !== 'live' && stageOutput.state.phase !== 'starting'
   const dock = useRef<HTMLElement>(null)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const stageRef = useRef<Live2DStageHandle>(null)
@@ -403,6 +407,7 @@ export default function StudioPage() {
           aria-label="Live2D 舞台"
         >
           <StageViewToolbar
+            output={stageOutput}
             cameraAvailable={!!character}
             cameraEnabled={camera.enabled}
             onToggleCamera={toggleStageCamera}
@@ -424,13 +429,14 @@ export default function StudioPage() {
           )}
           <div className="stage-viewport" ref={container}>
             <div
+              ref={outputTarget}
               className={`stage stage-${s.stage} ${background ? 'has-media' : ''}`}
               style={stageFrame.style}
               data-aspect={s.aspect}
             >
               <StageBackground />
               {!background && <div className="stage-light" aria-hidden="true" />}
-              {s.controlsVisible && (
+              {showStageControls && (
                 <div className="stage-top">
                   <div className="character-switch">
                     <DropdownMenu>
@@ -509,15 +515,15 @@ export default function StudioPage() {
               <StageOverlay />
               <CanvasLayer
                 onInspect={inspectCanvas}
-                controlsVisible={s.controlsVisible}
+                controlsVisible={showStageControls}
                 scale={stageFrame.contentScale}
               />
               {live.caption && (
-                <div className={`live-caption ${s.controlsVisible ? '' : 'is-clean'}`}>
+                <div className={`live-caption ${showStageControls ? '' : 'is-clean'}`}>
                   <p>{live.caption}</p>
                 </div>
               )}
-              {s.controlsVisible && (
+              {showStageControls && (
                 <div className="stage-bottom">
                   {activity && (
                     <div className="stage-status">

@@ -68,7 +68,7 @@ export default defineConfig({
       ? { host: desktopDevURL.hostname, clientPort: Number(desktopDevURL.port || 80) }
       : undefined,
     proxy: {
-      '/api': 'http://127.0.0.1:12393',
+      '/api': { target: 'http://127.0.0.1:12393', ws: true },
       '/models': 'http://127.0.0.1:12393',
       '/scene-media': 'http://127.0.0.1:12393',
     },

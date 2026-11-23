@@ -31,6 +31,7 @@ import (
 	"server/internal/modules/sceneassets"
 	"server/internal/modules/settings"
 	"server/internal/modules/speech"
+	"server/internal/modules/stageoutput"
 	"server/internal/pkg"
 	"server/internal/router"
 	"server/internal/tts"
@@ -49,6 +50,7 @@ type App struct {
 	BrowserDebug *coding.BrowserDebugService
 	Coding       *coding.Module
 	Plugins      *piplugins.Module
+	StageOutput  *stageoutput.Module
 }
 
 // New 初始化数据库、迁移并装配所有业务模块。
@@ -177,6 +179,8 @@ func New(cfg config.Config) (*App, error) {
 	}
 	plugins.ConfigureHostWorkspace(code.PluginWorkspaceCall)
 	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Characters: cs, Settings: ss, TTS: tts.New(cfg.TTSDir)}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live}, code, plugins)
+	output := &stageoutput.Module{}
+	router.Register(r, output)
 	assets.RegisterMedia(r)
 	cubism2Runtime := filepath.Join(cfg.DataDir, "cubism2", "live2d.min.js")
 	r.GET("/api/v1/characters/cubism2-runtime", func(c *gin.Context) {
@@ -211,7 +215,7 @@ func New(cfg config.Config) (*App, error) {
 	})
 	// 前端资源必须最后注册：其 NoRoute 兜底会接管所有未匹配的 GET 请求。
 	webui.Register(r)
-	return &App{Router: r, Desktop: ds, DB: db, Config: cfg, Live: live, Terminal: terminal, BrowserDebug: debugBrowser, Coding: code, Plugins: plugins}, nil
+	return &App{Router: r, Desktop: ds, DB: db, Config: cfg, Live: live, Terminal: terminal, BrowserDebug: debugBrowser, Coding: code, Plugins: plugins, StageOutput: output}, nil
 }
 
 // Listen 在配置的地址上监听，并把路由交给后台运行的 http.Server。
@@ -233,6 +237,7 @@ func (a *App) Listen() (*http.Server, net.Listener, error) {
 
 // Close 关闭底层数据库连接，供进程退出时释放文件句柄。
 func (a *App) Close() {
+	a.StageOutput.Close()
 	a.Terminal.Close()
 	a.BrowserDebug.Close()
 	a.Coding.StopOrchestration()

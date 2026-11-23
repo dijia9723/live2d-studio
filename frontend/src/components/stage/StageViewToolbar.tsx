@@ -4,6 +4,8 @@ import { useHotkeys } from '../../store/hotkeys'
 import { useStudio } from '../../store/studio'
 import { stageAspectPresets, type StageAspect } from '../../types/stage'
 import { ariaHotkey, formatHotkey } from '../../utils/hotkeys'
+import type { useStageOutput } from '../../hooks/useStageOutput'
+import StageOutputDialog from './StageOutputDialog'
 import {
   Select,
   SelectContent,
@@ -18,6 +20,7 @@ interface Props {
   cameraEnabled: boolean
   onToggleCamera: () => void
   onResetModelView: () => void
+  output: ReturnType<typeof useStageOutput>
 }
 
 export default function StageViewToolbar({
@@ -26,6 +29,7 @@ export default function StageViewToolbar({
   cameraEnabled,
   onToggleCamera,
   onResetModelView,
+  output,
 }: Props) {
   const { aspect, controlsVisible, patch, zoom } = useStudio()
   const bindings = useHotkeys((s) => s.bindings)
@@ -76,6 +80,7 @@ export default function StageViewToolbar({
           <PanelsTopLeft size={15} />
           模板
         </button>
+        <StageOutputDialog output={output} />
         <button
           aria-label={controlsVisible ? '隐藏画布按钮' : '显示画布按钮'}
           aria-pressed={!controlsVisible}
