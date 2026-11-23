@@ -108,7 +108,7 @@ func (s *Service) removeModelDir(modelPath string) {
 }
 
 // Import 解压导出的 Cubism 模型并创建角色记录。
-// 安全约束：文件数量与解压总大小受限，拒绝绝对路径、路径穿越、盘符与符号链接，
+// 安全约束：拒绝绝对路径、路径穿越、盘符与符号链接，
 // 忽略未知扩展名的文件，并要求压缩包内恰有一个模型。
 // 导入失败时会删除整个目标目录，不留半成品；成功后校验模型引用未越界且资源确实存在。
 func (s *Service) Import(file string) (model.Character, error) {
@@ -124,9 +124,6 @@ func (s *Service) Import(file string) (model.Character, error) {
 // existingID 非空时只更新已有角色的模型路径，保留人设、命名、会话与记忆。
 func (s *Service) importArchive(z *zip.Reader, existingID string) (model.Character, error) {
 	var result model.Character
-	if len(z.File) > 4000 {
-		return result, fmt.Errorf("模型文件数量过多")
-	}
 	id := uuid.NewString()
 	dest := filepath.Join(s.ModelsDir, id)
 	if err := os.MkdirAll(dest, 0700); err != nil {
@@ -138,7 +135,6 @@ func (s *Service) importArchive(z *zip.Reader, existingID string) (model.Charact
 			_ = os.RemoveAll(dest)
 		}
 	}()
-	var total uint64
 	var err error
 	var manifests []string
 	var legacyMocs []string
@@ -152,10 +148,6 @@ func (s *Service) importArchive(z *zip.Reader, existingID string) (model.Charact
 		if !f.FileInfo().IsDir() && !modelResourceExtension(ext) {
 			continue
 		}
-		if f.UncompressedSize64 > 200<<20 || total > 200<<20-f.UncompressedSize64 {
-			return result, fmt.Errorf("解压后的模型不得超过 200MB")
-		}
-		total += f.UncompressedSize64
 		target := filepath.Join(dest, filepath.FromSlash(clean))
 		if f.FileInfo().IsDir() {
 			if err = os.MkdirAll(target, 0700); err != nil {

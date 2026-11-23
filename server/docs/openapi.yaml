@@ -98,7 +98,7 @@ paths:
         '422': { description: Model manifest unavailable or invalid }
   /characters/import:
     post:
-      summary: Import one Cubism model from ZIP (no compressed size limit, 200MB expanded)
+      summary: Import one Cubism model from ZIP (no size or file count limit)
       requestBody:
         required: true
         content:

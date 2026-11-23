@@ -71,12 +71,8 @@ def check_references(archive, manifest, files):
 
 
 def check_zip(path):
-    if path.stat().st_size >= 100 * MIB:
-        raise ValueError('ZIP must be below 100 MiB; leave room for multipart upload overhead.')
     with ZipFile(path) as archive:
         entries = archive.infolist()
-        if len(entries) > 4000 or sum(entry.file_size for entry in entries) > 200 * MIB:
-            raise ValueError('ZIP exceeds 4000 entries or 200 MiB uncompressed.')
         paths = set()
         files = {}
         for entry in entries:

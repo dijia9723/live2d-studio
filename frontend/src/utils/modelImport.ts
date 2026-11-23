@@ -13,9 +13,9 @@ const resourceExtension = /\.(json|moc3?|mtn|physics|pose|png|jpe?g|wav|mp3|ogg|
  */
 export async function packageModelDirectory(files: File[]) {
   const resources = files.filter((file) => resourceExtension.test(file.name))
-  // 空目录多半是选错位置；数量上限防止误选整个磁盘导致内存飙升。
-  if (!resources.length || resources.length > 4000) {
-    throw new Error('请选择单个 Live2D 模型的目录（最多 4000 个资源文件）')
+  // 空目录多半是选错位置。
+  if (!resources.length) {
+    throw new Error('请选择包含 Live2D 模型资源的目录')
   }
   const { zipSync } = await import('fflate')
   const entries: Record<string, Uint8Array> = Object.create(null)
