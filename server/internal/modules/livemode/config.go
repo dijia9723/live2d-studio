@@ -56,8 +56,8 @@ type Config struct {
 // defaultConfig 返回未保存过配置时使用的默认值：手动模式，仅对弹幕、礼物和关注自动回应。
 func defaultConfig() Config {
 	return Config{
-		Prompt:      "像跟直播间的朋友聊天。有人问就先答，遇到有意思的弹幕可以顺势接个梗。收到礼物或关注时顺口谢一句。",
-		Temperature: 0.7, PollSeconds: 20, ReplySeconds: 8, BatchSize: 5, MaxTokens: 256,
+		Prompt:      "就当在直播间跟朋友唠嗑：有人问就顺口答，别念稿。弹幕有意思就接个梗、开个玩笑；礼物和关注随口谢一句就行。冷场了自己找个轻松的话题。",
+		Temperature: 0.8, PollSeconds: 20, ReplySeconds: 8, BatchSize: 5, MaxTokens: 256,
 		Mode: "manual", Events: slices.Clone(kinds), ReplyEvents: []Kind{Chat, Gift, Follow},
 		Speak: true, Actions: true,
 	}

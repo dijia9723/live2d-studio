@@ -234,7 +234,7 @@ func (s *Service) systemPrompt(ctx context.Context, cfg config.LLM, character mo
 		}
 		prompt += liveAudienceGuidance
 		if cfg.ToolsEnabled {
-			prompt += "\n需要模型动作或原生表情时，先查询当前模型的动作表并按返回的原始 ID 调用。"
+			prompt += "\n需要模型动作或原生表情时，先查询当前模型的动作表并按返回的原始 ID 调用。观众用弹幕点动作（比如「眨个眼」「比个心」）时当成指令：本轮已经自动播放的就顺口接一句，别再重复播；没有自动播放就自己查一次可用动作，能对上就播，对不上就轻松说一句做不到，别假装做了。"
 		}
 		return prompt, nil
 	}

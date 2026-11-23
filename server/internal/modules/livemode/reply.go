@@ -111,7 +111,16 @@ func (s *Service) generate(ctx context.Context, cancel context.CancelFunc, run *
 		reply.EventIDs = append(reply.EventIDs, event.ID)
 	}
 	data, _ := json.Marshal(input)
-	history := []model.Message{{Role: "user", Content: "请回应本轮直播事件。\n" + string(data)}}
+	content := "请用轻松的口语接住本轮直播互动，只输出嘴里要说的话。\n"
+	// 观众用弹幕点名动作时直接播放，不依赖模型是否记得调用工具；
+	// 同时告诉模型已经播过，避免同一轮重复触发。
+	if config.Actions {
+		if action, label, ok := s.commandAction(ctx, run, events); ok {
+			reply.Stage = append(reply.Stage, action)
+			content += "观众点的「" + label + "」已经自动播放，不用再调用动作工具，顺口接一句就行。\n"
+		}
+	}
+	history := []model.Message{{Role: "user", Content: content + string(data)}}
 	var text strings.Builder
 	models, err := s.models.Get()
 	if err == nil {

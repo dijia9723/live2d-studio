@@ -150,7 +150,7 @@ export default function LiveModeSettings({
               disabled={pending}
               onChange={(e) => change({ ...value, actions: e.target.checked })}
             />{' '}
-            允许 AI 执行角色动作和表情
+            允许角色动作和表情（含弹幕点动作）
           </label>
         </div>
       </div>
