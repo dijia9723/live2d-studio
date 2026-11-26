@@ -20,6 +20,7 @@ import type {
   OllamaModel,
   SceneAsset,
   Settings,
+  StorageSettings,
   StreamEvent,
   TTSCatalog,
 } from '../types/api'
@@ -118,6 +119,9 @@ export const api = {
   renameConversation: (id: string, title: string) => http.put(`/conversations/${id}`, { title }),
   messages: (id: string) => get<Message[]>(`/conversations/${id}/messages`),
   settings: (signal?: AbortSignal) => get<Settings>('/settings', signal),
+  storageSettings: (signal?: AbortSignal) => get<StorageSettings>('/settings/storage', signal),
+  chooseDataDirectory: async (): Promise<StorageSettings> =>
+    (await http.post('/settings/storage', undefined, { timeout: 0 })).data.data,
   screenWatchSettings: (signal?: AbortSignal) => get<ScreenWatchSettings>('/settings/screen-watch', signal),
   saveScreenWatchSettings: async (settings: ScreenWatchSettings): Promise<ScreenWatchSettings> =>
     (await http.put('/settings/screen-watch', settings)).data.data,

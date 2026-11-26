@@ -40,14 +40,16 @@ func (m *Module) Available() bool {
 	return m.controller != nil
 }
 
-func (m *Module) PickDirectory() (string, error) {
+func (m *Module) PickDirectory(title, directory string) (string, error) {
 	m.mu.RLock()
-	picker, ok := m.controller.(interface{ PickDirectory() (string, error) })
+	picker, ok := m.controller.(interface {
+		PickDirectory(string, string) (string, error)
+	})
 	m.mu.RUnlock()
 	if !ok {
 		return "", errors.New("此功能需要桌面客户端")
 	}
-	return picker.PickDirectory()
+	return picker.PickDirectory(title, directory)
 }
 
 // Register 挂载桌面能力查询与窗口操作接口。

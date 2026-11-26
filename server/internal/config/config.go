@@ -56,6 +56,9 @@ type Config struct {
 	TTSDir       string `yaml:"tts_dir"`
 	PiRuntimeDir string `yaml:"pi_runtime_dir"`
 	Settings     `yaml:",inline"`
+
+	dataDirPreference string
+	dataDirFromEnv    bool
 }
 
 // Defaults 返回可离线启动的默认配置：只监听回环地址，语音默认交给浏览器。
@@ -68,7 +71,7 @@ func Defaults() Config {
 
 // Load 读取 YAML 配置并叠加环境变量，最后做安全与范围校验。
 //
-// 优先级：内置默认值 < YAML < 环境变量（STUDIO_HOST/STUDIO_PORT/STUDIO_DATA_DIR）。
+// 数据目录优先级：内置默认值 < YAML < 界面选择 < STUDIO_DATA_DIR。
 // 文件不存在时沿用默认值，便于首次启动；其他读取或解析错误直接返回。
 // 相对 DataDir 以配置文件所在目录的上级为基准，因此数据目录与进程工作目录无关。
 // 出于桌面应用安全考虑，Host 只允许回环地址；仅在 STUDIO_CONTAINER=1 时
@@ -109,7 +112,12 @@ func Load(path string) (Config, error) {
 			return cfg, fmt.Errorf("STUDIO_PORT 无效")
 		}
 	}
+	cfg.dataDirPreference = path + ".data-dir.json"
 	if dir := os.Getenv("STUDIO_DATA_DIR"); dir != "" {
+		cfg.DataDir, cfg.dataDirFromEnv = dir, true
+	} else if dir, err := cfg.PreferredDataDir(); err != nil {
+		return cfg, err
+	} else if dir != "" {
 		cfg.DataDir = dir
 	}
 	// 容器场景显式声明后才允许监听所有网卡，桌面环境始终限制在回环地址。

@@ -332,6 +332,35 @@
   color: var(--muted);
 }
 
+.settings-storage-paths {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.settings-storage-paths dt {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-storage-paths dd {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fdfcff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.settings-storage-paths dd + dt {
+  margin-top: 6px;
+}
+
+.settings-storage-error {
+  margin-block: 12px;
+}
+
 .settings-alert {
   background: #fff2f1;
   color: #97374a;

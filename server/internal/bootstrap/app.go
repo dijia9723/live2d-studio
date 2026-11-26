@@ -173,12 +173,16 @@ func New(cfg config.Config) (*App, error) {
 	debugBrowser := coding.NewBrowserDebugService()
 	code := &coding.Module{
 		DB: db, Settings: ss, RuntimeDir: cfg.PiRuntimeDir, StateDir: filepath.Join(cfg.DataDir, "coding-sessions"),
-		DesktopAvailable: ds.Available, PickDirectory: ds.PickDirectory,
+		DesktopAvailable: ds.Available,
+		PickDirectory: func() (string, error) {
+			return ds.PickDirectory("打开编码项目", "")
+		},
 		PluginEnabled: plugins.Enabled, Plugins: plugins,
 		Terminal: terminal, BrowserDebug: debugBrowser,
 	}
 	plugins.ConfigureHostWorkspace(code.PluginWorkspaceCall)
-	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Characters: cs, Settings: ss, TTS: tts.New(cfg.TTSDir)}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live}, code, plugins)
+	storage := &settings.Storage{Config: cfg, Desktop: ds}
+	router.Register(r, &character.Module{Service: cs}, &settings.Module{Service: ss, Agent: chatAgent}, &conversation.Module{Service: conversations}, &speech.Module{Characters: cs, Settings: ss, TTS: tts.New(cfg.TTSDir)}, ds, assets, &memory.Module{Service: memories}, &livemode.Module{Service: live}, code, plugins, storage)
 	output := &stageoutput.Module{}
 	router.Register(r, output)
 	assets.RegisterMedia(r)

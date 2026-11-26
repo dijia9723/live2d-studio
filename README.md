@@ -316,6 +316,8 @@ live2d-studio/
 
 可按需复制 `server/configs/config.example.yaml` 为 `server/configs/config.yaml`，自定义监听地址、端口和数据目录。本地配置、数据库和模型库 `models/` 均已加入 Git 忽略规则。
 
+桌面版可在 **设置 → 数据存储** 选择目录，重启应用后生效。原目录保留已有数据，选回原目录即可继续使用。如需把已有数据转到新目录，可退出应用后复制整个数据目录，再切换到副本。界面选择保存在配置文件旁的 `config.yaml.data-dir.json`，优先于 YAML 的 `data_dir`，`STUDIO_DATA_DIR` 仍有最高优先级。
+
 - 默认监听 `127.0.0.1:12393`；`port: 0` 可使用随机空闲端口。
 - 使用 `go run` 从源码运行时，数据默认为 `server/data/studio.db`；模型导入到 `server/data/models/`。
 - 独立分发时，保留 `bin/configs/`，数据默认放在可执行文件旁的 `data/`。

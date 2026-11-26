@@ -96,6 +96,13 @@ export interface TTSCatalog {
 }
 
 /** 应用设置；has_*_key 只表示后端是否存有密钥，密钥本身不会下发。 */
+export interface StorageSettings {
+  current_directory: string
+  next_directory: string
+  can_choose: boolean
+  environment_override: boolean
+}
+
 export interface Settings {
   llm: {
     provider: 'openai' | 'deepseek' | 'ollama' | 'lmstudio'

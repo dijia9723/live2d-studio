@@ -166,12 +166,21 @@ func (w *windows) switchURL(pet bool, handoff *desktop.PetHandoff) string {
 	return "/?" + params.Encode()
 }
 
-func (w *windows) PickDirectory() (string, error) {
+func (w *windows) PickDirectory(title, directory string) (string, error) {
 	w.mu.Lock()
 	owner := w.currentWindow()
 	w.mu.Unlock()
-	return w.app.Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).
-		AttachToWindow(owner).SetTitle("打开编码项目").PromptForSingleSelection()
+	dialog := w.app.Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).
+		AttachToWindow(owner).SetTitle(title)
+	if directory != "" {
+		dialog.SetDirectory(directory).CanCreateDirectories(true)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	// Wails exposes Windows dialog cancellation through an internal error sentinel.
+	if err != nil && err.Error() == "cancelled by user" {
+		return "", nil
+	}
+	return path, err
 }
 
 // runDesktop 启动 Wails 应用：页面资源经 DesktopHandler 代理本地 HTTP 服务，

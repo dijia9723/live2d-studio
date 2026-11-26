@@ -15,6 +15,7 @@ import {
   ScanLine,
   ExternalLink,
   Eye,
+  HardDrive,
   Info,
   Keyboard,
   KeyRound,
@@ -37,6 +38,7 @@ import HotkeySettings from '../../components/settings/HotkeySettings'
 import OllamaModels from '../../components/settings/OllamaModels'
 import StagePlacementSettings from '../../components/stage/StagePlacementSettings'
 import ScreenWatchSettings from '../../components/settings/ScreenWatchSettings'
+import DataStorageSettings from '../../components/settings/DataStorageSettings'
 import {
   Select,
   SelectContent,
@@ -62,6 +64,7 @@ const sections = [
   { id: 'agent', name: '智能体', icon: WandSparkles },
   { id: 'stage', name: '舞台布置', icon: PanelsTopLeft },
   { id: 'hotkeys', name: '热键管理', icon: Keyboard },
+  { id: 'storage', name: '数据存储', icon: HardDrive },
 ] as const
 type Activity = 'saving' | 'testing'
 // 连接测试结果；saved 表示测试失败前更改是否已保存。
@@ -101,7 +104,7 @@ export default function SettingsPage({ modelOnly = false }: { modelOnly?: boolea
   const visibleSections = modelOnly ? sections.slice(0, 1) : sections
   const currentSection = visibleSections.find(({ id }) => params.get('section') === id) ?? sections[0]
   const tab = currentSection.id
-  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch'
+  const localSection = tab === 'stage' || tab === 'hotkeys' || tab === 'screen-watch' || tab === 'storage'
   const page = useRef<HTMLDivElement>(null)
   const profiles = useLLMProfiles(s.settings!)
   const { form, setForm, clearLLM, setClearLLM } = profiles
@@ -288,6 +291,7 @@ export default function SettingsPage({ modelOnly = false }: { modelOnly?: boolea
           {tab === 'hotkeys' && <HotkeySettings />}
           {tab === 'screen-watch' && <ScreenWatchSettings />}
           {tab === 'stage' && <StagePlacementSettings />}
+          {tab === 'storage' && <DataStorageSettings />}
           {tab === 'llm' && (
             <>
               <section className="settings-card">
