@@ -1,0 +1,406 @@
+# 记忆模块说明
+
+`memory` 包已经从单一 `MemoryManager` 入口演进为 provider + middleware 的组合式设计：
+
+- `MemoryProvider` 负责在模型调用前检索上下文、在模型调用后写入记忆
+- `MemoryMiddleware` 负责把 provider 接到 `agent.AgentBuilder`
+- `Registry` 负责注册和创建不同的记忆后端
+
+如果你在写新代码，优先直接使用 `memory` 包的 provider API；`memory/compat.go` 里的 `MemoryManager`、`MemoryConfig` 等导出主要用于兼容旧调用方式。
+
+## 核心接口
+
+`memory/provider.go` 定义了统一接口：
+
+```go
+type MemoryProvider interface {
+    Retrieve(ctx context.Context, req *RetrieveRequest) (*RetrieveResult, error)
+    Memorize(ctx context.Context, req *MemorizeRequest) error
+    Close() error
+}
+```
+
+默认中间件用 `UserID` + `SessionID` 做隔离。需要按租户、项目或 Agent 隔离的后端，
+可以实现 `ScopeValidator`，并通过 `MemoryMiddlewareConfig.ScopeResolver` 返回 `MemoryScope`。
+provider 必须验证并实际执行这个范围，不能忽略不支持的字段。`RetrieveRequest.Query` 提供最近一条用户消息文本，
+而 `Messages` 仍保留完整上下文，便于后端按需构造查询。
+
+其中：
+
+- `Retrieve` 在模型调用前执行，返回要注入的动态上下文和历史消息
+- `Memorize` 在模型返回后执行，保存本轮对话
+- `Close` 用于释放底层资源
+
+`memory/middleware.go` 会在 Agent 生命周期里自动调用这两个方法，因此业务侧通常不需要直接手动调用 `Retrieve` / `Memorize`。
+
+## 接入方式
+
+最简用法是创建 provider，然后通过 `WithMemory(provider)` 接入：
+
+```go
+package main
+
+import (
+    "context"
+
+    "agentp/agent"
+    "agentp/memory"
+    "agentp/memory/builtin"
+    "agentp/memory/builtin/storage"
+    "agentp/model"
+    "github.com/cloudwego/eino/adk"
+    "github.com/cloudwego/eino/schema"
+)
+
+func main() {
+    ctx := context.Background()
+
+    chatModel, _ := model.NewChatModel(
+        model.WithBaseUrl("https://api.openai.com/v1"),
+        model.WithAPIKey("your-api-key"),
+        model.WithModel("gpt-4"),
+    )
+
+    provider, _ := memory.GlobalRegistry().CreateProvider("builtin", &builtin.ProviderConfig{
+        ChatModel: chatModel,
+        Storage:   storage.NewMemoryStore(),
+        MemoryConfig: &builtin.MemoryConfig{
+            EnableUserMemories:   true,
+            EnableSessionSummary: true,
+            MemoryLimit:          8,
+            Retrieval:            builtin.RetrievalLastN,
+        },
+    })
+    defer provider.Close()
+
+    ag, _ := agent.NewAgentBuilder(chatModel).
+        WithInstruction("你是一个有记忆能力的助手").
+        WithMemory(provider).
+        Build(ctx)
+
+    runner := adk.NewTypedRunner(adk.TypedRunnerConfig[*schema.AgenticMessage]{Agent: ag})
+    _ = runner.Run(ctx, []*schema.AgenticMessage{
+        schema.UserAgenticMessage("记住我叫 Alice，我喜欢摄影"),
+    }, adk.WithSessionValues(map[string]any{
+        "userID":    "alice",
+        "sessionID": "demo-session",
+    }))
+}
+```
+
+关键点只有两个：
+
+- 必须传入 `userID` 和 `sessionID`，否则 `MemoryMiddleware` 会直接跳过
+- 创建 provider 后要 `defer provider.Close()`
+
+## 已注册的 provider
+
+当前仓库内默认注册了三个 provider：
+
+- `builtin`
+- `memu`
+- `mem0`
+
+可以通过 `memory.GlobalRegistry().ListPlugins()` 查看当前已注册插件。
+
+### builtin
+
+`builtin` 是仓库内置的完整记忆实现，注册逻辑在 `memory/builtin_adapter.go`。
+
+它的特点：
+
+- 基于 `builtin.MemoryManager` 适配到 `MemoryProvider`
+- 支持用户长期记忆、会话摘要、历史消息三类数据
+- 支持异步分析、摘要触发、周期清理
+- 会话摘要会持久化“已摘要到哪条消息”的游标；检索时优先注入摘要，再补充游标之后尚未纳入摘要的尾部消息
+- 支持内存、文件、GORM 三种存储
+
+创建方式：
+
+```go
+provider, err := memory.GlobalRegistry().CreateProvider("builtin", &builtin.ProviderConfig{
+    ChatModel: chatModel,
+    Storage:   storage.NewMemoryStore(),
+    MemoryConfig: &builtin.MemoryConfig{
+        EnableUserMemories:   true,
+        EnableSessionSummary: true,
+        MemoryLimit:          10,
+        Retrieval:            builtin.RetrievalLastN,
+    },
+})
+```
+
+#### builtin 配置项
+
+最常用的是 `builtin.MemoryConfig`：
+
+- `EnableUserMemories`: 是否启用用户长期记忆
+- `EnableSessionSummary`: 是否启用会话摘要
+- `EnableEventSearch`: 是否启用“事件检索”模式（推荐用于事件量大、上下文长的场景，见下文）
+- `RecentEventLimit`: 事件检索模式下，每次注入到当前用户消息的最近事件条数，默认 20
+- `Retrieval`: 兼容旧配置的保留字段；当前 provider 注入历史消息时按最近 N 条读取
+- `MemoryLimit`: 历史消息检索上限
+- `SummaryRecentMessageLimit`: 启用会话摘要时，除摘要游标之后的消息外，额外保留最近 N 条原始消息作为短期上下文；默认 0，保持旧行为
+- `AsyncWorkerPoolSize`: 异步处理工作线程数量
+- `AsyncTaskTimeoutSeconds`: 异步任务执行超时时间，默认 120 秒
+- `SummaryTrigger`: 摘要触发策略
+- `SummaryCache`: 会话摘要缓存配置，支持 `TTLSeconds` 与 `MaxEntries`
+- `Cleanup`: 定期清理配置
+- `ContextBudget`: 注入模型上下文的预算（v0.3 新增），零值不限制：
+  - `MaxRunes`: 注入内容总字符上限，超出时按优先级丢弃
+    （最近未摘要消息 > 会话摘要 > 最近事件 > 长期记忆），裁剪都在 rune 边界进行
+  - `MaxHistoryItems` / `MaxEventItems` / `MaxMemoryRunes` / `MaxSummaryRunes`:
+    各类内容的条数/字符上限
+  - 裁剪发生时会记录到 `RetrieveResult.Warnings` 并标记 `Metadata["truncated"]=true`
+- `TablePre`: SQL 表前缀
+
+默认配置来自 `builtin.DefaultMemoryConfig()`。
+
+#### 事件检索模式（EnableEventSearch）
+
+旧版 user_memory 把核心约定、基础信息、任务里程碑、事件记录全部塞在一篇 Markdown 里，
+每次对话都整篇注入模型上下文。事件越多，prompt 越长。
+
+启用 `EnableEventSearch=true` 之后：
+
+- `UserMemory.Memory` 仅保留“核心约定 + 基础信息”这类**常驻短文档**，每次对话注入；
+- 任务里程碑 / 事件记录 拆成结构化条目存到 `user_memory_event` 表（每行一个事件，包含
+  日期、类型、关键词、摘要）；
+- 每次对话除短文档外，再注入最近 `RecentEventLimit` 条事件（默认 20）；
+- 更早或更精准的检索通过 `search_user_memory` 工具按关键词 / 时间 / 类型查询；
+- analyzer 改为输出“短文档全量 + 事件增量”的 JSON，事件库只追加，不再每轮重写。
+
+工具注册：`agent.NewAgentBuilder(cm).WithMemory(provider)` 在 provider 实现
+`UserMemoryEventSearcher` 时（默认 builtin provider 启用事件检索后自动满足）会自动注入
+`search_user_memory` 工具，无需手动 `WithTools`。
+
+旧数据迁移：当前仓库没有内置迁移命令；如已有旧版 Markdown 用户记忆，需要按
+`UserMemoryEventStorage` 接口自行把任务里程碑 / 事件记录拆成事件条目，并裁剪
+`UserMemory.Memory` 中的常驻短文档。
+
+#### 会话摘要行为
+
+启用 `EnableSessionSummary` 后，`builtin` provider 的会话上下文不再只依赖最近 `MemoryLimit` 条原始消息：
+
+- 已生成的会话摘要会作为动态上下文追加到当前 user 消息
+- 检索时只补充“摘要游标之后”的未摘要消息尾巴
+- 如果设置了 `SummaryRecentMessageLimit`，会同时注入最近 N 条原始消息并按消息 ID 去重，避免刚被摘要折叠的最近对话丢失原文细节
+- 摘要更新成功后会持久化最后一条已纳入摘要的消息游标，避免重启后重复摘要同一批历史消息
+- provider 会对会话摘要做本地短 TTL 缓存以减少摘要表读取；不会缓存完整历史记录，原始消息尾巴仍按游标从存储层查询
+
+对老数据兼容：
+
+- 如果历史摘要记录还没有游标字段，会先退化为按摘要 `updated_at` 推断未摘要尾巴
+- 一旦下一次摘要成功，新记录就会补齐真正的消息游标
+
+#### builtin 存储实现
+
+`memory/builtin/storage/` 目前提供三种实现：
+
+- `storage.NewMemoryStore()`: 纯内存，适合测试或本地开发
+- `storage.NewFileStore(dir, maxSessionMessages)`: 基于 JSONL 文件；写入序列化候选快照，
+  原子替换成功后才提交内存，写入失败保留原状态。每次写入重写对应文件，
+  数据量较大或写入频繁时建议使用 SQL 存储。
+- `storage.NewGormStorage(db)`: 基于 GORM，支持 MySQL / PostgreSQL / SQLite
+
+如果使用 SQL 存储，`NewMemoryManager` 在初始化时会自动执行 `AutoMigrate()`。
+
+### memu
+
+`memu` 是一个外部 HTTP 记忆服务 provider，注册逻辑在 `memory/memu/provider.go`。
+
+它的工作方式：
+
+- 检索阶段向 `POST /retrieve` 发请求
+- 写入阶段向 `POST /memorize` 发请求
+- 检索失败时会优雅降级，返回空结果，不阻塞主流程
+
+创建方式：
+
+```go
+package main
+
+import (
+    "agentp/memory"
+    "agentp/memory/memu"
+)
+
+provider, err := memory.GlobalRegistry().CreateProvider("memu", &memu.ProviderConfig{
+    BaseURL:      "http://127.0.0.1:8000",
+    HistoryLimit: 6,
+    MaxItems:     3,
+})
+```
+
+常用配置：
+
+- `BaseURL`: memu 服务地址，必填
+- `HistoryLimit`: 检索请求最多带多少条最近消息
+- `MaxItems`: 最多向模型注入多少条 memu 返回的记忆条目
+
+### mem0
+
+`mem0` 是一个兼容 mem0 Hosted API 和 OSS REST API 的外部记忆 provider，注册逻辑在 `memory/mem0/provider.go`。
+
+它的工作方式：
+
+- 检索阶段向 mem0 的搜索接口发请求
+- 写入阶段向 mem0 的记忆写入接口发请求
+- 兼容托管版和自建版两种模式，并允许覆盖默认路径和鉴权请求头
+- 检索失败时会优雅降级，返回空结果，不阻塞主流程
+- 对部分托管服务，写入可能是异步完成的；新写入的记忆不一定能在下一秒立即被检索到
+
+创建方式：
+
+```go
+package main
+
+import (
+    "agentp/memory"
+    "agentp/memory/mem0"
+)
+
+provider, err := memory.GlobalRegistry().CreateProvider("mem0", &mem0.ProviderConfig{
+    BaseURL:           "https://api.mem0.ai",
+    APIKey:            "your-mem0-api-key",
+    Mode:              mem0.ModeHosted,
+    SearchMsgLimit:    6,
+    SearchResultLimit: 5,
+    OutputMemoryLimit: 5,
+})
+```
+
+如果是自建或第三方兼容接口，可以切到 OSS 模式：
+
+```go
+provider, err := memory.GlobalRegistry().CreateProvider("mem0", &mem0.ProviderConfig{
+    BaseURL: "http://127.0.0.1:8000",
+    Mode:    mem0.ModeOSS,
+    APIKey:  "optional-api-key",
+})
+```
+
+常用配置：
+
+- `BaseURL`: mem0 服务地址，必填
+- `Mode`: `mem0.ModeHosted` 或 `mem0.ModeOSS`
+- `APIKey`: API key；托管版默认使用 `Authorization: Token <key>`，自建版默认使用 `X-API-Key`
+- `AddPath` / `SearchPath`: 覆盖默认接口路径，适配第三方兼容服务
+- `AuthHeader` / `AuthScheme`: 覆盖默认鉴权请求头或鉴权 scheme
+- `SearchMsgLimit`: 构造检索 query 时最多读取多少条最近消息
+- `SearchResultLimit`: 搜索 API 期望返回多少条结果
+- `OutputMemoryLimit`: 最多向模型注入多少条 mem0 记忆
+- `UseSessionAsRunID`: 是否把 `sessionID` 透传为 mem0 的 `run_id`
+- `SearchBySession`: 是否在检索阶段也按 `run_id` 过滤
+- `SessionMetadataKey`: 是否把 `sessionID` 同步写入 metadata，默认 key 为 `session_id`
+- `AgentID` / `AppID` / `OrgID` / `ProjectID`: 透传 mem0 的作用域字段
+- `ExtraHeaders`: 额外请求头
+- `Metadata`: 每次写入时附带的固定 metadata
+
+## 生命周期说明
+
+`MemoryMiddleware` 的行为比较直接：
+
+1. `BeforeModelRewriteState` 阶段调用 `provider.Retrieve`
+2. 把 `HistoryMessages` 放回 system 后、当前消息前，并将 `ContextMessages`（兼容旧 `SystemMessages`）追加到当前 user 消息末尾
+3. `AfterModelRewriteState` 阶段提取最近一轮 `user + assistant` 消息
+4. 异步写入：provider 实现 `memory.AsyncMemorizer` 时调用
+   `EnqueueMemorize`（builtin provider 走 MemoryManager 的受管工作池，
+   由 provider.Close 排空）；否则进入 middleware 的有界单 worker 队列。
+   停止新 run 后先调用 `MemoryMiddleware.Shutdown(ctx)` 或
+   `AgentBuilder.ShutdownMemory(ctx)` 等待已接受写入，再调用 `provider.Close()`。
+   超时只停止等待，排空会继续执行，之后可以再次等待。
+
+这意味着：
+
+- 写入不再依赖无队列上限的游离 goroutine；兼容路径队列满时会记录并丢弃新写入
+- 如果没有有效的 `user` 或 `assistant` 消息，本轮不会入库
+- 同一个 middleware 实例会做一次“已注入”标记，避免重复注入记忆
+- 检索错误默认记录并继续，且同一次 run 只请求一次；可设置 `RetrieveErrorPolicy: memory.RetrieveErrorReturn` 中断请求
+- 检索默认超时 10 秒，可用 `RetrieveTimeout` 和 `RetrieveLimit` 配置
+
+### MemoryManager 的关闭语义
+
+`builtin.MemoryManager` 有明确的生命周期状态机（running → stopping → closed）：
+
+- `Close()` 幂等，并发/重复调用安全；内部执行 `Shutdown(context.Background())`
+- `Shutdown(ctx)` 按固定顺序关闭：停止接收新任务 → 排空已接受的任务及其
+  派生的分析、摘要和索引 → 停止 worker 与定期清理 → 关闭底层存储。
+  调用方超时后关闭流程继续在后台执行；后续可再次调用 `Shutdown` 或 `Close` 等待完成。
+- `Flush(ctx)` 触发未到期的聚合（debounce）窗口并等待已接受的任务全部完成；
+  超时不会取消待执行的聚合任务，队列恢复容量后会自动继续执行。
+  聚合分析始终由 worker 执行，队列满时重试入队。
+  服务优雅退出前可先 `Flush` 再 `Close`
+- 关闭后提交任务返回 `builtin.ErrMemoryClosed`，不会向已关闭的结构写入
+
+```go
+// 优雅退出示例
+flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+_ = manager.Flush(flushCtx)
+cancel()
+_ = manager.Close()
+```
+
+### MemoryMiddlewareConfig
+
+需要自定义身份解析或写入清洗时，使用 `NewMemoryMiddlewareWithConfig`：
+
+```go
+mw := memory.NewMemoryMiddlewareWithConfig(provider, memory.MemoryMiddlewareConfig{
+    UserIDKey:    "owner",             // 默认 "userID"，缺失时回退 actorID
+    SessionIDKey: "conversation",      // 默认 "sessionID"
+    // IdentityResolver: 自定义解析逻辑，设置后覆盖两个 Key
+    MissingIdentity: memory.MissingIdentityLog, // Skip | Log(默认) | Error
+    Normalizers: []memory.MemorizeNormalizer{
+        func(ctx context.Context, req *memory.MemorizeRequest) (*memory.MemorizeRequest, error) {
+            // 写入前清洗（去除图片索引、发言人标记、runtime context 等）；
+            // 入参视为不可变，返回新对象；返回 nil 表示丢弃本轮
+            return cleaned(req), nil
+        },
+    },
+})
+```
+
+项目级后端示例（provider 需要实现 `memory.ScopeValidator`）：
+
+```go
+builder := agent.NewAgentBuilder(chatModel).WithMemoryConfig(provider, memory.MemoryMiddlewareConfig{
+    ScopeResolver: func(ctx context.Context) (memory.MemoryScope, bool) {
+        projectID, ok := sessionkeys.String(ctx, "projectID")
+        return memory.MemoryScope{ProjectID: projectID}, ok && projectID != ""
+    },
+})
+```
+
+服务退出时，在停止接收请求并等当前 run 结束后调用：
+
+```go
+shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+defer cancel()
+_ = builder.ShutdownMemory(shutdownCtx)
+_ = provider.Close()
+```
+
+身份缺失时：`Skip` 保持旧的静默跳过行为；`Log`（新默认）记录日志后跳过；
+`Error` 中断本轮请求。
+
+## 迁移建议
+
+旧 README 或旧业务代码里可能还会看到这类写法：
+
+```go
+memoryManager, _ := memory.NewMemoryManager(...)
+```
+
+这条路径仍然可用，但新代码更推荐：
+
+```go
+provider, _ := memory.GlobalRegistry().CreateProvider("builtin", ...)
+ag, _ := agent.NewAgentBuilder(chatModel).WithMemory(provider).Build(ctx)
+```
+
+这样做的好处是：
+
+- 业务层只依赖统一的 `MemoryProvider`
+- 更容易切换到 `memu` 或自定义 provider
+- `agent` 层不需要知道具体的记忆实现细节

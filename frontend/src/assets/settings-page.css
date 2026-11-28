@@ -25,6 +25,44 @@
   color: var(--muted);
   font-size: 12px;
 }
+.settings-range-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-profile-status,
+.settings-profile-source {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: -7px 0 18px;
+}
+
+.settings-profile-status,
+.settings-profile-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-profile-error {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fff2f1;
+  color: #97374a;
+  font-size: 13px;
+}
+
+.settings-profile-error button {
+  flex: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 .settings-layout {
   display: grid;
@@ -128,6 +166,51 @@
   line-height: 1.55;
 }
 
+.hotkey-list {
+  margin-bottom: 14px;
+  list-style: none;
+}
+
+.hotkey-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.hotkey-list kbd {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f4eef9;
+  color: var(--purple-dark);
+  font: inherit;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.hotkey-row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+@container (max-width: 480px) {
+  .hotkey-list > li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hotkey-list kbd {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .hotkey-row-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
 .settings-page .preset-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
@@ -162,15 +245,18 @@
 }
 
 .settings-page .form-field input:not([type='range']),
-.settings-page .form-field select {
+.settings-page .form-field select,
+.settings-page .form-field [data-slot='select-trigger'] {
   min-width: 0;
   min-height: 42px;
+  height: auto;
   padding: 9px 12px;
   background: #fdfcff;
   border-color: #dbd2e8;
   color: var(--ink);
   font-size: 14px;
   font-weight: 400;
+  box-shadow: none;
 }
 
 .settings-page .form-field input:focus,
@@ -246,6 +332,35 @@
   color: var(--muted);
 }
 
+.settings-storage-paths {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.settings-storage-paths dt {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-storage-paths dd {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fdfcff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.settings-storage-paths dd + dt {
+  margin-top: 6px;
+}
+
+.settings-storage-error {
+  margin-block: 12px;
+}
+
 .settings-alert {
   background: #fff2f1;
   color: #97374a;
@@ -253,6 +368,128 @@
 
 .settings-test-bar + .settings-alert {
   margin-top: 12px;
+}
+
+.ollama-models {
+  margin: 0 0 18px;
+  padding: 13px;
+  border: 1px solid #e3d8ee;
+  border-radius: 10px;
+  background: #faf7fe;
+}
+.ollama-models-heading,
+.ollama-models-heading > span,
+.ollama-models-heading button,
+.ollama-search,
+.ollama-selected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ollama-models-heading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ollama-models-heading small {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #ede3f9;
+  color: var(--purple);
+  font-weight: 400;
+}
+.ollama-models-heading button {
+  padding: 4px;
+  color: var(--purple);
+  font-size: 11px;
+}
+.ollama-search {
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  border: 1px solid #e5dced;
+  border-radius: 7px;
+  background: white;
+  color: var(--muted);
+}
+.ollama-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 3px;
+  color: var(--ink);
+  font-size: 12px;
+}
+.ollama-search input:focus {
+  outline-offset: 3px;
+}
+.ollama-model-list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+.ollama-model-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e7e0ef;
+  border-radius: 8px;
+  background: white;
+  text-align: left;
+}
+.ollama-model-list > button[aria-pressed='true'] {
+  border-color: #b69ad9;
+  background: #f1e9fb;
+}
+.ollama-model-list > button:hover {
+  border-color: #b69ad9;
+}
+.ollama-model-list > button > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.ollama-model-list strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ollama-model-list button > div > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.ollama-select-label,
+.ollama-selected {
+  flex: none;
+  color: var(--purple);
+  font-size: 11px;
+}
+.ollama-status,
+.ollama-empty,
+.ollama-model-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.ollama-status,
+.ollama-empty {
+  padding: 8px 0;
+}
+.ollama-empty code {
+  color: var(--purple-dark);
+}
+.ollama-model-hint {
+  margin-top: 9px;
+}
+.ollama-models .settings-alert {
+  font-size: 12px;
 }
 
 .settings-card .settings-note:not(:last-child) {
@@ -339,7 +576,7 @@
   }
 
   .settings-section-nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
   }
 
   .settings-section-nav a {
@@ -357,6 +594,10 @@
 }
 
 @container (max-width: 480px) {
+  .settings-section-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .settings-page .page-header {
     flex-wrap: wrap;
     gap: 12px;
@@ -392,4 +633,44 @@
   .settings-tool-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.screen-watch-settings {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.screen-watch-settings fieldset {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(130px, 2fr);
+  gap: 8px 12px;
+  padding: 10px 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.screen-watch-settings legend {
+  padding-inline: 5px;
+  font-weight: 650;
+}
+.screen-watch-settings fieldset p {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.screen-watch-settings label {
+  display: grid;
+  gap: 5px;
+}
+.screen-watch-settings input,
+.screen-watch-settings select,
+.screen-watch-settings [data-slot='select-trigger'] {
+  width: 100%;
+  min-width: 0;
+  height: 33px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: none;
+}
+.screen-watch-settings button + span {
+  margin-inline-start: 9px;
 }

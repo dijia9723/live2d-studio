@@ -9,6 +9,7 @@ FROM golang:1.26-alpine AS backend
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY server/go.mod server/go.sum ./server/
+COPY server/agentcore/ ./server/agentcore/
 RUN go mod download
 COPY main.go ./
 COPY server/ ./server/

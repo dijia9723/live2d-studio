@@ -14,8 +14,7 @@
   overscroll-behavior: contain;
 }
 
-.app-sidebar,
-.history-drawer {
+.app-sidebar {
   --side-ink: #f4f0fb;
   --side-muted: #c3b8d1;
   --side-line: #ffffff21;
@@ -100,221 +99,8 @@
   color: #d6c0ff;
 }
 
-.sidebar-history {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  margin-top: 19px;
-  padding-top: 17px;
-  border-top: 1px solid var(--side-line);
-}
-
-.sidebar-history h2,
-.history-drawer h2 {
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.sidebar-history h2 {
-  margin: 0 9px 11px;
-}
-
-.app-sidebar .new-chat,
-.history-drawer .new-chat {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 39px;
-  margin-bottom: 13px;
-  border-radius: 8px;
-  background: #dbcaff;
-  color: #2e1b46;
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.app-shell .new-chat:hover:not(:disabled) {
-  background: #eadfff;
-}
-
-.history-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  min-height: 34px;
-  border: 1px solid var(--side-line);
-  border-radius: 7px;
-  color: var(--side-muted);
-  background: #110c1c38;
-}
-
-.history-search:focus-within {
-  border-color: #c4a9ff;
-}
-
-.history-search svg {
-  flex: none;
-}
-
-.history-search input {
-  min-width: 0;
-  width: 100%;
-  padding: 6px 0;
-  color: var(--side-ink);
-  color-scheme: dark;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.history-search input::placeholder {
-  color: var(--side-muted);
-}
-
-.history-list {
-  margin: 8px -5px 0;
-  padding: 0 5px 5px;
-  overflow: auto;
-  list-style: none;
-}
-
-.history-entry {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px 28px;
-  align-items: center;
-  border-radius: 8px;
-  margin: 2px 0;
-}
-
-.history-entry:has([aria-current='true']) {
-  background: var(--side-active);
-}
-
-.history-entry:hover:not(:has([aria-current='true'])) {
-  background: var(--side-hover);
-}
-
-.history-select {
-  display: flex;
-  align-items: start;
-  gap: 8px;
-  min-width: 0;
-  padding: 9px 0 9px 8px;
-  text-align: left;
-  border-radius: inherit;
-}
-
-.history-select > svg {
-  flex: none;
-  margin-top: 2px;
-  color: #c4a9ff;
-}
-
-.history-select > span {
-  min-width: 0;
-}
-
-.history-select strong,
-.history-select small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-select strong {
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.4;
-}
-
-.history-select small {
-  margin-top: 3px;
-  color: var(--side-muted);
-  font-size: 11px;
-}
-
-.history-action,
-.drawer-open,
-.drawer-close {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 32px;
-  border-radius: 7px;
-  color: var(--side-muted);
-}
-
-.history-action {
-  width: 27px;
-}
-
-.history-action:hover,
-.drawer-open:hover,
-.drawer-close:hover {
-  color: #fff;
-  background: var(--side-hover);
-}
-
-.history-placeholder {
-  padding: 17px 8px;
-  color: var(--side-muted);
-  font-size: 12px;
-}
-
-.history-error {
-  color: #ffc0cd;
-  margin: 8px 2px;
-  overflow-wrap: anywhere;
-}
-
 .app-sidebar > .shell-help {
-  margin-top: 12px;
-}
-
-.app-sidebar > .drawer-open {
-  display: none;
-}
-
-.history-drawer {
-  inset: 0 auto 0 0;
-  margin: 0;
-  width: min(330px, 92vw);
-  max-height: none;
-  height: 100dvh;
-  padding: 16px;
-  border: 0;
-  border-radius: 0 16px 16px 0;
-}
-
-.history-drawer[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.history-drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 40px;
-  margin-bottom: 12px;
-}
-
-.history-drawer .history-list {
-  flex: 1;
-}
-
-.history-drawer > .shell-help {
   margin-top: auto;
-}
-
-.history-drawer::backdrop,
-.shell-dialog::backdrop {
-  background: #21163585;
-  backdrop-filter: blur(3px);
 }
 
 .shell-dialog {
@@ -371,16 +157,17 @@
     padding: 0 9px;
   }
 
-  .app-sidebar > .sidebar-history,
   .app-sidebar > .shell-help {
-    display: none;
+    width: 38px;
+    min-height: 38px;
+    justify-content: center;
+    margin-top: 0;
+    padding: 0;
+    border: 1px solid var(--side-line);
   }
 
-  .app-sidebar > .drawer-open {
-    display: grid;
-    width: 38px;
-    height: 38px;
-    border: 1px solid var(--side-line);
+  .app-sidebar > .shell-help > span {
+    display: none;
   }
 }
 

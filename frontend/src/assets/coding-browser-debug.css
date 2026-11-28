@@ -1,0 +1,55 @@
+.coding-browser-debug {
+  border-top: 1px solid var(--code-line);
+  padding: 8px;
+  color: var(--code-text);
+}
+
+.coding-browser-debug summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.coding-browser-debug form {
+  display: flex;
+  gap: 5px;
+  margin: 7px 0;
+}
+
+.coding-browser-debug form input {
+  width: 100%;
+  font-size: 12px;
+}
+
+.coding-browser-debug .coding-actions {
+  flex-wrap: wrap;
+}
+
+.coding-debug-screenshot {
+  display: block;
+  width: 100%;
+  max-height: 330px;
+  margin-top: 7px;
+  object-fit: contain;
+}
+
+.coding-debug-tree {
+  max-height: 210px;
+  margin: 6px 0 0;
+  padding: 5px;
+  overflow: auto;
+  font-size: 11px;
+}
+
+.coding-debug-tree li {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.coding-debug-tree code {
+  color: var(--code-accent);
+}

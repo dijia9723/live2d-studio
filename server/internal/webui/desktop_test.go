@@ -42,7 +42,7 @@ func TestDesktopHTMLPointsAPIAtRealListener(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 	t.Cleanup(func() { close(finish) })
-	handler, err := DesktopHandler(upstream.URL)
+	handler, err := DesktopHandler(upstream.URL, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +56,15 @@ func TestDesktopHTMLPointsAPIAtRealListener(t *testing.T) {
 	body := page.Body.String()
 	if !strings.HasPrefix(body, "<!doctype html><html><head><script>window.__STUDIO_API_BASE_URL__=") || strings.Count(body, "__STUDIO_API_BASE_URL__") != 1 {
 		t.Fatalf("configuration must precede the application module: %s", body)
+	}
+	const runtime = `<script type="module" src="/wails/runtime.js"></script>`
+	if strings.Contains(body, runtime) {
+		t.Fatal("main window unexpectedly loads the pet window runtime")
+	}
+	pet := httptest.NewRecorder()
+	handler.ServeHTTP(pet, httptest.NewRequest(http.MethodGet, "http://wails.localhost/?pet=1", nil))
+	if pet.Code != http.StatusOK || !strings.Contains(pet.Body.String(), runtime+`<script type="module" src="/app.js"></script>`) {
+		t.Fatalf("pet window must load the Wails runtime before the application module: %d %s", pet.Code, pet.Body.String())
 	}
 	if page.Header().Get("Cache-Control") != "no-store" || page.Header().Get("ETag") != "" || page.Header().Get("Content-Length") != fmt.Sprint(len(body)) {
 		t.Fatal("rewritten document has stale cache or content length headers")
@@ -85,12 +94,75 @@ func TestDesktopHTMLPointsAPIAtRealListener(t *testing.T) {
 	}
 }
 
+func TestDesktopDevRoutesViteAndBackendSeparately(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Test-Upstream", "backend")
+		fmt.Fprint(w, r.RequestURI)
+	}))
+	defer backend.Close()
+	frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Test-Upstream", "vite")
+		switch r.URL.Path {
+		case "/", "/characters":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><head><script type="module" src="/@vite/client"></script></head></html>`)
+		default:
+			w.Header().Set("Content-Type", "application/javascript")
+			fmt.Fprint(w, r.RequestURI)
+		}
+	}))
+	defer frontend.Close()
+	handler, err := DesktopHandler(backend.URL, frontend.URL+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/", "/characters", "/?pet=1"} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "http://wails.localhost"+path, nil))
+		body := recorder.Body.String()
+		if recorder.Code != http.StatusOK || recorder.Header().Get("X-Test-Upstream") != "vite" ||
+			!strings.HasPrefix(body, `<html><head><script>window.__STUDIO_API_BASE_URL__="`+backend.URL+`/api/v1";</script>`) ||
+			!strings.Contains(body, `src="/@vite/client"`) {
+			t.Fatalf("%s: expected Vite HTML with the Go API URL injected first, got %d %s", path, recorder.Code, body)
+		}
+		if strings.Contains(body, `src="/wails/runtime.js"`) != (path == "/?pet=1") {
+			t.Fatalf("%s: unexpected Wails runtime injection: %s", path, body)
+		}
+	}
+
+	for path, want := range map[string]string{
+		"/@vite/client":            "vite",
+		"/src/main.tsx?t=123":      "vite",
+		"/lib/live2dcubismcore.js": "vite",
+		"/api/v1/desktop":          "backend",
+		"/models/mao/model3.json":  "backend",
+		"/scene-media/poster.png":  "backend",
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "http://wails.localhost"+path, nil))
+		if recorder.Code != http.StatusOK || recorder.Header().Get("X-Test-Upstream") != want || recorder.Body.String() != path {
+			t.Errorf("%s: expected unmodified %s response, got %d %s", path, want, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	frontend.Close()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "http://wails.localhost/", nil))
+	if recorder.Code != http.StatusBadGateway || !strings.Contains(recorder.Body.String(), "Vite") {
+		t.Fatalf("a stopped Vite server must not silently show the embedded frontend: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 // TestDesktopHandlerRejectsRemoteTargets 校验代理拒绝非回环、带认证信息或带
 // 查询参数的远端目标。
 func TestDesktopHandlerRejectsRemoteTargets(t *testing.T) {
 	for _, address := range []string{"https://example.com", "http://example.com", "http://localhost.evil", "http://user:pass@127.0.0.1", "http://127.0.0.1?bad=1"} {
-		if _, err := DesktopHandler(address); err == nil {
+		if _, err := DesktopHandler(address, ""); err == nil {
 			t.Fatalf("unexpected remote target accepted: %s", address)
+		}
+		if _, err := DesktopHandler("http://127.0.0.1:12393", address); err == nil {
+			t.Fatalf("unexpected remote Vite target accepted: %s", address)
 		}
 	}
 }
@@ -106,7 +178,7 @@ func TestDesktopHandlerRewritesHostAndOrigin(t *testing.T) {
 		io.WriteString(w, "{}")
 	}))
 	defer upstream.Close()
-	handler, err := DesktopHandler(upstream.URL)
+	handler, err := DesktopHandler(upstream.URL, "")
 	if err != nil {
 		t.Fatal(err)
 	}

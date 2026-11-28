@@ -3,6 +3,7 @@ frontend/dist/
 server/internal/webui/dist/*
 !server/internal/webui/dist/.gitkeep
 server/configs/config.yaml
+*.data-dir.json
 server/data/
 bin/
 .wails/
@@ -11,4 +12,7 @@ frontend/bindings/
 .env.local
 .DS_Store
 example/
-example/**
+/models/
+/server/tts-models/
+*.tsbuildinfo
+*.exe

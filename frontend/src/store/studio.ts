@@ -6,11 +6,22 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Character, Conversation, Message, SceneAsset, Settings } from '../types/api'
-import type { StageEffectSetting } from '../types/stage'
+import {
+  clampModelPosition,
+  clampModelZoom,
+  defaultModelDragLimits,
+  defaultModelPosition,
+  defaultModelZoomLimits,
+  validModelDragLimits,
+  validModelZoomLimits,
+  type ModelDragLimits,
+  type ModelZoomLimits,
+  type StageAppearance,
+} from '../types/stage'
 import { api } from '../api/client'
 import { draftKey, moveDraft } from './chatDrafts'
 
-interface State {
+interface State extends StageAppearance {
   characters: Character[]
   conversations: Conversation[]
   messages: Message[]
@@ -24,26 +35,20 @@ interface State {
   speechEnabled: boolean
   expression: string
   expressionRevision: number
-  stage: string
   sceneAssets: SceneAsset[]
-  backgroundAssetID: string | null
-  backgroundFit: 'cover' | 'contain'
-  backgroundDim: number
-  videoPlaying: boolean
-  effects: StageEffectSetting[]
-  overlayAssetID: string | null
-  overlayOpacity: number
-  overlayBlendMode: 'normal' | 'screen' | 'lighten'
-  zoom: number
   desktop: boolean
   notice: string
   chatError: string
+  modelZoomLimits: ModelZoomLimits
+  modelDragLimits: ModelDragLimits
   patch: (p: Partial<State>) => void
+  setModelZoomLimits: (limits: ModelZoomLimits) => void
+  setModelDragLimits: (limits: ModelDragLimits) => void
   setMood: (mood: string) => void
   initialize: () => Promise<void>
   refreshConversations: () => Promise<void>
   refreshSceneAssets: () => Promise<void>
-  openConversation: (c: Conversation) => Promise<void>
+  openConversation: (c: Conversation) => Promise<boolean>
   newConversation: (characterID?: string) => Promise<Conversation>
   selectCharacter: (id: string) => void
 }
@@ -72,10 +77,13 @@ function rememberConversation(id: string | null) {
 }
 
 // 启动时恢复上次打开的会话及其消息；失败时静默回退到新会话。
-async function restoreConversation(conversations: Conversation[]) {
+async function restoreConversation(conversations: Conversation[], handoff: URLSearchParams) {
   try {
-    const id = workbenchSession()?.getItem(activeConversationKey)
-    const conversation = conversations.find((item) => item.id === id)
+    const fromWindow = handoff.has('character')
+    const id = fromWindow ? handoff.get('conversation') : workbenchSession()?.getItem(activeConversationKey)
+    const conversation = conversations.find((item) =>
+      item.id === id && (!fromWindow || item.character_id === handoff.get('character')),
+    )
     if (conversation) return { conversation, messages: await api.messages(conversation.id) }
   } catch {
     // 读取历史失败不应阻止工作台启动。
@@ -100,6 +108,8 @@ export const useStudio = create<State>()(
       expression: 'neutral',
       expressionRevision: 0,
       stage: 'lavender',
+      aspect: 'auto',
+      controlsVisible: true,
       sceneAssets: [],
       backgroundAssetID: null,
       backgroundFit: 'cover',
@@ -110,10 +120,33 @@ export const useStudio = create<State>()(
       overlayOpacity: 0.7,
       overlayBlendMode: 'screen',
       zoom: 1,
+      modelPosition: defaultModelPosition,
+      modelZoomLimits: defaultModelZoomLimits,
+      modelDragLimits: defaultModelDragLimits,
       desktop: false,
       notice: '',
       chatError: '',
-      patch: set,
+      patch: (p) => {
+        const { modelZoomLimits, modelDragLimits } = get()
+        set({
+          ...p,
+          ...(p.zoom !== undefined && { zoom: clampModelZoom(p.zoom, modelZoomLimits) }),
+          ...(p.modelPosition && { modelPosition: clampModelPosition(p.modelPosition, modelDragLimits) }),
+        })
+      },
+      setModelZoomLimits: (limits) => {
+        if (validModelZoomLimits(limits)) {
+          set((state) => ({ modelZoomLimits: limits, zoom: clampModelZoom(state.zoom, limits) }))
+        }
+      },
+      setModelDragLimits: (limits) => {
+        if (validModelDragLimits(limits)) {
+          set((state) => ({
+            modelDragLimits: limits,
+            modelPosition: clampModelPosition(state.modelPosition, limits),
+          }))
+        }
+      },
       // revision 自增用于通知舞台重新应用表情（相同表情也能触发一次过渡）。
       setMood: (expression) =>
         set((s) => ({ expression, expressionRevision: s.expressionRevision + 1 })),
@@ -129,9 +162,11 @@ export const useStudio = create<State>()(
             api.sceneAssets().catch(() => [] as SceneAsset[]),
           ])
           if (version !== initializeVersion) return
-          const restored = await restoreConversation(conversations)
+          const address = new URL(window.location.href)
+          const fromWindow = address.searchParams.has('character')
+          const restored = await restoreConversation(conversations, address.searchParams)
           if (version !== initializeVersion) return
-          const preferredCharacter = get().characterID
+          const preferredCharacter = address.searchParams.get('character') || get().characterID
           set({
             characters,
             conversations,
@@ -149,6 +184,12 @@ export const useStudio = create<State>()(
                 ? preferredCharacter
                 : characters[0]?.id),
           })
+          if (fromWindow) {
+            rememberConversation(restored.conversation?.id ?? null)
+            // 交接完成后由本窗口管理会话，普通页面刷新继续使用已保存的选择。
+            for (const key of ['switch', 'character', 'conversation']) address.searchParams.delete(key)
+            window.history.replaceState(window.history.state, '', address)
+          }
         } catch (e) {
           if (version === initializeVersion) set({ loadError: (e as Error).message })
         }
@@ -160,21 +201,28 @@ export const useStudio = create<State>()(
         set({ sceneAssets: await api.sceneAssets() })
       },
       openConversation: async (c) => {
-        if (get().busy) return
+        if (get().busy || get().characterID !== c.character_id) return false
         const version = ++openVersion
         const messages = await api.messages(c.id)
-        // 生成中或已有更新的切换请求时，丢弃这次迟到结果。
-        if (version === openVersion && !get().busy) {
-          set({
-            messages,
-            conversationID: c.id,
-            characterID: c.character_id,
-            expression: 'neutral',
-            expressionRevision: get().expressionRevision + 1,
-            chatError: '',
-          })
-          rememberConversation(c.id)
+        // 请求期间角色可能已切换，或会话已被删除。
+        const state = get()
+        if (
+          version !== openVersion ||
+          state.busy ||
+          state.characterID !== c.character_id ||
+          !state.conversations.some((item) => item.id === c.id)
+        ) {
+          return false
         }
+        set({
+          messages,
+          conversationID: c.id,
+          expression: 'neutral',
+          expressionRevision: state.expressionRevision + 1,
+          chatError: '',
+        })
+        rememberConversation(c.id)
+        return true
       },
       newConversation: async (id) => {
         ++openVersion
@@ -212,6 +260,8 @@ export const useStudio = create<State>()(
         characterID: s.characterID,
         speechEnabled: s.speechEnabled,
         stage: s.stage,
+        aspect: s.aspect,
+        controlsVisible: s.controlsVisible,
         backgroundAssetID: s.backgroundAssetID,
         backgroundFit: s.backgroundFit,
         backgroundDim: s.backgroundDim,
@@ -221,7 +271,27 @@ export const useStudio = create<State>()(
         overlayOpacity: s.overlayOpacity,
         overlayBlendMode: s.overlayBlendMode,
         zoom: s.zoom,
+        modelPosition: s.modelPosition,
+        modelZoomLimits: s.modelZoomLimits,
+        modelDragLimits: s.modelDragLimits,
       }),
+      merge: (stored, state) => {
+        const saved = stored as Partial<State> | undefined
+        const modelZoomLimits = validModelZoomLimits(saved?.modelZoomLimits)
+          ? saved.modelZoomLimits
+          : defaultModelZoomLimits
+        const modelDragLimits = validModelDragLimits(saved?.modelDragLimits)
+          ? saved.modelDragLimits
+          : defaultModelDragLimits
+        return {
+          ...state,
+          ...saved,
+          zoom: clampModelZoom(saved?.zoom ?? state.zoom, modelZoomLimits),
+          modelPosition: clampModelPosition(saved?.modelPosition, modelDragLimits),
+          modelZoomLimits,
+          modelDragLimits,
+        }
+      },
     },
   ),
 )

@@ -98,3 +98,28 @@ func TestBuiltInTools(t *testing.T) {
 		t.Fatalf("unexpected calculation: %q, %v", result, err)
 	}
 }
+
+func TestRequestScreenSnipOnlyEmitsOnePrompt(t *testing.T) {
+	ctx := context.Background()
+	if screenSnipRequestsEnabled(ctx) || !screenSnipRequestsEnabled(WithScreenSnipRequests(ctx)) {
+		t.Fatal("the client must opt into screenshot requests")
+	}
+	var events []Event
+	base, err := requestScreenSnipTool(func(event Event) { events = append(events, event) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := base.(tool.InvokableTool)
+	if _, err := request.InvokableRun(ctx, `{"reason":"   "}`); err == nil || len(events) != 0 {
+		t.Fatal("the tool accepted an empty screenshot reason")
+	}
+	for range 2 {
+		result, err := request.InvokableRun(ctx, `{"reason":"  查看设置页面  "}`)
+		if err != nil || !strings.Contains(result, "当前未获取画面") {
+			t.Fatalf("unexpected result: %q %v", result, err)
+		}
+	}
+	if len(events) != 1 || events[0].Type != "screen_snip_request" || events[0].Text != "查看设置页面" {
+		t.Fatalf("unexpected screenshot request events: %#v", events)
+	}
+}

@@ -34,13 +34,15 @@ type Service struct {
 	locks      sync.Map
 }
 
-// Event 是推送给前端的 SSE 事件，Type 取值为 user、delta、expression、tool、done 与 error。
+// Event 是推送给前端的 SSE 事件，包括 user、delta、expression、stage_action、character、tool、done 与 error。
 type Event struct {
-	Type       string         `json:"type"`
-	Text       string         `json:"text,omitempty"`
-	Expression string         `json:"expression,omitempty"`
-	Tool       *model.ToolRun `json:"tool,omitempty"`
-	Message    *model.Message `json:"message,omitempty"`
+	Type        string             `json:"type"`
+	Text        string             `json:"text,omitempty"`
+	Expression  string             `json:"expression,omitempty"`
+	Tool        *model.ToolRun     `json:"tool,omitempty"`
+	Character   *model.Character   `json:"character,omitempty"`
+	StageAction *agent.StageAction `json:"stage_action,omitempty"`
+	Message     *model.Message     `json:"message,omitempty"`
 }
 
 // lock 返回会话对应的互斥锁，同一会话的生成与删除操作共享同一把锁。
@@ -137,11 +139,15 @@ func (s *Service) Stream(ctx context.Context, id, text, image string, emit func(
 		return err
 	}
 	emit(Event{Type: "user", Message: &user})
-	history = append(history, user)
+	modelInput, llm := s.withScreenObservation(ctx, user, cfg.LLM)
+	if modelInput.Content != user.Content || modelInput.Image != user.Image {
+		ctx = agent.WithScreenEvidence(ctx)
+	}
+	history = append(history, modelInput)
 	assistant := model.Message{ID: uuid.NewString(), ConversationID: id, Role: "assistant", Status: "complete"}
 	var content strings.Builder
 	toolIndexes := make(map[string]int)
-	err = s.Agent.Stream(ctx, cfg.LLM, char, history, func(e agent.Event) {
+	err = s.Agent.Stream(ctx, llm, char, history, func(e agent.Event) {
 		if e.Type == "delta" {
 			content.WriteString(e.Text)
 		}
@@ -153,7 +159,7 @@ func (s *Service) Stream(ctx context.Context, id, text, image string, emit func(
 				assistant.ToolRuns = append(assistant.ToolRuns, *e.Tool)
 			}
 		}
-		emit(Event{Type: e.Type, Text: e.Text, Expression: e.Expression, Tool: e.Tool})
+		emit(Event{Type: e.Type, Text: e.Text, Expression: e.Expression, Tool: e.Tool, Character: e.Character, StageAction: e.StageAction})
 	})
 	assistant.Content = content.String()
 	for i := range assistant.ToolRuns {

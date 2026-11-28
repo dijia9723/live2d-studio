@@ -37,7 +37,7 @@ func openDatabase(t *testing.T, path string, now func() time.Time) (*memory.Serv
 		sqlDB.Close()
 		t.Fatal(err)
 	}
-	if err := migrate.Run(db); err != nil {
+	if err := migrate.Run(db, true); err != nil {
 		sqlDB.Close()
 		t.Fatal(err)
 	}

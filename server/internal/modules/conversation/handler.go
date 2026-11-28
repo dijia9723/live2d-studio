@@ -98,26 +98,42 @@ func (m *Module) messages(c *gin.Context) {
 
 // send 校验文本与内联图片后建立 SSE 连接并转发流式事件。
 // 事件类型依次可能为 user（已落库的用户消息）、delta（文本增量）、expression（表情切换）、
-// tool（工具运行状态）、done（已保存的完整回复）与 error（脱敏后的错误提示）。
+// stage_action（模型动作/原生表情请求）、character（已保存角色资料）、tool（工具运行状态）、done（已保存的完整回复）与 error（脱敏后的错误提示）。
 // 请求超时为 3 分钟；客户端断开导致 ctx 取消时，服务层会把回复标记为 interrupted。
 func (m *Module) send(c *gin.Context) {
 	var req struct {
-		Text  string `json:"text"`
-		Image string `json:"image"`
+		Text               string             `json:"text"`
+		Image              string             `json:"image"`
+		ScreenSnipRequests bool               `json:"screen_snip_requests"`
+		Screen             *screenObservation `json:"screen_context"`
 	}
 	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Text) == "" || len(req.Text) > maxMessageTextBytes {
 		pkg.Fail(c, 400, "消息不能为空，且最多 32000 字节")
 		return
 	}
-	if req.Image != "" {
-		parts := strings.SplitN(req.Image, ",", 2)
+	imageToCheck, imageLimit := req.Image, maxMessageImageBytes
+	if req.Screen != nil {
+		if len(req.Screen.Text) > 6400 || (req.Image != "" && req.Screen.Image != "") {
+			pkg.Fail(c, 400, "观看上下文过长或重复附图")
+			return
+		}
+		if req.Screen.Image != "" {
+			imageToCheck, imageLimit = req.Screen.Image, 768<<10
+		}
+	}
+	if imageToCheck != "" {
+		parts := strings.SplitN(imageToCheck, ",", 2)
 		if len(parts) != 2 || (parts[0] != "data:image/png;base64" && parts[0] != "data:image/jpeg;base64" && parts[0] != "data:image/webp;base64") {
 			pkg.Fail(c, 400, "不支持的图片格式")
 			return
 		}
 		data, err := base64.StdEncoding.DecodeString(parts[1])
-		if err != nil || len(data) > maxMessageImageBytes {
-			pkg.Fail(c, 400, "图片无效或大于 4MB")
+		if err != nil || len(data) > imageLimit {
+			message := "图片无效或大于 4MB"
+			if imageLimit != maxMessageImageBytes {
+				message = "观看裁图无效或大于 768KB"
+			}
+			pkg.Fail(c, 400, message)
 			return
 		}
 	}
@@ -130,6 +146,12 @@ func (m *Module) send(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Minute)
 	defer cancel()
+	if req.ScreenSnipRequests {
+		ctx = agent.WithScreenSnipRequests(ctx)
+	}
+	if req.Screen != nil {
+		ctx = context.WithValue(ctx, screenObservationKey{}, *req.Screen)
+	}
 	var writeMu sync.Mutex
 	emit := func(e Event) {
 		writeMu.Lock()

@@ -23,14 +23,14 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import Live2DStage from '../components/Live2DStage'
-import type { Live2DCapabilities, Live2DStageHandle } from '../components/Live2DStage'
-import StageBackground from '../components/StageBackground'
-import StageEffects, { effectPresets } from '../components/StageEffects'
-import StageOverlay from '../components/StageOverlay'
-import BackgroundManager from '../components/BackgroundManager'
-import OverlayManager from '../components/OverlayManager'
-import { MoodFace } from '../components/StageControls'
+import Live2DStage from '../components/stage/Live2DStage'
+import type { Live2DCapabilities, Live2DStageHandle } from '../components/stage/Live2DStage'
+import StageBackground from '../components/stage/StageBackground'
+import StageEffects, { effectPresets } from '../components/stage/StageEffects'
+import StageOverlay from '../components/stage/StageOverlay'
+import BackgroundManager from '../components/stage/BackgroundManager'
+import OverlayManager from '../components/stage/OverlayManager'
+import { MoodFace } from '../components/stage/StageControls'
 import {
   Select,
   SelectContent,
@@ -77,6 +77,8 @@ export default function CharacterStudioPage() {
   const playRandomRef = useRef<() => void>(() => {})
   const background = s.sceneAssets.find((item) => item.id === s.backgroundAssetID)
   const ready = capabilities?.ready ?? false
+  const zoomMin = s.modelZoomLimits.min / 100
+  const zoomMax = s.modelZoomLimits.max / 100
   // 动作按 group 分组；空组名统一归入“动作”。
   const groups = useMemo(
     () => Array.from(new Set((capabilities?.motions ?? []).map((m) => m.group || '动作'))),
@@ -169,9 +171,9 @@ export default function CharacterStudioPage() {
   const reset = () => {
     setExpression('')
     setActiveMotion('')
-    s.patch({ zoom: 1 })
     s.setMood('neutral')
     stageRef.current?.reset()
+    stageRef.current?.resetModelView()
   }
   // 离开前确认未保存的人设；返回 false 表示用户取消离开。
   const confirmLeave = () =>
@@ -238,6 +240,8 @@ export default function CharacterStudioPage() {
                 key={character.model_path}
                 ref={stageRef}
                 modelPath={character.model_path}
+                actionNames={character.action_names}
+                stagePlacement
                 onCapabilitiesChange={setCapabilities}
                 onInteraction={setInteraction}
               />
@@ -252,16 +256,16 @@ export default function CharacterStudioPage() {
               <div className="zoom-controls" role="group" aria-label="画布缩放">
                 <button
                   aria-label="缩小"
-                  disabled={s.zoom <= 0.5}
-                  onClick={() => s.patch({ zoom: Math.max(0.5, s.zoom - 0.1) })}
+                  disabled={s.zoom <= zoomMin}
+                  onClick={() => s.patch({ zoom: (Math.round(s.zoom * 100) - 10) / 100 })}
                 >
                   <Minus size={14} />
                 </button>
                 <input
                   className="stage-zoom-slider"
                   type="range"
-                  min={0.5}
-                  max={1.7}
+                  min={zoomMin}
+                  max={zoomMax}
                   step={0.05}
                   value={s.zoom}
                   aria-label="画布缩放比例"
@@ -269,8 +273,8 @@ export default function CharacterStudioPage() {
                 />
                 <button
                   aria-label="放大"
-                  disabled={s.zoom >= 1.7}
-                  onClick={() => s.patch({ zoom: Math.min(1.7, s.zoom + 0.1) })}
+                  disabled={s.zoom >= zoomMax}
+                  onClick={() => s.patch({ zoom: (Math.round(s.zoom * 100) + 10) / 100 })}
                 >
                   <Plus size={14} />
                 </button>

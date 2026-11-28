@@ -23,13 +23,14 @@ import (
 const (
 	ImageLimit int64 = 15 << 20
 	VideoLimit int64 = 150 << 20
+	HTMLLimit  int64 = 5 << 20
 )
 
 var (
 	// ErrUnsupported 表示文件头不属于允许的图片或视频类型。
-	ErrUnsupported = errors.New("请选择 PNG、JPEG、WebP、GIF 图片或 MP4、WebM 视频")
+	ErrUnsupported = errors.New("请选择 PNG、JPEG、WebP、GIF 图片，MP4、WebM 视频或 HTML 文件")
 	// ErrTooLarge 表示文件超过了对应类型的大小上限。
-	ErrTooLarge = errors.New("图片最大 15MB，视频最大 150MB")
+	ErrTooLarge = errors.New("图片最大 15MB，视频最大 150MB，HTML 最大 5MB")
 )
 
 // Service 负责素材落盘、类型校验与数据库记录维护，MediaDir 中只存放随机 UUID 文件名。
@@ -107,10 +108,20 @@ func (s *Service) Create(ctx context.Context, name string, input io.Reader) (mod
 	}
 	header = header[:n]
 	kind, mime, extension := mediaType(header)
+	limit := ImageLimit
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".html", ".htm":
+		markup := bytes.TrimSpace(bytes.TrimPrefix(header, []byte("\xef\xbb\xbf")))
+		contentType := http.DetectContentType(markup)
+		if !bytes.HasPrefix(markup, []byte("<")) || (contentType != "text/html; charset=utf-8" && contentType != "text/plain; charset=utf-8") {
+			return result, ErrUnsupported
+		}
+		kind, mime, extension = "html", "text/html; charset=utf-8", ".html"
+		limit = HTMLLimit
+	}
 	if kind == "" {
 		return result, ErrUnsupported
 	}
-	limit := ImageLimit
 	if kind == "video" {
 		limit = VideoLimit
 	}
@@ -150,7 +161,7 @@ func (s *Service) Create(ctx context.Context, name string, input io.Reader) (mod
 func validFilename(name string) bool {
 	ext := filepath.Ext(name)
 	switch ext {
-	case ".png", ".jpg", ".webp", ".gif", ".mp4", ".webm":
+	case ".png", ".jpg", ".webp", ".gif", ".mp4", ".webm", ".html":
 	default:
 		return false
 	}

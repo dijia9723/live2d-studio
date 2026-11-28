@@ -20,19 +20,50 @@ import (
 // Windows 上的资源响应会整体缓冲，无法流式转发 SSE；若聊天接口走它，
 // 每个 token 都会被延迟到整段生成结束。
 //
-// 代理只接受回环目标，避免误把本地服务暴露给远端；HTML 响应会在 <head>
-// 之后注入 window.__STUDIO_API_BASE_URL__，让前端直接访问真实监听地址。
-func DesktopHandler(address string) (http.Handler, error) {
+// 开发时页面与前端资源改由 Vite 提供，API 和本地素材仍然由 Go 提供。
+// HTML 在 <head> 后注入真实 API 地址，且代理仅接受回环目标。
+func DesktopHandler(address, frontendAddress string) (http.Handler, error) {
+	target, err := desktopTarget(address)
+	if err != nil {
+		return nil, fmt.Errorf("桌面服务地址: %w", err)
+	}
+	backend := desktopProxy(target, address, "本地桌面服务暂时不可用")
+	if frontendAddress == "" {
+		return backend, nil
+	}
+	frontendTarget, err := desktopTarget(strings.TrimSuffix(frontendAddress, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("桌面开发前端地址: %w", err)
+	}
+	frontend := desktopProxy(frontendTarget, address, "开发前端暂时不可用，请检查 Vite 是否在运行")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		for _, prefix := range []string{"/api", "/models", "/scene-media"} {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				backend.ServeHTTP(w, r)
+				return
+			}
+		}
+		frontend.ServeHTTP(w, r)
+	}), nil
+}
+
+func desktopTarget(address string) (*url.URL, error) {
 	target, err := url.Parse(address)
 	if err != nil || target.Scheme != "http" || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || target.Path != "" {
-		return nil, fmt.Errorf("桌面服务地址无效")
+		return nil, fmt.Errorf("必须是无路径的 HTTP 地址")
 	}
 	host := target.Hostname()
 	if host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback()) {
-		return nil, fmt.Errorf("桌面服务必须使用回环地址")
+		return nil, fmt.Errorf("必须使用回环地址")
 	}
-	base, _ := json.Marshal(address + "/api/v1")
+	return target, nil
+}
+
+func desktopProxy(target *url.URL, backendAddress, errorMessage string) *httputil.ReverseProxy {
+	base, _ := json.Marshal(backendAddress + "/api/v1")
 	script := []byte("<script>window.__STUDIO_API_BASE_URL__=" + string(base) + ";</script>")
+	petRuntime := []byte(`<script type="module" src="/wails/runtime.js"></script>`)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
@@ -64,7 +95,11 @@ func DesktopHandler(address string) (http.Handler, error) {
 		if !bytes.Contains(body, []byte("<head>")) {
 			return fmt.Errorf("桌面页面缺少 head 元素")
 		}
-		body = bytes.Replace(body, []byte("<head>"), append([]byte("<head>"), script...), 1)
+		head := append([]byte("<head>"), script...)
+		if r.Request.URL.Query().Get("pet") == "1" {
+			head = append(head, petRuntime...)
+		}
+		body = bytes.Replace(body, []byte("<head>"), head, 1)
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		r.ContentLength = int64(len(body))
 		r.Header.Set("Content-Length", strconv.Itoa(len(body)))
@@ -73,7 +108,7 @@ func DesktopHandler(address string) (http.Handler, error) {
 		return nil
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
-		http.Error(w, "本地桌面服务暂时不可用", http.StatusBadGateway)
+		http.Error(w, errorMessage, http.StatusBadGateway)
 	}
-	return proxy, nil
+	return proxy
 }

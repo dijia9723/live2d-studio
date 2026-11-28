@@ -60,20 +60,28 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
   const speak = useCallback(
     async (text: string) => {
       stopSpeaking()
-      const { settings } = useStudio.getState()
+      const { settings, characters, characterID } = useStudio.getState()
       if (!settings || settings.speech.mode === 'off' || !text.trim()) return
+      const character = characters.find((item) => item.id === characterID) ?? characters[0]
+      const speech = character?.speech
+      const defaultMode = settings.speech.local_tts ? 'local' : settings.speech.mode
+      const mode = speech && speech.mode !== 'inherit' ? speech.mode : defaultMode
       // 去掉代码块与 Markdown 标记，避免朗读出无意义的符号。
       const clean = text
         .replace(/```[\s\S]*?```/g, '代码见聊天记录。')
         .replace(/[*#_`~]/g, '')
         .slice(0, 10000)
-      if (settings.speech.mode === 'browser') {
+      if (mode === 'browser') {
         if (!window.speechSynthesis) {
           notify('当前环境不支持系统朗读，可在设置中使用语音 API。')
           return
         }
         const utterance = new SpeechSynthesisUtterance(clean)
-        utterance.lang = settings.speech.language
+        const systemVoice = speech?.mode === 'browser' && speech.voice
+          ? window.speechSynthesis.getVoices().find((item) => item.voiceURI === speech.voice)
+          : undefined
+        if (systemVoice) utterance.voice = systemVoice
+        utterance.lang = systemVoice?.lang || settings.speech.language
         // speaking 状态用于驱动 Live2D 口型动画。
         utterance.onstart = () => useStudio.setState({ speaking: true })
         utterance.onend = () => useStudio.setState({ speaking: false })
@@ -88,7 +96,7 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
         const controller = new AbortController()
         request.current = controller
         try {
-          const blob = await api.synthesize(clean, controller.signal)
+          const blob = await api.synthesize(clean, character?.id ?? '', controller.signal)
           if (controller.signal.aborted) return
           audioURL.current = URL.createObjectURL(blob)
           const player = new Audio(audioURL.current)
@@ -99,11 +107,11 @@ export function useSpeech(onTranscript: (text: string) => void, onInterrupt: () 
             notify('音频播放失败。')
           }
           await player.play()
-          useStudio.setState({ speaking: true })
-        } catch {
+          if (!controller.signal.aborted) useStudio.setState({ speaking: true })
+        } catch (cause) {
           if (!controller.signal.aborted) {
             stopSpeaking()
-            notify('语音合成失败，请检查语音设置。')
+            notify(cause instanceof Error ? cause.message : '语音合成失败，请检查语音设置。')
           }
         }
       }

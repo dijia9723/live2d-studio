@@ -174,10 +174,28 @@ type contextPromptMessage struct {
 	Image string
 }
 
-// contextPrompt 解析上游收到的消息，兼容纯文本与多段（文本+图片）两种内容格式。
+type upstreamChatTool struct {
+	Function struct{ Name string }
+}
+
+type upstreamChatRequest struct {
+	Messages []contextPromptMessage
+	Tools    []upstreamChatTool
+}
+
 func contextPrompt(t *testing.T, r *http.Request) []contextPromptMessage {
 	t.Helper()
+	if body := readUpstreamChatRequest(t, r); body != nil {
+		return body.Messages
+	}
+	return nil
+}
+
+// readUpstreamChatRequest 解析模拟上游收到的工具声明和纯文本或多段消息。
+func readUpstreamChatRequest(t *testing.T, r *http.Request) *upstreamChatRequest {
+	t.Helper()
 	var body struct {
+		Tools    []upstreamChatTool
 		Messages []struct {
 			Role    string
 			Content json.RawMessage
@@ -190,6 +208,9 @@ func contextPrompt(t *testing.T, r *http.Request) []contextPromptMessage {
 	messages := make([]contextPromptMessage, len(body.Messages))
 	for i, message := range body.Messages {
 		messages[i].Role = message.Role
+		if len(message.Content) == 0 {
+			continue
+		}
 		if bytes.HasPrefix(message.Content, []byte("[")) {
 			var parts []struct {
 				Type     string
@@ -203,7 +224,7 @@ func contextPrompt(t *testing.T, r *http.Request) []contextPromptMessage {
 			for _, part := range parts {
 				switch part.Type {
 				case "text":
-					messages[i].Text = part.Text
+					messages[i].Text += part.Text
 				case "image_url":
 					messages[i].Image = part.ImageURL.URL
 				}
@@ -212,7 +233,7 @@ func contextPrompt(t *testing.T, r *http.Request) []contextPromptMessage {
 			t.Error(err)
 		}
 	}
-	return messages
+	return &upstreamChatRequest{Messages: messages, Tools: body.Tools}
 }
 
 // finishContextReply 让模拟上游立即结束一轮流式回复。

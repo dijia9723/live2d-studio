@@ -55,25 +55,28 @@ export function createParameterBindings(
   return bindings
 }
 
-/** 从 model3.json 的 Expressions / Motions 定义推导舞台可用的表情与动作列表。 */
+/** 从两代 Cubism 清单定义推导舞台可用的表情与动作列表。 */
 export function modelCapabilities(
-  expressions: { Name: string; File: string }[] | undefined,
-  motions: Partial<Record<string, { File: string }[]>>,
+  expressions: ({ Name: string } | { name: string })[] | undefined,
+  motions: Partial<Record<string, ({ File: string } | { file: string })[]>>,
   bindings: Map<string, ParameterBinding>,
 ): Live2DCapabilities {
   return {
     ready: true,
-    expressions: (expressions || []).map((e) => ({ id: e.Name, label: e.Name })),
+    expressions: (expressions || []).map((expression) => {
+      const name = 'Name' in expression ? expression.Name : expression.name
+      return { id: name, label: name }
+    }),
     motions: Object.entries(motions).flatMap(([group, items]) =>
       (items || []).map((m, index) => ({
         id: JSON.stringify([group, index]),
         group,
         index,
-        // 用文件名（去掉 .motion3.json 后缀）作为展示名，空组名回退为“动作”。
         label: `${group || '动作'} · ${
-          m.File.split(/[\\/]/)
+          ('File' in m ? m.File : m.file)
+            .split(/[\\/]/)
             .pop()
-            ?.replace(/\.motion3?\.json$/i, '') || index + 1
+            ?.replace(/(?:\.motion3?\.json|\.mtn)$/i, '') || index + 1
         }`,
       })),
     ),
@@ -86,7 +89,22 @@ export function modelCapabilities(
 
 /** 按 id 精确选择动作；未指定时优先从非 Idle 的“反应动作”中随机选择。 */
 export function chooseMotion(motions: Live2DMotion[], id?: string, random = Math.random) {
-  if (id !== undefined) return motions.find((m) => m.id === id)
+  if (id !== undefined) {
+    try {
+      const key: unknown = JSON.parse(id)
+      // 后端 JSON 会转义 & 等字符；按组名和索引匹配，兼容不同的合法 JSON 写法。
+      if (
+        !Array.isArray(key) ||
+        key.length !== 2 ||
+        typeof key[0] !== 'string' ||
+        !Number.isInteger(key[1])
+      )
+        return undefined
+      return motions.find((m) => m.group === key[0] && m.index === key[1])
+    } catch {
+      return undefined
+    }
+  }
   const reactions = motions.filter((m) => !/^idle$/i.test(m.group))
   const candidates = reactions.length ? reactions : motions
   return candidates[Math.floor(random() * candidates.length)]

@@ -134,11 +134,9 @@ func TestReActRecoversFromInvalidAndUnknownTools(t *testing.T) {
 	var calls atomic.Int32
 	const private = "private-value-do-not-expose"
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct{ Role, Content string }
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Error(err)
+		req := readUpstreamChatRequest(t, r)
+		if req == nil {
+			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		if calls.Add(1) == 1 {
@@ -152,8 +150,8 @@ func TestReActRecoversFromInvalidAndUnknownTools(t *testing.T) {
 			for _, message := range req.Messages {
 				if message.Role == "tool" {
 					toolMessages++
-					if !strings.Contains(message.Content, `"error"`) || strings.Contains(message.Content, private) {
-						t.Errorf("unexpected tool error payload: %q", message.Content)
+					if !strings.Contains(message.Text, `"error"`) || strings.Contains(message.Text, private) {
+						t.Errorf("unexpected tool error payload: %q", message.Text)
 					}
 				}
 			}

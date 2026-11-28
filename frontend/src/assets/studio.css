@@ -19,18 +19,42 @@
   letter-spacing: 0;
 }
 
-.studio-workbench .studio-pet-button {
+.studio-mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.studio-mode-actions .button {
   font-size: 13px;
   padding: 8px 13px;
 }
 
 .studio-scene {
+  --stage-column: minmax(0, 1fr);
+  --dock-column: minmax(330px, 40%);
   flex: 1;
   min-height: 530px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 40%);
+  grid-template-columns: var(--stage-column) var(--dock-column);
   gap: clamp(14px, 1.8vw, 26px);
   padding: 0 var(--studio-gutter) 24px;
+  /* 比例切换时两栏一起过渡，避免舞台与右侧面板瞬间跳变。 */
+  transition: grid-template-columns 0.28s ease;
+}
+
+/* 画布比例决定两栏配比：宽画布把空间让给舞台，竖画布把空间让给右侧面板。 */
+.studio-scene[data-aspect-shape='landscape'] {
+  --dock-column: minmax(330px, 30%);
+}
+
+.studio-scene[data-aspect-shape='square'] {
+  --dock-column: minmax(330px, 36%);
+}
+
+.studio-scene[data-aspect-shape='portrait'] {
+  --dock-column: minmax(330px, 54%);
 }
 
 .studio-workbench .stage-column {
@@ -210,29 +234,32 @@
   min-width: 0;
   border-radius: 20px;
   overflow: clip;
+  container-type: inline-size;
 }
 
 .studio-workbench .workspace-tabs {
-  padding: 0 16px;
+  padding: 0 8px;
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
-  gap: 26px;
+  flex-wrap: wrap;
+  gap: 0;
   background: white;
 }
 
 .studio-workbench .workspace-tabs > button {
-  flex: none;
-  gap: 8px;
+  flex: 1 0 auto;
+  gap: 4px;
   min-height: 51px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
   box-shadow: none;
+  white-space: nowrap;
 }
 
 .studio-workbench .workspace-tabs > button[aria-selected='true'] {
@@ -706,6 +733,30 @@
   color: var(--purple);
 }
 
+.studio-workbench .chat-screen-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8f4fc;
+  font-size: 12px;
+}
+
+.studio-workbench .chat-screen-request > div {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.studio-workbench .chat-screen-request p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .studio-workbench .image-preview {
   width: max-content;
   max-width: 100%;
@@ -759,6 +810,7 @@
   }
   .studio-scene {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content auto;
     gap: 9px;
     padding-bottom: 16px;
   }
@@ -833,6 +885,12 @@
   }
 }
 
+@container (max-width: 380px) {
+  .studio-workbench .workspace-tabs > button > svg {
+    display: none;
+  }
+}
+
 @media (hover: none) {
   .studio-workbench .composer-hint {
     visibility: hidden;
@@ -840,10 +898,77 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .studio-scene {
+    transition: none;
+  }
   .studio-workbench .pulse,
   .studio-workbench .panel-busy-dot,
   .studio-workbench .typing-dots i,
   .studio-workbench .composer-tools .recording {
     animation: none;
   }
+}
+.screen-watch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-block: 0 7px;
+  padding: 4px 7px 4px 10px;
+  border: 1px solid #ddd0f1;
+  border-radius: 10px;
+  background: #f5effd;
+  color: #553491;
+}
+.screen-watch-bar > svg { flex: none; }
+.screen-watch-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.screen-watch-status small {
+  display: inline-block;
+  margin-inline-start: 8px;
+  color: #685d79;
+  font-size: 11px;
+  font-weight: 400;
+}
+.screen-watch-bar .icon-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+.screen-watch-bar [aria-pressed='true'],
+.screen-watch-trigger[data-watching='true'] {
+  background: #e6daf8;
+  color: #5733a0;
+}
+.screen-watch-error {
+  margin-block: 4px 8px;
+  color: #a23950;
+}
+.screen-watch-details {
+  margin: -2px 0 7px;
+  padding: 0 10px;
+  color: #685d79;
+  font-size: 12px;
+}
+.screen-watch-details summary {
+  width: fit-content;
+  padding-block: 3px;
+  cursor: pointer;
+}
+.screen-watch-details ul {
+  display: grid;
+  gap: 5px;
+  max-height: 98px;
+  padding: 6px 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.screen-watch-details li {
+  padding-inline-start: 8px;
+  border-inline-start: 2px solid #ddd0f1;
+  overflow-wrap: anywhere;
 }

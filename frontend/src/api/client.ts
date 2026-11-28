@@ -5,13 +5,24 @@
  */
 import axios from 'axios'
 import type {
+  DesktopHandoff,
+  ScreenContext,
+  ScreenWatchSettings,
   Character,
+  CharacterActions,
+  ActionNames,
   CharacterMemory,
   Conversation,
   Message,
+  LLMProfile,
+  LLMProvider,
+  LocalTTSOptions,
+  OllamaModel,
   SceneAsset,
   Settings,
+  StorageSettings,
   StreamEvent,
+  TTSCatalog,
 } from '../types/api'
 import { SSEDecoder } from '../utils/sse'
 
@@ -30,8 +41,17 @@ export const mediaURL = (url: string) => new URL(url, new URL(baseURL, window.lo
 // 统一把后端返回的 message 提取为 Error.message，避免上层各处重复判断。
 http.interceptors.response.use(
   (r) => r,
-  (error) =>
-    Promise.reject(new Error(error.response?.data?.message || error.message || '连接服务失败')),
+  async (error) => {
+    let data = error.response?.data
+    if (data instanceof Blob && data.type.includes('application/json')) {
+      try {
+        data = JSON.parse(await data.text())
+      } catch {
+        data = undefined
+      }
+    }
+    throw new Error(data?.message || error.message || '连接服务失败')
+  },
 )
 /** 通用 GET 包裹：只取响应体中的 data 字段，并透传 AbortSignal 以便取消。 */
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -40,6 +60,8 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
 /** 全部后端接口的集合，按业务域分组（素材、角色、会话、设置、桌面、语音）。 */
 export const api = {
   sceneAssets: () => get<SceneAsset[]>('/scene-assets'),
+  sceneAssetHTML: async (url: string, signal: AbortSignal) =>
+    (await http.get<string>(mediaURL(url), { responseType: 'text', signal })).data,
   // 上传背景/叠加素材，用 onUploadProgress 回传 0–100 的百分比。
   uploadSceneAsset: async (
     file: File,
@@ -57,10 +79,22 @@ export const api = {
   },
   deleteSceneAsset: (id: string) => http.delete(`/scene-assets/${id}`),
   characters: () => get<Character[]>('/characters'),
+  characterActions: (id: string, signal: AbortSignal) =>
+    get<CharacterActions>(`/characters/${id}/actions`, signal),
+  saveActionNames: async (
+    id: string,
+    model_path: string,
+    action_names: ActionNames,
+  ): Promise<Character> =>
+    (await http.put(`/characters/${id}/action-names`, { model_path, action_names })).data.data,
   characterMemories: (id: string, signal: AbortSignal) =>
     get<CharacterMemory[]>(`/characters/${id}/memories`, signal),
   // 传入 memoryID 时更新已有记忆，否则新建；返回值统一为最新记忆对象。
-  saveCharacterMemory: async (id: string, content: string, memoryID?: string): Promise<CharacterMemory> => {
+  saveCharacterMemory: async (
+    id: string,
+    content: string,
+    memoryID?: string,
+  ): Promise<CharacterMemory> => {
     const path = `/characters/${id}/memories`
     const response = memoryID
       ? await http.put(`${path}/${memoryID}`, { content })
@@ -71,7 +105,8 @@ export const api = {
     http.delete(`/characters/${id}/memories/${memoryID}`),
   saveCharacter: async (c: Character): Promise<Character> =>
     (await http.put(`/characters/${c.id}`, c)).data.data,
-  // 导入 Live2D 模型 ZIP（含 model3.json 及其引用资源）。
+  deleteCharacter: (id: string) => http.delete(`/characters/${id}`),
+  // 导入 Live2D 模型 ZIP。
   importModel: async (file: File): Promise<Character> => {
     const form = new FormData()
     form.append('file', file)
@@ -83,15 +118,26 @@ export const api = {
   deleteConversation: (id: string) => http.delete(`/conversations/${id}`),
   renameConversation: (id: string, title: string) => http.put(`/conversations/${id}`, { title }),
   messages: (id: string) => get<Message[]>(`/conversations/${id}/messages`),
-  settings: () => get<Settings>('/settings'),
+  settings: (signal?: AbortSignal) => get<Settings>('/settings', signal),
+  storageSettings: (signal?: AbortSignal) => get<StorageSettings>('/settings/storage', signal),
+  chooseDataDirectory: async (): Promise<StorageSettings> =>
+    (await http.post('/settings/storage', undefined, { timeout: 0 })).data.data,
+  screenWatchSettings: (signal?: AbortSignal) => get<ScreenWatchSettings>('/settings/screen-watch', signal),
+  saveScreenWatchSettings: async (settings: ScreenWatchSettings): Promise<ScreenWatchSettings> =>
+    (await http.put('/settings/screen-watch', settings)).data.data,
+  llmProfile: (provider: LLMProvider, signal: AbortSignal) =>
+    get<LLMProfile>(`/settings/llm/${provider}`, signal),
   // clear_*_key 为 true 时表示用户主动要求清除已保存的密钥。
   saveSettings: async (
     s: Settings & { clear_llm_key?: boolean; clear_speech_key?: boolean },
   ): Promise<Settings> => (await http.put('/settings', s)).data.data,
-  testConnection: () => http.post('/settings/test'),
+  testConnection: () => http.post('/settings/test', undefined, { timeout: 150000 }),
+  ollamaModels: async (base_url: string, signal: AbortSignal): Promise<OllamaModel[]> =>
+    (await http.post('/settings/ollama/models', { base_url }, { signal, timeout: 12000 })).data.data
+      .models,
   desktop: () => get<{ available: boolean }>('/desktop'),
-  // 控制桌面端窗口行为：pet 开关桌宠窗口，pin 切换置顶。
-  window: (action: 'pet' | 'pin', enabled: boolean) => http.post(`/desktop/${action}`, { enabled }),
+  window: (action: 'pet' | 'coding' | 'pin', enabled: boolean, handoff?: DesktopHandoff) =>
+    http.post(`/desktop/${action}`, { enabled, handoff }),
   // 上传录音并返回转写文本。
   transcribe: async (blob: Blob): Promise<string> => {
     const f = new FormData()
@@ -99,8 +145,11 @@ export const api = {
     return (await http.post('/speech/transcribe', f)).data.data.text
   },
   // 文本转语音，返回音频 Blob；支持 AbortSignal 以便打断播放。
-  synthesize: async (text: string, signal: AbortSignal): Promise<Blob> =>
-    (await http.post('/speech/synthesize', { text }, { responseType: 'blob', signal })).data,
+  synthesize: async (text: string, character_id: string, signal: AbortSignal): Promise<Blob> =>
+    (await http.post('/speech/synthesize', { text, character_id }, { responseType: 'blob', signal })).data,
+  ttsModels: (signal?: AbortSignal) => get<TTSCatalog>('/speech/tts/models', signal),
+  synthesizeLocal: async (text: string, options: LocalTTSOptions, signal: AbortSignal) =>
+    (await http.post<Blob>('/speech/tts/synthesize', { text, ...options }, { responseType: 'blob', signal })).data,
 }
 
 /**
@@ -118,6 +167,8 @@ export async function streamMessage(
   image: string | undefined,
   signal: AbortSignal,
   onEvent: (e: StreamEvent) => void,
+  screenSnipRequests = false,
+  screenContext?: ScreenContext,
 ) {
   // 内部控制器同时受外部 signal 和超时定时器约束，任一触发都会中断请求。
   const timeout = new AbortController()
@@ -133,7 +184,9 @@ export async function streamMessage(
     const response = await fetch(`${baseURL}/conversations/${id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Studio-Client': '1' },
-      body: JSON.stringify({ text, image }),
+      body: JSON.stringify({
+        text, image, screen_snip_requests: screenSnipRequests || undefined, screen_context: screenContext,
+      }),
       signal: timeout.signal,
     })
     if (!response.ok) {

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>极光夜空</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow: hidden;
+        background: radial-gradient(ellipse at 50% 100%, #332052, #0b1026 72%);
+      }
+      .aurora {
+        position: absolute;
+        inset: -25% -20% 15%;
+        background:
+          radial-gradient(ellipse at 25% 50%, #59ead288, transparent 40%),
+          radial-gradient(ellipse at 70% 35%, #a590ff88, transparent 45%);
+        filter: blur(4vmin);
+        animation: drift 14s ease-in-out infinite alternate;
+      }
+      @keyframes drift {
+        from { transform: translate(-8%, -5%) rotate(-9deg); }
+        to { transform: translate(8%, 5%) rotate(9deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .aurora { animation: none; }
+      }
+    </style>
+  </head>
+  <body><div class="aurora" aria-hidden="true"></div></body>
+</html>

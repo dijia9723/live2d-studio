@@ -1,4 +1,4 @@
-// 本文件覆盖场景素材（背景图/视频）：类型嗅探、增删查、路径安全、Range 请求
+// 本文件覆盖场景素材（图片、视频和 HTML）：类型嗅探、增删查、路径安全、Range 请求
 // 与大小限制。
 
 package tests
@@ -125,6 +125,9 @@ func TestSceneAssetsRejectScriptsAndUnsafePaths(t *testing.T) {
 			t.Fatalf("untrusted media accepted: %d", w.Code)
 		}
 	}
+	if w := sceneUpload(t, app, "fake.html", "text/html", []byte("\x89PNG\r\n\x1a\n")); w.Code != 400 {
+		t.Fatalf("binary upload masquerading as HTML returned %d", w.Code)
+	}
 	for _, path := range []string{"/scene-media/", "/scene-media/../studio.db", "/scene-media/%2e%2e%2fstudio.db", "/scene-media/studio.db", "/scene-media/00000000-0000-0000-0000-000000000000.png", "/scene-media/00000000-0000-0000-0000-000000000000.png/extra"} {
 		if w := sceneMedia(app, "GET", path, ""); w.Code != 404 {
 			t.Errorf("unsafe or missing media path returned %d: %s", w.Code, path)
@@ -133,6 +136,31 @@ func TestSceneAssetsRejectScriptsAndUnsafePaths(t *testing.T) {
 	files, err := os.ReadDir(filepath.Join(app.Config.DataDir, "scene-media"))
 	if err != nil || len(files) != 0 {
 		t.Fatal("rejected uploads left temporary files")
+	}
+}
+
+func TestSceneHTMLBackgroundLifecycle(t *testing.T) {
+	app := newApp(t)
+	for _, sample := range []struct{ name, source string }{
+		{"scene.html", "<!doctype html><html><head><title>舞台</title></head><body><script>void 0</script></body></html>"},
+		{"fragment.HTM", "\ufeff\n<style>body{background:#315}</style>"},
+	} {
+		data := []byte(sample.source)
+		asset := decode[model.SceneAsset](t, sceneUpload(t, app, sample.name, "application/octet-stream", data))
+		if asset.Name != sample.name || asset.Kind != "html" || asset.MIMEType != "text/html; charset=utf-8" || asset.Size != int64(len(data)) || asset.URL != "/scene-media/"+asset.ID+".html" {
+			t.Fatalf("unexpected HTML background metadata: %+v", asset)
+		}
+		listed := decode[[]model.SceneAsset](t, request(t, app, "GET", "/scene-assets", nil))
+		if len(listed) != 1 || listed[0].ID != asset.ID || listed[0].Kind != "html" || listed[0].URL != asset.URL {
+			t.Fatalf("HTML background missing from library: %+v", listed)
+		}
+		w := sceneMedia(app, "GET", asset.URL, "")
+		if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), data) || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("Content-Disposition") != "attachment" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("HTML source was not served as an inert attachment: %d %v", w.Code, w.Header())
+		}
+		if request(t, app, "DELETE", "/scene-assets/"+asset.ID, nil).Code != 200 || sceneMedia(app, "GET", asset.URL, "").Code != 404 {
+			t.Fatal("deleted HTML background remains accessible")
+		}
 	}
 }
 
@@ -163,10 +191,10 @@ func (zeroReader) Read(p []byte) (int, error) {
 }
 
 // sizedSceneUpload 用手写 multipart 分片构造任意大小的上传，避免真实分配内存。
-func sizedSceneUpload(t *testing.T, app *bootstrap.App, prefix []byte, size int64) *httptest.ResponseRecorder {
+func sizedSceneUpload(t *testing.T, app *bootstrap.App, name string, prefix []byte, size int64) *httptest.ResponseRecorder {
 	t.Helper()
 	const boundary = "scene-size-test"
-	header := "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"background\"\r\n\r\n"
+	header := "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + name + "\"\r\n\r\n"
 	tail := "\r\n--" + boundary + "--\r\n"
 	body := io.MultiReader(strings.NewReader(header), bytes.NewReader(prefix), io.LimitReader(zeroReader{}, size-int64(len(prefix))), strings.NewReader(tail))
 	r := httptest.NewRequest("POST", "http://127.0.0.1:12393/api/v1/scene-assets", body)
@@ -182,18 +210,21 @@ func sizedSceneUpload(t *testing.T, app *bootstrap.App, prefix []byte, size int6
 func TestSceneAssetSizeLimitsAndLargeVideo(t *testing.T) {
 	app := newApp(t)
 	png := []byte("\x89PNG\r\n\x1a\n")
-	if w := sizedSceneUpload(t, app, png, sceneassets.ImageLimit+1); w.Code != 413 {
+	if w := sizedSceneUpload(t, app, "background.png", png, sceneassets.ImageLimit+1); w.Code != 413 {
 		t.Fatalf("oversized image returned %d", w.Code)
 	}
-	if w := sizedSceneUpload(t, app, mp4Sample(), sceneassets.VideoLimit+1); w.Code != 413 {
+	if w := sizedSceneUpload(t, app, "background.mp4", mp4Sample(), sceneassets.VideoLimit+1); w.Code != 413 {
 		t.Fatalf("oversized video returned %d", w.Code)
+	}
+	if w := sizedSceneUpload(t, app, "background.html", []byte("<!doctype html>"), sceneassets.HTMLLimit+1); w.Code != 413 {
+		t.Fatalf("oversized HTML returned %d", w.Code)
 	}
 	files, _ := os.ReadDir(filepath.Join(app.Config.DataDir, "scene-media"))
 	if len(files) != 0 {
 		t.Fatal("oversized uploads were not cleaned up")
 	}
 	// 回归用例：通用的 26MB JSON 请求体限制不能拦住视频上传。
-	asset := decode[model.SceneAsset](t, sizedSceneUpload(t, app, mp4Sample(), 27<<20))
+	asset := decode[model.SceneAsset](t, sizedSceneUpload(t, app, "background.mp4", mp4Sample(), 27<<20))
 	if asset.Kind != "video" || asset.Size != 27<<20 {
 		t.Fatal("large video upload did not bypass the JSON request limit")
 	}

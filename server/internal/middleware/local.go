@@ -94,3 +94,19 @@ func LocalOnly(desktopAvailable func() bool) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// WorkspaceOnly restricts local file access to the Studio page and desktop shell.
+func WorkspaceOnly(desktopAvailable func() bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetHeader("X-Studio-Client") != "1" {
+			pkg.Fail(c, 403, "缺少工作台客户端标识")
+			return
+		}
+		origin := c.GetHeader("Origin")
+		if origin != "" && origin != "http://"+c.Request.Host && origin != "https://"+c.Request.Host && !isDesktopOrigin(origin, desktopAvailable) {
+			pkg.Fail(c, 403, "编码工作台仅允许同源页面和桌面客户端访问")
+			return
+		}
+		c.Next()
+	}
+}

@@ -45,7 +45,7 @@ func (m *Module) upload(c *gin.Context) {
 			if errors.As(readErr, &max) {
 				pkg.Fail(c, 413, ErrTooLarge.Error())
 			} else {
-				pkg.Fail(c, 400, "请选择要上传的背景图片或视频")
+				pkg.Fail(c, 400, "请选择要上传的背景图片、视频或 HTML 文件")
 			}
 			return
 		}
@@ -108,7 +108,12 @@ func (m *Module) media(c *gin.Context) {
 		c.Status(404)
 		return
 	}
-	c.Header("Content-Type", asset.MIMEType)
+	if asset.Kind == "html" {
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Content-Disposition", "attachment")
+	} else {
+		c.Header("Content-Type", asset.MIMEType)
+	}
 	c.Header("Cache-Control", "no-cache")
 	// ServeContent 负责处理 HEAD 与单段/多段字节范围，从而支持视频拖动播放。
 	http.ServeContent(c.Writer, c.Request, asset.Filename, info.ModTime(), f)

@@ -1,0 +1,74 @@
+<style>
+  body {
+    background:
+      radial-gradient(ellipse at 50% 59%, #d04b886b, transparent 54%),
+      linear-gradient(#110921 12%, #2b164c 56%, #572757 66%, #140b2d 84%);
+  }
+
+  .sun {
+    position: absolute;
+    top: 14%;
+    left: 50%;
+    width: 42vmin;
+    aspect-ratio: 1;
+    translate: -50%;
+    border-radius: 50%;
+    background:
+      repeating-linear-gradient(0deg, #2e1646 0 2%, transparent 2% 8%) bottom / 100% 47% no-repeat,
+      linear-gradient(#ffce97, #ff6489 54%, #f044be);
+    box-shadow: 0 0 8vmin #fa52b16b;
+  }
+
+  .skyline {
+    position: absolute;
+    inset: auto 0 34%;
+    height: 37%;
+    display: flex;
+    align-items: end;
+    justify-content: space-around;
+  }
+
+  .skyline i {
+    width: 8%;
+    height: var(--height);
+    background:
+      repeating-linear-gradient(0deg, #19132d 0 4px, transparent 4px 7px),
+      repeating-linear-gradient(90deg, #19132d 0 4px, var(--light, #9f5095) 4px 6px);
+    border: 1px solid #b05b9a80;
+    box-shadow: 0 -3px 13px #e951b33c;
+  }
+
+  .floor {
+    position: absolute;
+    top: 66%;
+    left: -88%;
+    width: 276%;
+    height: 85%;
+    transform-origin: 50% 0;
+    transform: perspective(34vmin) rotateX(54deg);
+    background-image:
+      linear-gradient(90deg, #fb66c370 1px, transparent 1px),
+      linear-gradient(#fb66c370 1px, transparent 1px);
+    background-size: 11vmin 7vmin;
+    animation: grid 2s linear infinite;
+    mask-image: linear-gradient(transparent, #000 24%, #000 60%, transparent 94%);
+  }
+
+  @keyframes grid {
+    to { background-position: 0 7vmin; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .floor { animation: none; }
+  }
+</style>
+<div class="sun"></div>
+<div class="skyline">
+  <i style="--height:68%"></i><i style="--height:84%;--light:#46c8d6"></i>
+  <i style="--height:48%"></i><i style="--height:59%"></i>
+  <i style="--height:22%;--light:#ffb178"></i><i style="--height:37%"></i>
+  <i style="--height:54%;--light:#46c8d6"></i><i style="--height:39%"></i>
+  <i style="--height:76%"></i><i style="--height:93%;--light:#ffb178"></i>
+  <i style="--height:57%"></i>
+</div>
+<div class="floor"></div>

@@ -4,15 +4,22 @@
  * 维护 busy 状态以及中断/失败时的状态收敛。
  */
 import { useCallback, useEffect, useRef } from 'react'
+import type { RefObject } from 'react'
+import type { Live2DStageHandle } from '../components/stage/Live2DStage'
 import { streamMessage } from '../api/client'
-import { useStudio } from '../store/studio'
-import type { Message } from '../types/api'
+import { notify, useStudio } from '../store/studio'
+import type { Message, ScreenContext, StreamEvent } from '../types/api'
 
 /**
  * @param onReply 流结束后收到完整助手回复（用于自动朗读）
+ * @param stageRef 当前舞台，用于执行经过后端校验的模型动作和原生表情请求
  * @returns send：发送消息；stop：中断当前生成
  */
-export function useChat(onReply: (text: string) => void) {
+export function useChat(
+  onReply: (text: string) => void,
+  stageRef?: RefObject<Live2DStageHandle | null>,
+  onScreenSnipRequest?: (conversationID: string, reason: string) => void,
+) {
   const controller = useRef<AbortController | null>(null)
   const stop = useCallback(() => {
     controller.current?.abort()
@@ -21,7 +28,12 @@ export function useChat(onReply: (text: string) => void) {
   useEffect(() => stop, [stop])
 
   const send = useCallback(
-    async (text: string, image = '', onAccepted?: (conversationID: string) => void) => {
+    async (
+      text: string,
+      image = '',
+      onAccepted?: (conversationID: string) => void,
+      prepareScreenContext?: (signal: AbortSignal) => Promise<ScreenContext | undefined>,
+    ) => {
       const state = useStudio.getState()
       if (!text.trim() || state.busy) return
       useStudio.setState({ busy: true, chatError: '' })
@@ -42,10 +54,12 @@ export function useChat(onReply: (text: string) => void) {
       }
 
       try {
+        const screenContext = await prepareScreenContext?.(abort.signal)
+        if (abort.signal.aborted) return
         const id = state.conversationID ?? (await state.newConversation()).id
         if (abort.signal.aborted) return
         pending = crypto.randomUUID()
-        await streamMessage(id, text, image, abort.signal, (event) => {
+        const onEvent = (event: StreamEvent) => {
           // done 之后到达的事件一律忽略，保证幂等。
           if (finished) return
           const message = event.message
@@ -66,12 +80,66 @@ export function useChat(onReply: (text: string) => void) {
           }
           if (!accepted) return
           switch (event.type) {
+            case 'screen_snip_request':
+              if (!abort.signal.aborted && event.text) onScreenSnipRequest?.(id, event.text)
+              break
+            case 'stage_action': {
+              const action = event.stage_action
+              if (!action || abort.signal.aborted) break
+              const studio = useStudio.getState()
+              const character =
+                studio.characters.find((item) => item.id === studio.characterID) ??
+                studio.characters[0]
+              if (
+                character?.id !== action.character_id ||
+                character.model_path !== action.model_path
+              ) {
+                notify('当前角色已切换，已忽略之前的舞台请求')
+                break
+              }
+              const stage = stageRef?.current
+              if (!stage) {
+                notify('当前舞台尚未就绪，请稍后再试')
+                break
+              }
+              const run =
+                action.type === 'motion'
+                  ? stage.playMotion(action.id)
+                  : action.type === 'expression'
+                    ? stage.setExpression(action.id)
+                    : Promise.resolve(false)
+              void run
+                .then((ok) => {
+                  if (!abort.signal.aborted)
+                    notify(
+                      ok
+                        ? action.type === 'motion'
+                          ? '角色动作已开始播放'
+                          : '模型原生表情已切换'
+                        : '舞台未能执行，请检查角色是否加载完成或模型资源是否完整',
+                    )
+                })
+                .catch(() => {
+                  if (!abort.signal.aborted) notify('舞台执行失败，请检查模型资源')
+                })
+              break
+            }
             case 'delta':
               updateReply((reply) => ({ ...reply, content: reply.content + (event.text ?? '') }))
               break
             case 'expression':
               useStudio.getState().setMood(event.expression || 'neutral')
               break
+            case 'character': {
+              const character = event.character
+              if (character)
+                useStudio.setState((studio) => ({
+                  characters: studio.characters.map((item) =>
+                    item.id === character.id ? character : item,
+                  ),
+                }))
+              break
+            }
             case 'tool': {
               const tool = event.tool
               if (tool)
@@ -90,11 +158,18 @@ export function useChat(onReply: (text: string) => void) {
                 finished = true
                 updateReply(() => message)
                 // 仅正常完成且未被用户中断时触发朗读。
-                if (message.status === 'complete' && !abort.signal.aborted) onReply(message.content)
+                if (
+                  message.status === 'complete' &&
+                  !abort.signal.aborted &&
+                  useStudio.getState().characterID === state.characterID
+                ) {
+                  onReply(message.content)
+                }
               }
               break
           }
-        })
+        }
+        await streamMessage(id, text, image, abort.signal, onEvent, !!onScreenSnipRequest && !screenContext, screenContext)
       } catch (cause) {
         if (finished) return
         const interrupted = abort.signal.aborted
@@ -117,7 +192,7 @@ export function useChat(onReply: (text: string) => void) {
           .catch(() => {})
       }
     },
-    [onReply],
+    [onReply, stageRef, onScreenSnipRequest],
   )
   return { send, stop }
 }

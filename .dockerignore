@@ -3,4 +3,5 @@
 bin
 .git
 example
+models
 server/internal/webui/dist

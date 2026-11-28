@@ -1,0 +1,260 @@
+package storage
+
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"time"
+
+	"agentp/memory/builtin"
+
+	"github.com/cloudwego/eino/schema"
+)
+
+// MessageParts 自定义 GORM 类型，用于处理 []schema.MessageInputPart 的序列化
+type MessageParts []schema.MessageInputPart
+
+// Value 实现 driver.Valuer 接口，用于将数据存入数据库
+func (mp MessageParts) Value() (driver.Value, error) {
+	if mp == nil {
+		return nil, nil
+	}
+	return json.Marshal(mp)
+}
+
+// Scan 实现 sql.Scanner 接口，用于从数据库读取数据
+func (mp *MessageParts) Scan(value interface{}) error {
+	if value == nil {
+		*mp = MessageParts{}
+		return nil
+	}
+
+	switch v := value.(type) {
+	case []byte:
+		return json.Unmarshal(v, mp)
+	case string:
+		return json.Unmarshal([]byte(v), mp)
+	default:
+		return nil
+	}
+}
+
+// GormValue 为 GORM 提供特定的数据类型支持
+func (mp MessageParts) GormDataType() string {
+	return "text"
+}
+
+// MessageTools 以 JSON 文本存储工具调用轨迹。
+type MessageTools []builtin.ToolTrace
+
+func (mt MessageTools) Value() (driver.Value, error) {
+	if mt == nil {
+		return nil, nil
+	}
+	return json.Marshal(mt)
+}
+
+func (mt *MessageTools) Scan(value interface{}) error {
+	if value == nil {
+		*mt = MessageTools{}
+		return nil
+	}
+	switch v := value.(type) {
+	case []byte:
+		return json.Unmarshal(v, mt)
+	case string:
+		return json.Unmarshal([]byte(v), mt)
+	default:
+		return nil
+	}
+}
+
+func (mt MessageTools) GormDataType() string {
+	return "text"
+}
+
+// UserMemoryModel GORM模型 - 用户记忆表（每个用户一条记录）
+type UserMemoryModel struct {
+	UserID    string    `gorm:"primaryKey;size:255" json:"userId"`
+	Memory    string    `gorm:"type:text;not null" json:"memory"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
+}
+
+// StringSlice 自定义 GORM 类型，存储字符串切片（JSON 编码）。
+type StringSlice []string
+
+func (s StringSlice) Value() (driver.Value, error) {
+	if s == nil {
+		return nil, nil
+	}
+	return json.Marshal(s)
+}
+
+func (s *StringSlice) Scan(value interface{}) error {
+	if value == nil {
+		*s = nil
+		return nil
+	}
+	switch v := value.(type) {
+	case []byte:
+		if len(v) == 0 {
+			*s = nil
+			return nil
+		}
+		return json.Unmarshal(v, s)
+	case string:
+		if v == "" {
+			*s = nil
+			return nil
+		}
+		return json.Unmarshal([]byte(v), s)
+	default:
+		return nil
+	}
+}
+
+func (s StringSlice) GormDataType() string {
+	return "text"
+}
+
+// UserMemoryEventModel GORM 模型 - 用户记忆事件表（事件检索模式）。
+type UserMemoryEventModel struct {
+	ID        string      `gorm:"primaryKey;size:64" json:"id"`
+	UserID    string      `gorm:"size:255;not null;index:idx_user_event_date" json:"userId"`
+	Type      string      `gorm:"size:32;not null;index" json:"type"`
+	EventDate time.Time   `gorm:"not null;index:idx_user_event_date" json:"eventDate"`
+	Keywords  StringSlice `gorm:"type:text" json:"keywords,omitempty"`
+	Summary   string      `gorm:"type:text;not null" json:"summary"`
+	CreatedAt time.Time   `gorm:"autoCreateTime" json:"createdAt"`
+}
+
+// SessionSummaryModel GORM模型 - 会话摘要表
+type SessionSummaryModel struct {
+	SessionID               string    `gorm:"primaryKey;size:255" json:"sessionId"`
+	UserID                  string    `gorm:"primaryKey;size:255" json:"userId"`
+	Summary                 string    `gorm:"type:text;not null" json:"summary"`
+	LastSummarizedMessageID string    `gorm:"size:255" json:"lastSummarizedMessageId,omitempty"`
+	LastSummarizedMessageAt time.Time `json:"lastSummarizedMessageAt,omitempty"`
+	CreatedAt               time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt               time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
+}
+
+// ConversationMessageModel GORM模型 - 对话消息表
+type ConversationMessageModel struct {
+	ID        string `gorm:"primaryKey;size:255" json:"id"`
+	SessionID string `gorm:"size:255;not null;index:idx_session_user" json:"sessionId"`
+	UserID    string `gorm:"size:255;not null;index:idx_session_user;index:idx_user_session" json:"userId"`
+	Role      string `gorm:"size:50;not null" json:"role"`
+	// 保留Content字段用于向后兼容
+	Content string `gorm:"type:text" json:"content,omitempty"`
+	// 多部分内容，使用自定义类型直接存储
+	Parts        MessageParts `gorm:"type:text" json:"parts,omitempty"`
+	Thinking     string       `gorm:"type:text" json:"thinking,omitempty"`
+	Tools        MessageTools `gorm:"type:text" json:"tools,omitempty"`
+	Embedding    []byte       `json:"embedding,omitempty"`
+	EmbeddingDim int          `json:"embeddingDim,omitempty"`
+	CreatedAt    time.Time    `gorm:"autoCreateTime;index:idx_user_session" json:"createdAt"`
+}
+
+// 模型转换函数
+
+// ToUserMemory 将数据库模型转换为业务模型
+func (m *UserMemoryModel) ToUserMemory() *builtin.UserMemory {
+	return &builtin.UserMemory{
+		UserID:    m.UserID,
+		Memory:    m.Memory,
+		CreatedAt: m.CreatedAt,
+		UpdatedAt: m.UpdatedAt,
+	}
+}
+
+// FromUserMemory 将业务模型转换为数据库模型
+func (m *UserMemoryModel) FromUserMemory(userMemory *builtin.UserMemory) {
+	m.UserID = userMemory.UserID
+	m.Memory = userMemory.Memory
+	m.CreatedAt = userMemory.CreatedAt
+	m.UpdatedAt = userMemory.UpdatedAt
+}
+
+// ToSessionSummary 将数据库模型转换为业务模型
+func (m *SessionSummaryModel) ToSessionSummary() *builtin.SessionSummary {
+	sessionSummary := &builtin.SessionSummary{
+		SessionID:               m.SessionID,
+		UserID:                  m.UserID,
+		Summary:                 m.Summary,
+		LastSummarizedMessageID: m.LastSummarizedMessageID,
+		LastSummarizedMessageAt: m.LastSummarizedMessageAt,
+		CreatedAt:               m.CreatedAt,
+		UpdatedAt:               m.UpdatedAt,
+	}
+
+	return sessionSummary
+}
+
+// FromSessionSummary 将业务模型转换为数据库模型
+func (m *SessionSummaryModel) FromSessionSummary(sessionSummary *builtin.SessionSummary) {
+	m.SessionID = sessionSummary.SessionID
+	m.UserID = sessionSummary.UserID
+	m.Summary = sessionSummary.Summary
+	m.LastSummarizedMessageID = sessionSummary.LastSummarizedMessageID
+	m.LastSummarizedMessageAt = sessionSummary.LastSummarizedMessageAt
+	m.CreatedAt = sessionSummary.CreatedAt
+	m.UpdatedAt = sessionSummary.UpdatedAt
+}
+
+// ToConversationMessage 将数据库模型转换为业务模型
+func (m *ConversationMessageModel) ToConversationMessage() *builtin.ConversationMessage {
+	// Parts 现在是自定义类型，可以直接转换为 []schema.MessageInputPart
+	parts := []schema.MessageInputPart(m.Parts)
+	content := m.Content
+
+	return &builtin.ConversationMessage{
+		ID:        m.ID,
+		SessionID: m.SessionID,
+		UserID:    m.UserID,
+		Role:      m.Role,
+		Content:   content,
+		Parts:     parts,
+		Thinking:  m.Thinking,
+		Tools:     []builtin.ToolTrace(m.Tools),
+		CreatedAt: m.CreatedAt,
+	}
+}
+
+// FromConversationMessage 将业务模型转换为数据库模型
+func (m *ConversationMessageModel) FromConversationMessage(message *builtin.ConversationMessage) {
+	m.ID = message.ID
+	m.SessionID = message.SessionID
+	m.UserID = message.UserID
+	m.Role = message.Role
+	m.Content = message.Content
+	m.Parts = message.Parts
+	m.Thinking = message.Thinking
+	m.Tools = MessageTools(message.Tools)
+	m.CreatedAt = message.CreatedAt
+}
+
+// ToUserMemoryEvent 将数据库模型转为业务模型
+func (m *UserMemoryEventModel) ToUserMemoryEvent() *builtin.UserMemoryEvent {
+	keywords := []string(m.Keywords)
+	return &builtin.UserMemoryEvent{
+		ID:        m.ID,
+		UserID:    m.UserID,
+		Type:      m.Type,
+		EventDate: m.EventDate,
+		Keywords:  keywords,
+		Summary:   m.Summary,
+		CreatedAt: m.CreatedAt,
+	}
+}
+
+// FromUserMemoryEvent 业务模型 -> 数据库模型
+func (m *UserMemoryEventModel) FromUserMemoryEvent(event *builtin.UserMemoryEvent) {
+	m.ID = event.ID
+	m.UserID = event.UserID
+	m.Type = event.Type
+	m.EventDate = event.EventDate
+	m.Keywords = StringSlice(event.Keywords)
+	m.Summary = event.Summary
+	m.CreatedAt = event.CreatedAt
+}

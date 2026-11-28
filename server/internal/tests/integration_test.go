@@ -22,6 +22,7 @@ import (
 	"server/internal/bootstrap"
 	"server/internal/config"
 	"server/internal/model"
+	"server/internal/tts"
 )
 
 // newApp 为每个用例装配独立临时数据目录，避免 SQLite 状态相互影响。
@@ -165,15 +166,23 @@ func TestEinoStreamingAndPersistence(t *testing.T) {
 func TestEinoReActToolCalling(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Tools    []any
-			Messages []struct{ Role string }
+		body := readUpstreamChatRequest(t, r)
+		if body == nil {
+			return
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
 		w.Header().Set("Content-Type", "text/event-stream")
 		if calls.Add(1) == 1 {
-			if len(body.Tools) != 4 {
-				t.Errorf("expected four tools, got %d", len(body.Tools))
+			advertised := make(map[string]bool, len(body.Tools))
+			for _, tool := range body.Tools {
+				advertised[tool.Function.Name] = true
+			}
+			for _, name := range []string{
+				"current_time", "set_expression", "calculate", "get_character_actions", "play_motion",
+				"set_model_expression", "update_character", "search_memories", "save_memory",
+			} {
+				if !advertised[name] {
+					t.Errorf("request did not advertise %s", name)
+				}
 			}
 			chunk(w, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "expression_1", "type": "function", "function": map[string]any{"name": "set_expression", "arguments": `{"expression":"happy"}`}}}}, nil)
 			chunk(w, map[string]any{}, "tool_calls")
@@ -419,8 +428,11 @@ func TestSpeechProxy(t *testing.T) {
 			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Input != "朗读测试" || req.Model != "tts-1" {
 				t.Error("invalid TTS payload")
 			}
+			if req.Voice != "alloy" && req.Voice != "nova" {
+				t.Errorf("unexpected voice %q", req.Voice)
+			}
 			w.Header().Set("Content-Type", "audio/mpeg")
-			io.WriteString(w, "test-audio")
+			io.WriteString(w, "test-audio-"+req.Voice)
 		default:
 			http.NotFound(w, r)
 		}
@@ -448,8 +460,84 @@ func TestSpeechProxy(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 	w = request(t, app, "POST", "/speech/synthesize", map[string]string{"text": "朗读测试"})
-	if w.Code != 200 || w.Body.String() != "test-audio" || w.Header().Get("Content-Type") != "audio/mpeg" {
+	if w.Code != 200 || w.Body.String() != "test-audio-alloy" || w.Header().Get("Content-Type") != "audio/mpeg" {
 		t.Fatal(w.Body.String())
+	}
+	w = request(t, app, "PUT", "/characters/shizuku", map[string]any{
+		"name": "Shizuku", "speech": map[string]any{"mode": "api", "voice": "nova"},
+	})
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	for _, tc := range []struct{ id, voice string }{{"mao", "alloy"}, {"shizuku", "nova"}} {
+		w = request(t, app, "POST", "/speech/synthesize", map[string]string{"text": "朗读测试", "character_id": tc.id})
+		if w.Code != 200 || w.Body.String() != "test-audio-"+tc.voice {
+			t.Fatalf("role %s: %d %s", tc.id, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestLocalTTSCatalogAndSettings(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.DataDir = t.TempDir()
+	cfg.TTSDir = t.TempDir()
+	app, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Close)
+	response := request(t, app, "GET", "/speech/tts/models", nil)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"runtime_installed":false`) || !strings.Contains(response.Body.String(), `"id":"kokoro"`) {
+		t.Fatalf("unexpected catalog: %d %s", response.Code, response.Body.String())
+	}
+	localRequest := map[string]any{"text": "朗读测试", "model": "kokoro", "speaker": 0, "speed": 1}
+	response = request(t, app, "POST", "/speech/tts/synthesize", localRequest)
+	if response.Code != 400 {
+		t.Fatalf("invalid speaker: %d %s", response.Code, response.Body.String())
+	}
+	localRequest["speaker"] = 45
+	response = request(t, app, "POST", "/speech/tts/synthesize", localRequest)
+	if response.Code != 503 {
+		t.Fatalf("missing model: %d %s", response.Code, response.Body.String())
+	}
+	cfg.Speech.LocalTTS = &tts.Options{Model: "kokoro", Speaker: 45, Speed: 1.25}
+	response = request(t, app, "PUT", "/settings", cfg.Settings)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"local_tts":{"model":"kokoro","speaker":45,"speed":1.25}`) {
+		t.Fatalf("save local settings: %d %s", response.Code, response.Body.String())
+	}
+	response = request(t, app, "POST", "/speech/synthesize", map[string]any{"text": "朗读测试"})
+	if response.Code != 503 {
+		t.Fatalf("saved local TTS was not selected: %d %s", response.Code, response.Body.String())
+	}
+	cfg.Speech.LocalTTS = nil
+	response = request(t, app, "PUT", "/settings", cfg.Settings)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"local_tts":null`) {
+		t.Fatalf("clear local settings: %d %s", response.Code, response.Body.String())
+	}
+	character := model.Character{Name: "Mao", Speech: &model.CharacterSpeech{
+		Mode: "local", LocalTTS: &tts.Options{Model: "kokoro", Speaker: 45, Speed: 1.25},
+	}}
+	response = request(t, app, "PUT", "/characters/mao", character)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"speech":{"mode":"local"`) {
+		t.Fatalf("save role voice: %d %s", response.Code, response.Body.String())
+	}
+	response = request(t, app, "PUT", "/characters/mao", map[string]string{"name": "Mao"})
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"speech":{"mode":"local"`) {
+		t.Fatalf("updating profile lost voice: %d %s", response.Code, response.Body.String())
+	}
+	for _, tc := range []struct {
+		id     string
+		status int
+	}{{"mao", 503}, {"shizuku", 400}, {"missing", 404}} {
+		response = request(t, app, "POST", "/speech/synthesize", map[string]string{"text": "朗读测试", "character_id": tc.id})
+		if response.Code != tc.status {
+			t.Fatalf("role %s: %d %s", tc.id, response.Code, response.Body.String())
+		}
+	}
+	character.Speech = &model.CharacterSpeech{Mode: "inherit"}
+	response = request(t, app, "PUT", "/characters/mao", character)
+	if response.Code != 200 || strings.Contains(response.Body.String(), `"speech"`) {
+		t.Fatalf("reset role voice: %d %s", response.Code, response.Body.String())
 	}
 }
 
