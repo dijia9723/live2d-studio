@@ -115,7 +115,9 @@ export default function SettingsPage({ modelOnly = false }: { modelOnly?: boolea
   const [clearSpeech, setClearSpeech] = useState(false)
   const [showMemories, setShowMemories] = useState(false)
   const character = s.characters.find((item) => item.id === s.characterID) ?? s.characters[0]
-  const characterVoicePath = character ? `/characters?voice=${encodeURIComponent(character.id)}` : '/characters'
+  const characterVoicePath = character
+    ? `/characters/${encodeURIComponent(character.id)}/edit?tab=speech`
+    : '/characters'
   // 脏检查：勾选清除密钥或任一设置分组变化都视为有未保存更改。
   const dirty =
     clearLLM ||

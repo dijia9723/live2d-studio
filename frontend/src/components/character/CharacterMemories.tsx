@@ -1,7 +1,8 @@
 /**
- * 文件职责：角色记忆管理弹窗。
+ * 文件职责：角色记忆管理。
  * 支持从聊天消息带入草稿、新增/编辑/删除记忆以及搜索过滤；
  * 数据通过 AbortController 在角色切换或重试时取消旧请求。
+ * 默认以弹窗展示，embedded 时只渲染内容区域，供模型工作台内嵌使用。
  */
 import { useEffect, useRef, useState } from 'react'
 import { Brain, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
@@ -16,16 +17,19 @@ const maxLength = 300
 /**
  * @param character 当前管理记忆的角色
  * @param initialDraft 从聊天消息带入的初始内容（存在时聚焦输入框）
- * @param onClose 关闭弹窗回调
+ * @param onClose 关闭弹窗回调（嵌入模式下可省略）
+ * @param embedded 是否嵌入其他页面，只渲染内容区域
  */
 export default function CharacterMemories({
   character,
   initialDraft,
   onClose,
+  embedded = false,
 }: {
   character: Character
   initialDraft?: string
-  onClose: () => void
+  onClose?: () => void
+  embedded?: boolean
 }) {
   const input = useRef<HTMLTextAreaElement>(null)
   const [memories, setMemories] = useState<CharacterMemory[] | null>(null)
@@ -71,7 +75,7 @@ export default function CharacterMemories({
 
   const close = () => {
     if (busy) return
-    onClose()
+    onClose?.()
   }
 
   const edit = (memory: CharacterMemory) => {
@@ -121,6 +125,200 @@ export default function CharacterMemories({
     }
   }
 
+  const panel = (
+    <>
+      {!memories && (
+        <div className="memory-initial">
+          {error ? (
+            <>
+              <p className="memory-error" role="alert">
+                {error}
+              </p>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => {
+                  setError('')
+                  setRequest((value) => value + 1)
+                }}
+              >
+                重新加载
+              </button>
+            </>
+          ) : (
+            <p role="status">
+              <LoaderCircle className="spin" size={16} />
+              正在读取记忆…
+            </p>
+          )}
+        </div>
+      )}
+      {memories && matchingMemories && (
+        <div className="memory-content">
+          <form
+            className="memory-form"
+            aria-busy={busy && !removingID}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void save()
+            }}
+          >
+            {fromChat && (
+              <p className="memory-draft-source" id="memory-draft-source">
+                已填入选中的聊天消息。确认或修改后保存。
+              </p>
+            )}
+            <label className="form-field">
+              {editing ? '编辑记忆' : '添加记忆'}
+              <Textarea
+                ref={input}
+                rows={5}
+                maxLength={fromChat ? undefined : maxLength * 2}
+                placeholder="例如，我更喜欢简短的回答。"
+                aria-describedby={fromChat ? 'memory-draft-source memory-length' : 'memory-length'}
+                aria-invalid={length > maxLength}
+                disabled={busy}
+                value={draft}
+                onChange={(event) => {
+                  const content = event.target.value
+                  if (editing) setEditing({ ...editing, content })
+                  else setNewDraft({ ...newDraft, content })
+                }}
+              />
+            </label>
+            <div className="memory-actions">
+              <small id="memory-length" className={length > maxLength ? 'memory-limit' : 'muted'}>
+                {length} / {maxLength} 字符{length > maxLength ? '，请缩短内容' : ''}
+              </small>
+              {editing && (
+                <button
+                  type="button"
+                  className="button ghost"
+                  disabled={busy}
+                  onClick={() => setEditing(null)}
+                >
+                  取消编辑
+                </button>
+              )}
+              <button
+                type="submit"
+                className="button primary"
+                disabled={busy || Boolean(removingID) || !length || length > maxLength}
+              >
+                {busy && !removingID ? (
+                  <LoaderCircle className="spin" size={15} />
+                ) : (
+                  !editing && <Plus size={15} />
+                )}
+                {editing ? '保存修改' : '添加记忆'}
+              </button>
+            </div>
+            <p className="memory-status" role="status">
+              {status}
+            </p>
+          </form>
+          <section className="memory-library" aria-labelledby="memory-library-title">
+            <div className="memory-library-heading">
+              <h3 id="memory-library-title">已保存</h3>
+              <span>
+                {query ? `${matchingMemories.length} / ${memories.length}` : memories.length} 条
+              </span>
+            </div>
+            {memories.length > 3 || search ? (
+              <label className="memory-search">
+                <Search size={15} aria-hidden="true" />
+                <input
+                  type="search"
+                  aria-label="搜索记忆"
+                  placeholder="搜索记忆"
+                  value={search}
+                  disabled={Boolean(removingID)}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+            ) : null}
+            {matchingMemories.length ? (
+              <ul className="memory-list" aria-label="已保存的记忆">
+                {matchingMemories.map((memory) => (
+                  <li className={editing?.id === memory.id ? 'editing' : undefined} key={memory.id}>
+                    <div className="memory-item-content">
+                      <p id={`memory-${memory.id}`}>{memory.content}</p>
+                      <time dateTime={memory.updated_at} title="最后更新日期">
+                        {shortDate(memory.updated_at)}
+                      </time>
+                    </div>
+                    {removingID === memory.id ? (
+                      <div className="memory-confirm">
+                        <span>删除这条记忆？</span>
+                        <button
+                          type="button"
+                          className="button ghost"
+                          autoFocus
+                          disabled={busy}
+                          onClick={() => setRemovingID('')}
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          className="button danger"
+                          disabled={busy}
+                          onClick={() => void remove(memory.id)}
+                        >
+                          {busy ? '删除中…' : '删除'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="memory-item-actions">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          title="编辑这条记忆"
+                          aria-label="编辑这条记忆"
+                          aria-describedby={`memory-${memory.id}`}
+                          disabled={busy || Boolean(removingID)}
+                          onClick={() => edit(memory)}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          title="删除这条记忆"
+                          aria-label="删除这条记忆"
+                          aria-describedby={`memory-${memory.id}`}
+                          disabled={busy || Boolean(removingID)}
+                          onClick={() => {
+                            setRemovingID(memory.id)
+                            setError('')
+                            setStatus('')
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="memory-empty">{query ? '未找到匹配的记忆。' : '还没有保存的记忆。'}</p>
+            )}
+          </section>
+          {error && (
+            <p className="memory-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  )
+
+  if (embedded) {
+    return <div className="character-memories character-memory-embedded">{panel}</div>
+  }
+
   return (
     <Dialog
       open
@@ -157,198 +355,7 @@ export default function CharacterMemories({
             <X size={20} />
           </button>
         </header>
-        {!memories && (
-          <div className="memory-initial">
-            {error ? (
-              <>
-                <p className="memory-error" role="alert">
-                  {error}
-                </p>
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => {
-                    setError('')
-                    setRequest((value) => value + 1)
-                  }}
-                >
-                  重新加载
-                </button>
-              </>
-            ) : (
-              <p role="status">
-                <LoaderCircle className="spin" size={16} />
-                正在读取记忆…
-              </p>
-            )}
-          </div>
-        )}
-        {memories && matchingMemories && (
-          <div className="memory-content">
-            <form
-              className="memory-form"
-              aria-busy={busy && !removingID}
-              onSubmit={(event) => {
-                event.preventDefault()
-                void save()
-              }}
-            >
-              {fromChat && (
-                <p className="memory-draft-source" id="memory-draft-source">
-                  已填入选中的聊天消息。确认或修改后保存。
-                </p>
-              )}
-              <label className="form-field">
-                {editing ? '编辑记忆' : '添加记忆'}
-                <Textarea
-                  ref={input}
-                  rows={5}
-                  maxLength={fromChat ? undefined : maxLength * 2}
-                  placeholder="例如，我更喜欢简短的回答。"
-                  aria-describedby={
-                    fromChat ? 'memory-draft-source memory-length' : 'memory-length'
-                  }
-                  aria-invalid={length > maxLength}
-                  disabled={busy}
-                  value={draft}
-                  onChange={(event) => {
-                    const content = event.target.value
-                    if (editing) setEditing({ ...editing, content })
-                    else setNewDraft({ ...newDraft, content })
-                  }}
-                />
-              </label>
-              <div className="memory-actions">
-                <small id="memory-length" className={length > maxLength ? 'memory-limit' : 'muted'}>
-                  {length} / {maxLength} 字符{length > maxLength ? '，请缩短内容' : ''}
-                </small>
-                {editing && (
-                  <button
-                    type="button"
-                    className="button ghost"
-                    disabled={busy}
-                    onClick={() => setEditing(null)}
-                  >
-                    取消编辑
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  className="button primary"
-                  disabled={busy || Boolean(removingID) || !length || length > maxLength}
-                >
-                  {busy && !removingID ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    !editing && <Plus size={15} />
-                  )}
-                  {editing ? '保存修改' : '添加记忆'}
-                </button>
-              </div>
-              <p className="memory-status" role="status">
-                {status}
-              </p>
-            </form>
-            <section className="memory-library" aria-labelledby="memory-library-title">
-              <div className="memory-library-heading">
-                <h3 id="memory-library-title">已保存</h3>
-                <span>
-                  {query ? `${matchingMemories.length} / ${memories.length}` : memories.length} 条
-                </span>
-              </div>
-              {memories.length > 3 || search ? (
-                <label className="memory-search">
-                  <Search size={15} aria-hidden="true" />
-                  <input
-                    type="search"
-                    aria-label="搜索记忆"
-                    placeholder="搜索记忆"
-                    value={search}
-                    disabled={Boolean(removingID)}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </label>
-              ) : null}
-              {matchingMemories.length ? (
-                <ul className="memory-list" aria-label="已保存的记忆">
-                  {matchingMemories.map((memory) => (
-                    <li
-                      className={editing?.id === memory.id ? 'editing' : undefined}
-                      key={memory.id}
-                    >
-                      <div className="memory-item-content">
-                        <p id={`memory-${memory.id}`}>{memory.content}</p>
-                        <time dateTime={memory.updated_at} title="最后更新日期">
-                          {shortDate(memory.updated_at)}
-                        </time>
-                      </div>
-                      {removingID === memory.id ? (
-                        <div className="memory-confirm">
-                          <span>删除这条记忆？</span>
-                          <button
-                            type="button"
-                            className="button ghost"
-                            autoFocus
-                            disabled={busy}
-                            onClick={() => setRemovingID('')}
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            className="button danger"
-                            disabled={busy}
-                            onClick={() => void remove(memory.id)}
-                          >
-                            {busy ? '删除中…' : '删除'}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="memory-item-actions">
-                          <button
-                            type="button"
-                            className="icon-button"
-                            title="编辑这条记忆"
-                            aria-label="编辑这条记忆"
-                            aria-describedby={`memory-${memory.id}`}
-                            disabled={busy || Boolean(removingID)}
-                            onClick={() => edit(memory)}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            title="删除这条记忆"
-                            aria-label="删除这条记忆"
-                            aria-describedby={`memory-${memory.id}`}
-                            disabled={busy || Boolean(removingID)}
-                            onClick={() => {
-                              setRemovingID(memory.id)
-                              setError('')
-                              setStatus('')
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="memory-empty">
-                  {query ? '未找到匹配的记忆。' : '还没有保存的记忆。'}
-                </p>
-              )}
-            </section>
-            {error && (
-              <p className="memory-error" role="alert">
-                {error}
-              </p>
-            )}
-          </div>
-        )}
+        {panel}
       </DialogContent>
     </Dialog>
   )

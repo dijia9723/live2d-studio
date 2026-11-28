@@ -41,10 +41,10 @@ import {
   VolumeX,
   X,
 } from 'lucide-react'
-import Live2DStage from '../../components/stage/Live2DStage'
 import CharacterMemories from '../../components/character/CharacterMemories'
 import MessageToolRuns from '../../components/chat/MessageToolRuns'
-import type { Live2DCapabilities, Live2DStageHandle } from '../../components/stage/Live2DStage'
+import { useSharedLive2DStage } from '../../components/stage/SharedLive2DStage'
+import type { Live2DCapabilities } from '../../components/stage/Live2DStage'
 import StageSettingsPanel from '../../components/stage/StageSettingsPanel'
 import StageBackground from '../../components/stage/StageBackground'
 import StageEffects from '../../components/stage/StageEffects'
@@ -122,9 +122,17 @@ export default function StudioPage() {
   const showStageControls = s.controlsVisible && stageOutput.state.phase !== 'live' && stageOutput.state.phase !== 'starting'
   const dock = useRef<HTMLElement>(null)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const stageRef = useRef<Live2DStageHandle>(null)
   const [capabilities, setCapabilities] = useState<Live2DCapabilities | null>(null)
   const [interaction, setInteraction] = useState('')
+  // 与模型工作台共享同一个舞台；本页只注册画布落点。
+  const { stageRef, stageSlotRef } = useSharedLive2DStage({
+    enabled: !!character,
+    modelPath: character?.model_path,
+    actionNames: character?.action_names,
+    cameraSample: camera.sample,
+    onCapabilitiesChange: setCapabilities,
+    onInteraction: setInteraction,
+  })
   const [rightPanel, setRightPanel] = useState<WorkspacePanel>(
     () => (search.get('panel') === 'live' ? 'live' : 'chat'),
   )
@@ -500,17 +508,7 @@ export default function StudioPage() {
                   </div>
                 </div>
               )}
-              <div className="model-position">
-                <Live2DStage
-                  ref={stageRef}
-                  modelPath={character.model_path}
-                  actionNames={character.action_names}
-                  cameraSample={camera.sample}
-                  stagePlacement
-                  onCapabilitiesChange={setCapabilities}
-                  onInteraction={setInteraction}
-                />
-              </div>
+              <div className="model-position" ref={stageSlotRef} />
               <StageEffects effects={s.effects} />
               <StageOverlay />
               <CanvasLayer

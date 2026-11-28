@@ -451,6 +451,21 @@ select:focus {
   position: absolute;
   inset: 132px 7px 50px;
 }
+/* 跨页面共享舞台：画布节点在页面落点之间移动，不在路由切换时销毁。 */
+.shared-live2d-root {
+  position: absolute;
+  inset: 0;
+}
+.shared-live2d-parking {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
 .live2d-host {
   position: relative;
   width: 100%;

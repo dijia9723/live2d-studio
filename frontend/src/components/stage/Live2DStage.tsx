@@ -83,6 +83,9 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
   const capabilities = useRef(emptyCapabilities())
   const namesRef = useRef(actionNames)
   namesRef.current = actionNames
+  // 摄像头样本用 ref 读取，切换页面或开关摄像头时不重建模型与画布。
+  const cameraSampleRef = useRef(cameraSample)
+  cameraSampleRef.current = cameraSample
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -340,8 +343,8 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
         )
         callbacks.current.onCapabilitiesChange?.(capabilities.current)
         const lips = lipSyncParameters(bindings, modern?.motionManager.lipSyncIds)
-        const driveCamera =
-          core && cameraSample && !isolated ? createCameraParameterDriver(bindings) : undefined
+        // 驱动始终按模型参数创建；没有有效摄像头样本时权重会自然淡出。
+        const driveCamera = core && !isolated ? createCameraParameterDriver(bindings) : undefined
         let lastCameraFrame = performance.now()
         const applyCameraParameter = (index: number, value: number, weight: number) =>
           core?.setParameterValueByIndex(index, value, weight)
@@ -366,9 +369,9 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
           if (core && !nativeExpressionRef.current)
             for (const p of moodParameters(moodRef.current, bindings))
               core.setParameterValueByIndex(p.index, p.value)
-          if (driveCamera && cameraSample) {
+          if (driveCamera) {
             const now = performance.now()
-            const tracked = currentCameraSample(cameraSample.current, now)
+            const tracked = currentCameraSample(cameraSampleRef.current?.current ?? null, now)
             if (tracked) internal.focusController.focus(0, 0, true)
             driveCamera(tracked, now - lastCameraFrame, applyCameraParameter)
             lastCameraFrame = now
@@ -393,8 +396,7 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
               if (
                 !pixi ||
                 (driveCamera &&
-                  cameraSample &&
-                  currentCameraSample(cameraSample.current, performance.now()))
+                  currentCameraSample(cameraSampleRef.current?.current ?? null, performance.now()))
               )
                 return
               // 将画布坐标换算到 pixi 屏幕坐标，驱动角色视线跟随。
@@ -464,7 +466,11 @@ const Live2DStage = forwardRef<Live2DStageHandle, Props>(function Live2DStage(
       layoutRef.current = () => {}
       pixi?.destroy(true, { children: true, texture: false, baseTexture: false })
     }
-  }, [path, miniature, isolated, revision, cameraSample, stagePlacement, tapActions])
+  }, [path, miniature, isolated, revision, stagePlacement, tapActions])
+  // 共享舞台跨页面复用时回调会更换，重放当前能力，避免新页面停留在未加载状态。
+  useEffect(() => {
+    onCapabilitiesChange?.(capabilities.current)
+  }, [onCapabilitiesChange])
   // 模型位置或缩放变化时只重排布局。
   useEffect(() => {
     layoutRef.current()

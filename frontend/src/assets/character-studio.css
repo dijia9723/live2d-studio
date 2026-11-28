@@ -558,6 +558,50 @@
   white-space: nowrap;
 }
 
+.character-studio-naming {
+  align-self: flex-start;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* 右侧面板较窄：语音工作台与记忆列表改为单列，避免横向挤压。 */
+.character-studio-speech .tts-workbench {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.character-studio-speech .character-voice-mode select,
+.character-studio-speech .character-voice-mode [data-slot='select-trigger'] {
+  width: 100%;
+}
+
+.character-studio-speech textarea {
+  min-height: 110px;
+}
+
+.character-studio-memory .memory-content {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding: 0;
+}
+
+.character-studio-memory .memory-library {
+  padding: 14px 0 0;
+  border-left: 0;
+  border-top: 1px solid var(--border);
+}
+
+.character-studio-memory .memory-list {
+  max-height: none;
+}
+
+.character-studio-memory .memory-initial {
+  padding: 0;
+}
+
+.character-studio-memory .memory-form .form-field textarea {
+  min-height: 100px;
+}
+
 .character-studio-missing {
   align-items: center;
   justify-content: center;

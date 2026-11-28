@@ -2,13 +2,14 @@
  * 页面：角色模型工作室（角色库 → 编辑子页面）。
  * 左侧是大尺寸实时舞台，右侧按标签页可视化配置：
  * 播放模型全部动作（支持自动轮播与快捷键）、切换情绪与原生表情、
- * 调整背景/特效/叠加层，以及编辑角色人设（含未保存提醒）。
+ * 调整背景/特效/叠加层，并统一编辑角色人设、语音与跨会话记忆（含未保存提醒）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowUpRight,
+  Brain,
   Check,
   Image as ImageIcon,
   LoaderCircle,
@@ -20,11 +21,16 @@ import {
   Shuffle,
   Smile,
   Sparkles,
+  Tags,
   UserRound,
+  Volume2,
   X,
 } from 'lucide-react'
-import Live2DStage from '../components/stage/Live2DStage'
-import type { Live2DCapabilities, Live2DStageHandle } from '../components/stage/Live2DStage'
+import CharacterActionNames from '../components/character/CharacterActionNames'
+import CharacterMemories from '../components/character/CharacterMemories'
+import CharacterSpeechFields from '../components/character/CharacterSpeechFields'
+import { useSharedLive2DStage } from '../components/stage/SharedLive2DStage'
+import type { Live2DCapabilities } from '../components/stage/Live2DStage'
 import StageBackground from '../components/stage/StageBackground'
 import StageEffects, { effectPresets } from '../components/stage/StageEffects'
 import StageOverlay from '../components/stage/StageOverlay'
@@ -41,7 +47,7 @@ import {
 import { Switch } from '../components/ui/switch'
 import { api } from '../api/client'
 import { notify, useStudio } from '../store/studio'
-import type { Character } from '../types/api'
+import type { Character, CharacterSpeech } from '../types/api'
 
 const moods = [
   { key: 'neutral', label: '自然' },
@@ -50,10 +56,13 @@ const moods = [
   { key: 'surprised', label: '惊讶' },
 ]
 
+// 右侧面板宽度有限，标签使用短名称，完整名称放在 title 中。
 const tabs = [
-  { id: 'actions', name: '动作与表情', Icon: Smile },
-  { id: 'stage', name: '舞台外观', Icon: Sparkles },
-  { id: 'profile', name: '角色人设', Icon: UserRound },
+  { id: 'actions', name: '动作', title: '动作与表情', Icon: Smile },
+  { id: 'profile', name: '配置', title: '角色配置', Icon: UserRound },
+  { id: 'speech', name: '语音', title: '角色语音', Icon: Volume2 },
+  { id: 'memories', name: '记忆', title: '记忆', Icon: Brain },
+  { id: 'stage', name: '舞台', title: '舞台外观', Icon: Sparkles },
 ] as const
 
 type TabID = (typeof tabs)[number]['id']
@@ -61,18 +70,33 @@ type TabID = (typeof tabs)[number]['id']
 export default function CharacterStudioPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const s = useStudio()
   const character = s.characters.find((item) => item.id === id)
-  const [tab, setTab] = useState<TabID>('actions')
-  const stageRef = useRef<Live2DStageHandle>(null)
+  // 支持从设置页等入口通过 ?tab=speech 直接定位到某个配置标签。
+  const requestedTab = params.get('tab')
+  const [tab, setTab] = useState<TabID>(() =>
+    tabs.some((item) => item.id === requestedTab) ? (requestedTab as TabID) : 'actions',
+  )
   const [capabilities, setCapabilities] = useState<Live2DCapabilities | null>(null)
   const [interaction, setInteraction] = useState('')
+  // 复用首页工作台的同一个舞台，切换页面时不会重新加载模型。
+  const { stageRef, stageSlotRef } = useSharedLive2DStage({
+    enabled: !!character,
+    modelPath: character?.model_path,
+    actionNames: character?.action_names,
+    onCapabilitiesChange: setCapabilities,
+    onInteraction: setInteraction,
+  })
   const [activeMotion, setActiveMotion] = useState('')
   const [expression, setExpression] = useState('')
   const [group, setGroup] = useState('all')
   const [autoPlay, setAutoPlay] = useState(false)
   const [autoInterval, setAutoInterval] = useState(5)
   const [profileDirty, setProfileDirty] = useState(false)
+  const [speechDirty, setSpeechDirty] = useState(false)
+  const [namingOpen, setNamingOpen] = useState(false)
+  const dirty = profileDirty || speechDirty
   // 用 ref 保存最新的随机播放函数，供定时器与快捷键调用，避免反复重建。
   const playRandomRef = useRef<() => void>(() => {})
   const background = s.sceneAssets.find((item) => item.id === s.backgroundAssetID)
@@ -118,16 +142,16 @@ export default function CharacterStudioPage() {
     }, autoInterval * 1000)
     return () => clearInterval(timer)
   }, [autoPlay, autoInterval, ready])
-  // 人设存在未保存内容时，关闭窗口前给出浏览器原生提示。
+  // 人设或语音存在未保存内容时，关闭窗口前给出浏览器原生提示。
   useEffect(() => {
-    if (!profileDirty) return
+    if (!dirty) return
     const guard = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
-  }, [profileDirty])
+  }, [dirty])
 
   if (!character) {
     return (
@@ -175,9 +199,9 @@ export default function CharacterStudioPage() {
     stageRef.current?.reset()
     stageRef.current?.resetModelView()
   }
-  // 离开前确认未保存的人设；返回 false 表示用户取消离开。
+  // 离开前确认未保存的配置；返回 false 表示用户取消离开。
   const confirmLeave = () =>
-    !profileDirty || window.confirm('角色人设还有未保存的更改，确定离开吗？')
+    !dirty || window.confirm('角色配置还有未保存的更改，确定离开吗？')
   const startChat = () => {
     if (!confirmLeave()) return
     useStudio.getState().selectCharacter(character.id)
@@ -207,7 +231,7 @@ export default function CharacterStudioPage() {
           </Link>
           <div>
             <h1>{character.name}</h1>
-            <p>模型工作室 · 在舞台上试听动作、表情，并配置背景与氛围。</p>
+            <p>模型工作台 · 在舞台上试听动作表情，并统一管理人设、语音、记忆与舞台外观。</p>
           </div>
         </div>
         <button className="button primary character-studio-chat" onClick={startChat}>
@@ -235,17 +259,7 @@ export default function CharacterStudioPage() {
                 </span>
               </div>
             </div>
-            <div className="model-position">
-              <Live2DStage
-                key={character.model_path}
-                ref={stageRef}
-                modelPath={character.model_path}
-                actionNames={character.action_names}
-                stagePlacement
-                onCapabilitiesChange={setCapabilities}
-                onInteraction={setInteraction}
-              />
-            </div>
+            <div className="model-position" ref={stageSlotRef} />
             <StageEffects effects={s.effects} />
             <StageOverlay />
             <div className="stage-bottom">
@@ -321,12 +335,13 @@ export default function CharacterStudioPage() {
               event.currentTarget.querySelectorAll('button')[next]?.focus()
             }}
           >
-            {tabs.map(({ id: tabID, name, Icon }) => (
+            {tabs.map(({ id: tabID, name, title, Icon }) => (
               <button
                 key={tabID}
                 id={`character-studio-tab-${tabID}`}
                 role="tab"
                 tabIndex={tab === tabID ? 0 : -1}
+                title={title}
                 aria-selected={tab === tabID}
                 aria-controls={`character-studio-panel-${tabID}`}
                 onClick={() => setTab(tabID)}
@@ -335,9 +350,10 @@ export default function CharacterStudioPage() {
                 {name}
                 {tabID === 'actions' && ready && <span>{motionCount}</span>}
                 {tabID === 'stage' && activeEffects > 0 && <span>{activeEffects}</span>}
-                {tabID === 'profile' && profileDirty && (
+                {(tabID === 'profile' && profileDirty) ||
+                (tabID === 'speech' && speechDirty) ? (
                   <i className="character-studio-dirty-dot" aria-label="有未保存的更改" />
-                )}
+                ) : null}
               </button>
             ))}
           </div>
@@ -521,6 +537,21 @@ export default function CharacterStudioPage() {
               </div>
             </section>
 
+            <section className="character-studio-section">
+              <div className="character-controls-label">
+                <span>动作与表情命名</span>
+                <small>舞台列表与智能体共用</small>
+              </div>
+              <button
+                type="button"
+                className="button ghost character-studio-naming"
+                onClick={() => setNamingOpen(true)}
+              >
+                <Tags size={14} />
+                重命名动作与表情
+              </button>
+            </section>
+
             <button
               type="button"
               className="character-reset-button"
@@ -617,9 +648,35 @@ export default function CharacterStudioPage() {
             <ProfileEditor character={character} onDirtyChange={setProfileDirty} />
           </div>
 
+          <div
+            className="character-studio-scroll"
+            role="tabpanel"
+            id="character-studio-panel-speech"
+            aria-labelledby="character-studio-tab-speech"
+            hidden={tab !== 'speech'}
+          >
+            <SpeechEditor
+              character={character}
+              active={tab === 'speech'}
+              onDirtyChange={setSpeechDirty}
+            />
+          </div>
+
+          <div
+            className="character-studio-scroll"
+            role="tabpanel"
+            id="character-studio-panel-memories"
+            aria-labelledby="character-studio-tab-memories"
+            hidden={tab !== 'memories'}
+          >
+            <div className="character-studio-memory">
+              <CharacterMemories character={character} embedded />
+            </div>
+          </div>
+
           <div className="stage-settings-footer">
             <span className="status-dot" />
-            舞台与动作更改即时预览
+            舞台即时预览 · 配置与记忆按需保存
           </div>
         </aside>
       </div>
@@ -630,6 +687,9 @@ export default function CharacterStudioPage() {
         onReset={reset}
         onNatural={() => void applyExpression(null)}
       />
+      {namingOpen && (
+        <CharacterActionNames character={character} onClose={() => setNamingOpen(false)} />
+      )}
     </div>
   )
 }
@@ -686,7 +746,7 @@ function StageShortcuts({
   return null
 }
 
-/** 角色人设表单：按字节校验名称与提示词，保存后同步到全局角色列表。 */
+/** 角色配置表单：按字节校验名称与提示词，保存后同步到全局角色列表。 */
 function ProfileEditor({
   character,
   onDirtyChange,
@@ -722,7 +782,8 @@ function ProfileEditor({
     setSaving(true)
     setError('')
     try {
-      const savedCharacter = await api.saveCharacter({ ...form, name })
+      // 只提交人设字段，避免用本地旧语音配置覆盖「角色语音」标签的保存结果。
+      const savedCharacter = await api.saveCharacter({ ...form, name, speech: undefined })
       const state = useStudio.getState()
       state.patch({
         characters: state.characters.map((item) =>
@@ -731,9 +792,9 @@ function ProfileEditor({
       })
       setForm(savedCharacter)
       setSaved(true)
-      notify('角色人设已保存')
+      notify('角色配置已保存')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存人设失败')
+      setError(cause instanceof Error ? cause.message : '保存角色配置失败')
     } finally {
       setSaving(false)
     }
@@ -819,13 +880,120 @@ function ProfileEditor({
           <small className="character-studio-save-hint">Ctrl/⌘ + S</small>
           <button type="submit" className="button primary" disabled={saving || !valid || !dirty}>
             {saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
-            保存人设
+            保存配置
           </button>
         </div>
       </div>
       <div className="character-studio-meta">
         <ImageIcon size={14} />
         <span title={character.model_path}>{character.model_path.split('/').slice(-2).join('/')}</span>
+      </div>
+    </form>
+  )
+}
+
+/** 比较两个语音配置是否等价；inherit 视为与另一配置的 mode 无关的值相等。 */
+function sameSpeech(left?: CharacterSpeech, right?: CharacterSpeech) {
+  if ((left?.mode ?? 'inherit') !== (right?.mode ?? 'inherit')) return false
+  if (left?.mode === 'local' && right?.mode === 'local') {
+    return (
+      left.local_tts?.model === right.local_tts?.model &&
+      left.local_tts?.speaker === right.local_tts?.speaker &&
+      left.local_tts?.speed === right.local_tts?.speed
+    )
+  }
+  const leftVoice = left && 'voice' in left ? left.voice : undefined
+  const rightVoice = right && 'voice' in right ? right.voice : undefined
+  return (leftVoice ?? '') === (rightVoice ?? '')
+}
+
+/** 角色语音表单：保存朗读方式与音色，保存后同步到全局角色列表。 */
+function SpeechEditor({
+  character,
+  active,
+  onDirtyChange,
+}: {
+  character: Character
+  active: boolean
+  onDirtyChange: (dirty: boolean) => void
+}) {
+  const [speech, setSpeech] = useState(character.speech)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+  const dirty = !sameSpeech(speech, character.speech)
+  const valid = speech?.mode !== 'local' || !!speech.local_tts
+  // 离开页面前的未保存校验依赖父组件状态；卸载时复位，避免误报。
+  useEffect(() => {
+    onDirtyChange(dirty)
+  }, [dirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
+
+  const save = async () => {
+    if (!valid || saving || !dirty) return
+    setSaving(true)
+    setError('')
+    try {
+      const savedCharacter = await api.saveCharacter({ ...character, speech })
+      const state = useStudio.getState()
+      state.patch({
+        characters: state.characters.map((item) =>
+          item.id === savedCharacter.id ? savedCharacter : item,
+        ),
+      })
+      setSpeech(savedCharacter.speech)
+      setSaved(true)
+      notify('角色语音已保存')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '保存角色语音失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form
+      className="character-studio-form character-studio-speech"
+      aria-busy={saving}
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save()
+      }}
+    >
+      <CharacterSpeechFields
+        value={speech}
+        active={active}
+        disabled={saving}
+        onChange={(next) => {
+          setSpeech(next)
+          setSaved(false)
+        }}
+      />
+      {!valid && <p className="character-form-error">请选择本地 TTS 模型和音色。</p>}
+      {error && (
+        <p className="character-form-error" role="alert">
+          {error}
+          <button aria-label="关闭错误提示" onClick={() => setError('')}>
+            <X size={13} />
+          </button>
+        </p>
+      )}
+      <div className="character-studio-form-actions">
+        <span className="character-studio-saved" role="status">
+          {saved && !dirty ? (
+            <>
+              <Check size={14} /> 已保存
+            </>
+          ) : (
+            dirty && '有未保存的更改'
+          )}
+        </span>
+        <div className="character-studio-save-buttons">
+          <button type="submit" className="button primary" disabled={saving || !valid || !dirty}>
+            {saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
+            保存语音
+          </button>
+        </div>
       </div>
     </form>
   )

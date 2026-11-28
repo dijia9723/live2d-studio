@@ -4,26 +4,19 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   ArrowUpRight,
-  Brain,
   Check,
   FileArchive,
   FolderOpen,
   LoaderCircle,
-  Pencil,
   Search,
-  Tags,
   Trash2,
   Upload,
-  Volume2,
   Wand2,
 } from 'lucide-react'
-import CharacterActionNames from '../../components/character/CharacterActionNames'
 import CharacterDeleteDialog from '../../components/character/CharacterDeleteDialog'
-import CharacterEditor from '../../components/character/CharacterEditor'
-import CharacterMemories from '../../components/character/CharacterMemories'
 import CharacterPreview from '../../components/character/CharacterPreview'
 import { notify, useStudio } from '../../store/studio'
 import { api } from '../../api/client'
@@ -31,20 +24,11 @@ import { packageModelDirectory } from '../../utils/modelImport'
 import { createCharacterPreviewRenderer } from '../../utils/characterPreviewRenderer'
 import type { Character } from '../../types/api'
 
-/** 编辑器 tab 标识，与 CharacterEditor 内部定义保持一致（外部只用作状态传递）。 */
-type EditorTab = 'profile' | 'speech'
-
 export default function CharactersPage() {
   const characters = useStudio((s) => s.characters)
   const characterID = useStudio((s) => s.characterID)
   const busy = useStudio((s) => s.busy)
   const navigate = useNavigate()
-  const [params, setParams] = useSearchParams()
-  const [editing, setEditing] = useState<{ character: Character; tab: EditorTab } | null>(null)
-  const voiceCharacter = characters.find((character) => character.id === params.get('voice'))
-  const editorCharacter = editing?.character ?? voiceCharacter
-  const [memoryCharacter, setMemoryCharacter] = useState<Character | null>(null)
-  const [namingCharacter, setNamingCharacter] = useState<Character | null>(null)
   const [removingCharacter, setRemovingCharacter] = useState<Character | null>(null)
   const [importing, setImporting] = useState(false)
   const [search, setSearch] = useState('')
@@ -105,7 +89,7 @@ export default function CharactersPage() {
       <header className="page-header characters-header">
         <div>
           <h1>角色库</h1>
-          <p>选择聊天伙伴，管理人设、动作与表情名称和跨会话记忆。</p>
+          <p>选择聊天伙伴，在模型工作台统一管理人设、语音、动作表情与跨会话记忆。</p>
         </div>
         <div className="character-import-actions">
           <button
@@ -175,8 +159,7 @@ export default function CharactersPage() {
           <div className="character-grid" ref={grid}>
             {visibleCharacters.map((character) => {
               const selected = characterID === character.id
-              // 动作弹窗使用独立的 WebGL 上下文，打开时暂停卡片预览。
-              const previewing = !namingCharacter && viewportIDs.has(character.id)
+              const previewing = viewportIDs.has(character.id)
               return (
                 <article
                   className={`character-card${selected ? ' selected' : ''}`}
@@ -213,42 +196,11 @@ export default function CharactersPage() {
                     <div className="character-card-actions">
                       <button
                         className="button ghost"
-                        aria-label={`打开 ${character.name} 的模型工作室`}
+                        aria-label={`打开 ${character.name} 的模型工作台`}
                         onClick={() => navigate(`/characters/${character.id}/edit`)}
                       >
                         <Wand2 size={15} />
                         模型工作台
-                      </button>
-                      <button
-                        className="button ghost"
-                        onClick={() => setEditing({ character, tab: 'profile' })}
-                      >
-                        <Pencil size={15} />
-                        角色配置
-                      </button>
-                      <button
-                        className="button ghost"
-                        aria-label={`编辑 ${character.name} 的角色语音`}
-                        onClick={() => setEditing({ character, tab: 'speech' })}
-                      >
-                        <Volume2 size={15} />
-                        角色语音
-                      </button>
-                      <button
-                        className="button ghost"
-                        aria-label={`自定义 ${character.name} 的动作与表情名称`}
-                        onClick={() => setNamingCharacter(character)}
-                      >
-                        <Tags size={15} />
-                        动作与表情
-                      </button>
-                      <button
-                        className="button ghost"
-                        aria-label={`管理 ${character.name} 的记忆`}
-                        onClick={() => setMemoryCharacter(character)}
-                      >
-                        <Brain size={15} />
-                        管理记忆
                       </button>
                       <button
                         className="button soft character-chat"
@@ -298,35 +250,6 @@ export default function CharactersPage() {
           </p>
         </div>
       </section>
-      {memoryCharacter && (
-        <CharacterMemories
-          key={memoryCharacter.id}
-          character={memoryCharacter}
-          onClose={() => setMemoryCharacter(null)}
-        />
-      )}
-      {namingCharacter && (
-        <CharacterActionNames
-          key={namingCharacter.id}
-          character={characters.find((item) => item.id === namingCharacter.id) ?? namingCharacter}
-          onClose={() => setNamingCharacter(null)}
-        />
-      )}
-      {editorCharacter && (
-        <CharacterEditor
-          key={editorCharacter.id}
-          character={editorCharacter}
-          initialTab={editing?.tab ?? 'speech'}
-          onClose={() => {
-            setEditing(null)
-            if (voiceCharacter) {
-              const next = new URLSearchParams(params)
-              next.delete('voice')
-              setParams(next, { replace: true })
-            }
-          }}
-        />
-      )}
       {removingCharacter && (
         <CharacterDeleteDialog
           character={removingCharacter}
