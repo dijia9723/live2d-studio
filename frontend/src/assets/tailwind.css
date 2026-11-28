@@ -19,6 +19,7 @@
 @import './studio.css' layer(legacy);
 @import './settings-page.css' layer(legacy);
 @import './characters.css' layer(legacy);
+@import './character-studio.css' layer(legacy);
 @import './character-controls.css' layer(legacy);
 @import './character-memories.css' layer(legacy);
 @import './overlay-manager.css' layer(legacy);

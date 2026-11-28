@@ -17,7 +17,7 @@ const moods = [
 ]
 
 /** 纯 SVG 绘制的情绪图标，避免依赖图片资源。 */
-function MoodFace({ mood }: { mood: string }) {
+export function MoodFace({ mood }: { mood: string }) {
   return (
     <svg
       className={`character-mood-face character-mood-face-${mood}`}

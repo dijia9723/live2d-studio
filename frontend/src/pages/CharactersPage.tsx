@@ -1,6 +1,6 @@
-/**
+﻿/**
  * 页面：角色库。
- * 支持导入 Live2D 模型 ZIP、搜索角色、预览模型、编辑人设、管理记忆与开始对话。
+ * 支持导入 Live2D 模型 ZIP、搜索角色、预览模型、进入模型编辑子页面、管理记忆与开始对话。
  */
 import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -13,14 +13,11 @@ import {
   LoaderCircle,
   Pencil,
   Play,
-  Save,
   Search,
   Upload,
-  X,
 } from 'lucide-react'
 import Live2DStage from '../components/Live2DStage'
 import CharacterMemories from '../components/CharacterMemories'
-import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { notify, useStudio } from '../store/studio'
 import { api } from '../api/client'
 import type { Character } from '../types/api'
@@ -30,7 +27,6 @@ export default function CharactersPage() {
   const characterID = useStudio((s) => s.characterID)
   const busy = useStudio((s) => s.busy)
   const navigate = useNavigate()
-  const [editing, setEditing] = useState<Character | null>(null)
   const [memoryCharacter, setMemoryCharacter] = useState<Character | null>(null)
   const [importing, setImporting] = useState(false)
   const [search, setSearch] = useState('')
@@ -46,7 +42,7 @@ export default function CharactersPage() {
     visibleCharacters.find((character) => character.id === characterID)?.id ??
     visibleCharacters[0]?.id
 
-  // 导入模型 ZIP：限制 100MB，成功后追加角色并直接打开编辑弹窗。
+  // 导入模型 ZIP：限制 100MB，成功后追加角色并跳转到模型编辑子页面。
   const importModel = async (model: File) => {
     if (!model.name.toLowerCase().endsWith('.zip') || model.size > 100 * 1024 ** 2) {
       notify('请选择不超过 100MB 的模型 ZIP 文件')
@@ -58,7 +54,7 @@ export default function CharactersPage() {
       const state = useStudio.getState()
       state.patch({ characters: [...state.characters, character] })
       setSearch('')
-      setEditing(character)
+      navigate(`/characters/${character.id}/edit`)
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : '模型导入失败')
     } finally {
@@ -169,9 +165,12 @@ export default function CharactersPage() {
                     </h3>
                     {character.description && <p>{character.description}</p>}
                     <div className="character-card-actions">
-                      <button className="button ghost" onClick={() => setEditing(character)}>
+                      <button
+                        className="button ghost"
+                        onClick={() => navigate(`/characters/${character.id}/edit`)}
+                      >
                         <Pencil size={15} />
-                        编辑人设
+                        编辑模型
                       </button>
                       <button
                         className="button ghost"
@@ -226,153 +225,6 @@ export default function CharactersPage() {
           onClose={() => setMemoryCharacter(null)}
         />
       )}
-      {editing && (
-        <CharacterEditor key={editing.id} character={editing} onClose={() => setEditing(null)} />
-      )}
     </div>
-  )
-}
-
-/** 角色人设编辑弹窗：按字节校验名称与提示词长度，保存后写回全局角色列表。 */
-function CharacterEditor({ character, onClose }: { character: Character; onClose: () => void }) {
-  const [editing, setEditing] = useState(character)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const name = editing.name.trim()
-  const encoder = new TextEncoder()
-  const nameBytes = encoder.encode(name).length
-  const promptBytes = encoder.encode(editing.system_prompt).length
-  const valid = nameBytes > 0 && nameBytes <= 100 && promptBytes <= 24000
-
-  const close = () => {
-    if (saving) return
-    onClose()
-  }
-
-  const save = async () => {
-    if (!valid || saving) return
-    setSaving(true)
-    setError('')
-    try {
-      const saved = await api.saveCharacter({ ...editing, name })
-      const state = useStudio.getState()
-      state.patch({
-        characters: state.characters.map((item) => (item.id === saved.id ? saved : item)),
-      })
-      onClose()
-      notify('角色人设已保存')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存人设失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) close()
-      }}
-    >
-      <DialogContent
-        className="modal character-dialog character-editor"
-        showCloseButton={false}
-        aria-labelledby="character-editor-title"
-        onEscapeKeyDown={(event) => {
-          if (saving) event.preventDefault()
-        }}
-        onPointerDownOutside={(event) => event.preventDefault()}
-      >
-        <header className="character-dialog-heading">
-          <span className="character-dialog-icon">
-            <Pencil size={19} />
-          </span>
-          <div>
-            <DialogTitle asChild>
-              <h2 id="character-editor-title">编辑 {character.name} 的人设</h2>
-            </DialogTitle>
-            <p>人设更新后，将应用于这位角色的下一次回复。</p>
-          </div>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="关闭人设编辑"
-            disabled={saving}
-            onClick={close}
-          >
-            <X size={20} />
-          </button>
-        </header>
-        <form
-          className="character-editor-form"
-          aria-busy={saving}
-          onSubmit={(event) => {
-            event.preventDefault()
-            void save()
-          }}
-        >
-          <label className="form-field">
-            角色名称
-            <input
-              maxLength={100}
-              disabled={saving}
-              value={editing.name}
-              aria-invalid={nameBytes > 100}
-              aria-describedby={nameBytes > 100 ? 'character-name-length' : undefined}
-              onChange={(event) => setEditing({ ...editing, name: event.target.value })}
-            />
-            {nameBytes > 100 && (
-              <small className="character-field-error" id="character-name-length">
-                名称最多 100 字节，请缩短输入。
-              </small>
-            )}
-          </label>
-          <label className="form-field">
-            角色介绍
-            <input
-              maxLength={200}
-              disabled={saving}
-              value={editing.description}
-              onChange={(event) => setEditing({ ...editing, description: event.target.value })}
-            />
-          </label>
-          <label className="form-field">
-            系统提示词
-            <textarea
-              rows={7}
-              maxLength={24000}
-              disabled={saving}
-              value={editing.system_prompt}
-              aria-invalid={promptBytes > 24000}
-              aria-describedby="character-prompt-help"
-              onChange={(event) => setEditing({ ...editing, system_prompt: event.target.value })}
-            />
-            <small
-              className={promptBytes > 24000 ? 'character-field-error' : undefined}
-              id="character-prompt-help"
-            >
-              {promptBytes > 24000
-                ? '提示词最多 24,000 字节，请缩短输入。'
-                : '描述角色的身份、性格和说话方式。'}
-            </small>
-          </label>
-          {error && (
-            <p className="character-form-error" role="alert">
-              {error}
-            </p>
-          )}
-          <footer className="modal-actions">
-            <button type="button" className="button ghost" disabled={saving} onClick={close}>
-              取消
-            </button>
-            <button type="submit" className="button primary" disabled={saving || !valid}>
-              {saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
-              保存人设
-            </button>
-          </footer>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }
